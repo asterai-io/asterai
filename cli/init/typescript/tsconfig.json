@@ -1,8 +1,0 @@
-{
-  "include": ["./**/*.ts"],
-  "compilerOptions": {
-    "outDir": "build",
-    "module": "ESNext",
-    "moduleResolution": "node"
-  }
-}
