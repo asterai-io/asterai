@@ -1,0 +1,41 @@
+[workspace]
+members = [
+    "cli", "runtime",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "v5", "v7", "serde"] }
+eyre = { version = "0.6.12" }
+wasmtime = { version = "29.0.1", features = ["runtime", "component-model"] }
+wasmtime-wasi = { version = "29.0.1" }
+wasmtime-wasi-http = { version = "29.0.1" }
+wiggle = { version = "29.0.1" }
+wit-parser = "0.225.0"
+wit-component = "0.225.0"
+warg-protocol = "0.9.2"
+wasm-pkg-core = "0.10.0"
+wasm-pkg-client = "0.10.0"
+wasm-pkg-common = "0.10.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22.1"
+log = "0.4"
+dotenv = "0.15.0"
+futures = "0.3.28"
+# This should match the version used by wit-parser for compatibility.
+semver = "1.0.23"
+secrecy = "0.8.0"
+indexmap = "2.7.1"
+tempfile = "3.10.1"
+sha2 = "0.10.8"
+thiserror = "1"
+bytes = { version = "1.4", default-features = false }
+async-trait = "0.1.88"
+petgraph = "0.8.2"
+strum = "0.27.2"
+strum_macros = "0.27.2"
