@@ -1,5 +1,0 @@
-name: userIdentifier
-functions:
-  - name: identifyUser
-    description: >-
-      gets the user ID if the user is logged in
