@@ -1,0 +1,13 @@
+package asterai: host@0.1.0;
+
+interface api {
+  get-runtime-info: func() -> runtime-info;
+
+  record runtime-info {
+    version: string,
+  }
+}
+
+world host {
+  export api;
+}
