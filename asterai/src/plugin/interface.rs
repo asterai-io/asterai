@@ -1,12 +1,10 @@
 use crate::plugin::Plugin;
-use crate::plugin::function_metadata::PluginFunctionMetadata;
 use crate::plugin::function_name::PluginFunctionName;
 use derive_getters::Getters;
 use eyre::WrapErr;
 use eyre::{OptionExt, eyre};
 use log::trace;
 use serde::{Deserialize, Serialize, Serializer};
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -39,7 +37,6 @@ pub struct PluginInterface {
     component_wit_resolve: Resolve,
     component_world_id: WorldId,
     component: Arc<Mutex<ComponentBinary>>,
-    function_metadata: HashMap<PluginFunctionName, PluginFunctionMetadata>,
 }
 
 enum ComponentBinary {
@@ -95,21 +92,12 @@ impl PluginInterface {
             }
             DecodedWasm::Component(wit_resolve, world_id) => (wit_resolve, world_id),
         };
-        let function_metadata = Self::fetch_functions_metadata(&plugin).await?;
         Ok(Self {
             plugin,
             component_wit_resolve: wit_resolve,
             component_world_id: world_id,
             component: Arc::new(Mutex::new(ComponentBinary::Raw(component_bytes))),
-            function_metadata,
         })
-    }
-
-    async fn fetch_functions_metadata(
-        plugin: &Plugin,
-    ) -> eyre::Result<HashMap<PluginFunctionName, PluginFunctionMetadata>> {
-        // TODO implement.
-        todo!()
     }
 
     /// Fetches a compiled component for this plugin.
@@ -137,21 +125,12 @@ impl PluginInterface {
         &self.plugin
     }
 
-    /// A stringified version of the interface, including all agentic functions.
-    pub fn stringified_agentic_interface(&self) -> String {
-        self.stringified_interface(true)
-    }
-
     /// A stringified version of the interface, optional including only agentic functions.
-    pub fn stringified_interface(&self, only_agentic: bool) -> String {
+    pub fn stringified_interface(&self) -> String {
         // TODO: implement fully
         let mut string = String::new();
         let functions = self.get_functions();
         for function in functions {
-            let is_agentic = self.get_function_metadata(&function.name).is_agentic;
-            if !is_agentic && only_agentic {
-                continue;
-            }
             string.push_str(&format!(
                 "function name {} of manifest '{}' inputs: (",
                 function.name.name,
@@ -203,16 +182,6 @@ impl PluginInterface {
     pub fn get_imports_count(&self) -> usize {
         let world = self.component_world();
         world.imports.len()
-    }
-
-    pub fn get_function_metadata(
-        &self,
-        function_name: &PluginFunctionName,
-    ) -> PluginFunctionMetadata {
-        self.function_metadata
-            .get(&function_name)
-            .cloned()
-            .unwrap_or_default()
     }
 
     fn component_world(&self) -> &World {

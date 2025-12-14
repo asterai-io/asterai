@@ -9,7 +9,6 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 pub use wit_parser::PackageName;
 
-pub mod function_metadata;
 pub mod function_name;
 pub mod interface;
 pub mod log;
