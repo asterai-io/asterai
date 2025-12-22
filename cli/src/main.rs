@@ -1,5 +1,6 @@
 use crate::command::Command;
 
+pub mod auth;
 mod command;
 pub mod config;
 
@@ -9,7 +10,7 @@ async fn main() {
     let command = match Command::parse(args) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("failed to parse command: {e:#?}");
+            eprintln!("failed to parse command: {e}");
             std::process::exit(1);
         }
     };
