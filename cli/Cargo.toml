@@ -1,6 +1,10 @@
 [package]
 name = "asterai"
 version = "0.1.0"
-edition = {workspace = true}
+edition = { workspace = true }
 
 [dependencies]
+tokio = { workspace = true }
+once_cell = { workspace = true }
+eyre = { workspace = true }
+asterai_runtime = { path = "../asterai" }
