@@ -2,7 +2,7 @@ asterai CLI
 
 commands:
 
-- login <api_key>
+- auth <api_key>
 - env
   - init <name>
       create a new environment with <name>
