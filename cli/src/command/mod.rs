@@ -1,13 +1,16 @@
 use crate::command::auth::AuthArgs;
 use crate::command::env::EnvArgs;
+use crate::command::help::Help;
 use eyre::bail;
 
 mod auth;
 mod env;
+mod help;
 
 pub enum Command {
     Auth(AuthArgs),
     Env(EnvArgs),
+    Help,
 }
 
 impl Command {
@@ -18,9 +21,7 @@ impl Command {
         match first_token.as_str() {
             "auth" => AuthArgs::parse(args).map(Self::Auth),
             "env" => EnvArgs::parse(args).map(Self::Env),
-            _ => {
-                bail!("invalid command")
-            }
+            _ => Ok(Self::Help),
         }
     }
 
@@ -28,6 +29,7 @@ impl Command {
         match self {
             Command::Auth(args) => args.run().await,
             Command::Env(args) => args.run().await,
+            _ => Help::run(),
         }
     }
 }
