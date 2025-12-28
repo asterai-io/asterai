@@ -1,19 +1,32 @@
 use crate::config::CONFIG_DIR;
+use once_cell::sync::Lazy;
 use std::fs;
+use std::path::PathBuf;
 use tokio::io;
 
-pub fn read_stored_api_key() -> Option<String> {
-    let path = CONFIG_DIR.join("auth");
-    fs::read_to_string(path).ok()
-}
+pub static LOCAL_NAMESPACE: &str = "local";
 
-pub fn store_api_key(value: &str) -> io::Result<()> {
-    fs::create_dir_all(&*CONFIG_DIR)?;
-    let path = CONFIG_DIR.join("auth");
-    fs::write(path, value)
-}
+static AUTH_FILE_PATH: Lazy<PathBuf> = Lazy::new(|| CONFIG_DIR.join("auth"));
+/// Path to the file storing the local namespace preference.
+static USER_NAMESPACE_FILE_PATH: Lazy<PathBuf> = Lazy::new(|| CONFIG_DIR.join("namespace"));
 
-pub fn clear_api_key() -> io::Result<()> {
-    let path = CONFIG_DIR.join("auth");
-    fs::remove_file(path)
+pub struct Auth;
+
+impl Auth {
+    pub fn read_stored_api_key() -> Option<String> {
+        fs::read_to_string(&*AUTH_FILE_PATH).ok()
+    }
+
+    pub fn store_api_key(value: &str) -> io::Result<()> {
+        fs::create_dir_all(&*CONFIG_DIR)?;
+        fs::write(&*AUTH_FILE_PATH, value)
+    }
+
+    pub fn clear_api_key() -> io::Result<()> {
+        fs::remove_file(&*AUTH_FILE_PATH)
+    }
+
+    pub fn read_stored_user_namespace() -> Option<String> {
+        fs::read_to_string(&*USER_NAMESPACE_FILE_PATH).ok()
+    }
 }

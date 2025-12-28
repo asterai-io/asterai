@@ -1,4 +1,4 @@
-use crate::auth::{clear_api_key, store_api_key};
+use crate::auth::Auth;
 use eyre::bail;
 
 pub struct AuthArgs {
@@ -26,10 +26,10 @@ impl AuthArgs {
     pub async fn run(&self) -> eyre::Result<()> {
         match &self.action {
             AuthAction::Clear => {
-                clear_api_key()?;
+                Auth::clear_api_key()?;
             }
             AuthAction::Set(api_key) => {
-                store_api_key(api_key)?;
+                Auth::store_api_key(api_key)?;
             }
         }
         Ok(())
