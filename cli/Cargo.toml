@@ -8,3 +8,5 @@ tokio = { workspace = true }
 once_cell = { workspace = true }
 eyre = { workspace = true }
 asterai_runtime = { path = "../asterai" }
+serde = { workspace = true }
+serde_json = { workspace = true }

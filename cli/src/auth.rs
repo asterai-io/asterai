@@ -29,4 +29,8 @@ impl Auth {
     pub fn read_stored_user_namespace() -> Option<String> {
         fs::read_to_string(&*USER_NAMESPACE_FILE_PATH).ok()
     }
+
+    pub fn read_user_or_fallback_namespace() -> String {
+        Auth::read_stored_user_namespace().unwrap_or_else(|| LOCAL_NAMESPACE.to_owned())
+    }
 }

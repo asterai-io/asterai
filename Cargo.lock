@@ -148,6 +148,8 @@ dependencies = [
  "asterai_runtime",
  "eyre",
  "once_cell",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
