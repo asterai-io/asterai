@@ -8,7 +8,8 @@ trait EnvironmentCliInitExt {
 }
 
 pub async fn init_env(resource_id: ResourceId) -> eyre::Result<()> {
-    let environment = Environment::new(resource_id);
+    let resource = resource_id.with_version("0.0.0")?;
+    let environment = Environment::new(resource);
     environment.write_to_disk()?;
     Ok(())
 }
