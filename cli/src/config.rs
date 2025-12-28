@@ -21,5 +21,5 @@ pub static BIN_DIR: Lazy<PathBuf> = Lazy::new(|| {
         env::var("XDG_DATA_HOME")
             .unwrap_or_else(|_| format!("{}/.local/bin", env::var("HOME").unwrap()))
     };
-    PathBuf::from(bin_dir).join(APP_DIR_NAME).join("bin")
+    PathBuf::from(bin_dir).join(APP_DIR_NAME)
 });
