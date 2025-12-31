@@ -3,24 +3,24 @@ asterai CLI
 Usage: asterai <command> [options]
 
 Auth commands:
-  asterai auth login <api-key>    Authenticate to the Asterai registry
-  asterai auth logout             Clear authentication (logout)
-  asterai auth status             Show current authentication status and user
+  asterai auth login <api-key>                  Authenticate to the Asterai registry
+  asterai auth logout                           Clear authentication (logout)
+  asterai auth status                           Show current authentication status and user
 
 Environment commands:
-  asterai env init <name>         Create a new local environment project
-  asterai env run <name>          Run the environment locally (Ctrl+C to stop)
-  asterai env publish <name>      Publish the local environment <name> to the registry
-  asterai env list                List all environments you have write access to
-                                  (shows local and published; tags indicate status)
-  asterai env inspect <name>      Show components, env vars, and metadata
-  asterai env logs <name> [--follow]  Show logs for the running environment
+  asterai env init <name>                       Create a new local environment project
+  asterai env run <name>                        Run the environment locally (Ctrl+C to stop)
+  asterai env publish <name>                    Publish the local environment <name> to the registry
+  asterai env list                              List all environments you have write access to
+                                                (shows local and published; tags indicate status)
+  asterai env inspect <name>                    Show components, env vars, and metadata
+  asterai env logs <name> [--follow]            Show logs for the running environment
   asterai env add <name> --component <spec>     Add a component (local path or user/component@version)
   asterai env remove <name> --component <spec>  Remove a component
   asterai env set-var <name> --var NAME=VALUE   Set an env var (NAME= to clear)
 
 Component commands:
-  asterai component init <name>   Scaffold a new local WASM component project
-  asterai component publish       Publish the current component (from project dir) to registry
-  asterai component list          List all components you have write access to
-                                  (shows local and published; tags indicate status)
+  asterai component init <name>                 Scaffold a new local WASM component project
+  asterai component publish                     Publish the current component (from project dir) to registry
+  asterai component list                        List all components you have write access to
+                                                (shows local and published; tags indicate status)
