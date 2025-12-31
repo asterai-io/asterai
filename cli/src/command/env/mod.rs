@@ -1,5 +1,4 @@
-use crate::command::env::init::init_env;
-use crate::command::env::name_or_id::EnvNameOrId;
+use crate::command::env::resource_or_id::EnvResourceOrId;
 use crate::config::BIN_DIR;
 use asterai_runtime::environment::Environment;
 use asterai_runtime::resource::{Resource, ResourceId};
@@ -7,76 +6,78 @@ use eyre::{bail, eyre};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use strum_macros::EnumString;
 
 mod init;
-mod name_or_id;
+mod inspect;
+mod resource_or_id;
+mod run;
 
 pub struct EnvArgs {
-    action: &'static str,
-    env_name_or_id: Option<EnvNameOrId>,
+    action: EnvAction,
+    env_resource_or_id: Option<EnvResourceOrId>,
     plugin_name: Option<&'static str>,
     env_var: Option<&'static str>,
-    instance_id: Option<&'static str>,
+}
+
+#[derive(Copy, Clone, EnumString)]
+#[strum(serialize_all = "kebab-case")]
+pub enum EnvAction {
+    Run,
+    Init,
+    Inspect,
 }
 
 impl EnvArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
-        let Some(action) = args.next() else {
+        let Some(action_string) = args.next() else {
             bail!("missing env command action");
         };
-        let mut parse_env_name_or_id = || -> eyre::Result<EnvNameOrId> {
+        let action =
+            EnvAction::from_str(&action_string).map_err(|_| eyre!("unknown env action"))?;
+        let mut parse_env_name_or_id = || -> eyre::Result<EnvResourceOrId> {
             let Some(env_name_or_id_string) = args.next() else {
                 bail!("missing env name/id");
             };
-            EnvNameOrId::from_str(&env_name_or_id_string).map_err(|e| eyre!(e))
+            EnvResourceOrId::from_str(&env_name_or_id_string).map_err(|e| eyre!(e))
         };
-        let env_args = match action.as_str() {
-            "init" => Self {
-                action: "init",
-                env_name_or_id: Some(parse_env_name_or_id()?),
+        let env_args = match action {
+            action @ (EnvAction::Run | EnvAction::Inspect | EnvAction::Init) => Self {
+                action,
+                env_resource_or_id: Some(parse_env_name_or_id()?),
                 plugin_name: None,
                 env_var: None,
-                instance_id: None,
             },
-            "run" => Self {
-                action: "run",
-                env_name_or_id: Some(parse_env_name_or_id()?),
-                plugin_name: None,
-                env_var: None,
-                instance_id: None,
-            },
-            _ => {
-                bail!("unknown env action '{action}'")
-            }
         };
         Ok(env_args)
     }
 
-    pub async fn run(&self) -> eyre::Result<()> {
-        let get_resource_id = || -> eyre::Result<ResourceId> {
-            let resource_id_string = self
-                .env_name_or_id
-                .as_ref()
-                .unwrap()
-                .id_with_local_namespace_fallback();
-            ResourceId::from_str(&resource_id_string).map_err(|e| eyre!(e))
-        };
+    pub async fn execute(&self) -> eyre::Result<()> {
         match self.action {
-            "init" => {
-                init_env(get_resource_id()?).await?;
+            EnvAction::Init => {
+                self.init()?;
             }
-            "run" => {
-                let resource_id = get_resource_id()?;
-                println!("running env {resource_id}");
-                let environment = Environment::local_fetch(&resource_id)?;
-                dbg!(&environment);
-                // TODO
+            EnvAction::Run => {
+                self.run().await?;
             }
-            _ => {
-                unimplemented!()
+            EnvAction::Inspect => {
+                self.inspect()?;
             }
         }
         Ok(())
+    }
+
+    /// If a resource name is present, this returns the
+    /// `ResourceId` using a fallback namespace if no namespace was given.
+    /// Otherwise, if no resource name, it returns an `Err`.
+    /// TODO also add method for Resource (including version).
+    fn resource_id(&self) -> eyre::Result<ResourceId> {
+        let resource_id_string = self
+            .env_resource_or_id
+            .as_ref()
+            .unwrap()
+            .with_local_namespace_fallback();
+        ResourceId::from_str(&resource_id_string).map_err(|e| eyre!(e))
     }
 }
 

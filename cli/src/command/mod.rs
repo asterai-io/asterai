@@ -27,9 +27,9 @@ impl Command {
 
     pub async fn run(self) -> eyre::Result<()> {
         match self {
-            Command::Auth(args) => args.run().await,
-            Command::Env(args) => args.run().await,
-            _ => Help::run(),
+            Command::Auth(args) => args.execute().await,
+            Command::Env(args) => args.execute().await,
+            _ => Help::execute(),
         }
     }
 }

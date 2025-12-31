@@ -23,7 +23,7 @@ impl AuthArgs {
         Ok(Self { action })
     }
 
-    pub async fn run(&self) -> eyre::Result<()> {
+    pub async fn execute(&self) -> eyre::Result<()> {
         match &self.action {
             AuthAction::Clear => {
                 Auth::clear_api_key()?;
