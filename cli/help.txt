@@ -2,26 +2,35 @@ asterai CLI
 
 commands:
 
-- auth <api_key>
+- auth
+  - login <api-key>
+      authenticates with the given <api-key>
+  - logout
+      clears the auth, i.e. logout
+  - status
+      checks the current auth status
 - env
   - init <name>
       create a new environment with <name>
+  - run <name>
+      run a new environment instance. (kill with CTRL+C)
   - publish
-      publishes an environment to the asterai cloud
-  - ls
-      list all environments
-  - add --env <environment-name> --plugin <plugin-name>
-      add a plugin to the environment
-  - remove --env <environment-name> --plugin <plugin-name>
-      remove a plugin from the environment
+      publishes an environment to the asterai registry
+  - list
+      list all environments you have access to
+  - inspect <name>
+      inspect an environment, listing its components and varsc
+  - logs <name>
+      show logs for an environment
+  - add --env <environment-name> --component <component-name>
+      add a component to the environment
+  - remove --env <environment-name> --component <component-name>
+      remove a component from the environment
   - set-var --env <environment-name> --var <env-var>
       set an environment variable, e.g. NAME=VALUE.
       to clear a var, leave the value empty i.e. NAME=
-  - run <name>
-      run a new environment instance
-  - end <instance-id>
-      end an environment instance
-- plugin
-  - init <name>: init a new local plugin project
-  - publish: pushes the plugin to the registry
-  - list: list all environments
+
+- component
+  - init <name>: init a new local component project
+  - publish: pushes the component to the registry
+  - list: list all components you own or have write access to
