@@ -10,6 +10,7 @@ use strum_macros::EnumString;
 
 mod init;
 mod inspect;
+mod list;
 mod resource_or_id;
 mod run;
 
@@ -26,6 +27,7 @@ pub enum EnvAction {
     Run,
     Init,
     Inspect,
+    List,
 }
 
 impl EnvArgs {
@@ -48,6 +50,12 @@ impl EnvArgs {
                 plugin_name: None,
                 env_var: None,
             },
+            EnvAction::List => Self {
+                action,
+                env_resource_or_id: None,
+                plugin_name: None,
+                env_var: None,
+            },
         };
         Ok(env_args)
     }
@@ -62,6 +70,9 @@ impl EnvArgs {
             }
             EnvAction::Inspect => {
                 self.inspect()?;
+            }
+            EnvAction::List => {
+                self.list()?;
             }
         }
         Ok(())
