@@ -14,7 +14,6 @@ Environment commands:
   asterai env list                              List all environments you have write access to
                                                 (shows local and published; tags indicate status)
   asterai env inspect <name>                    Show components, env vars, and metadata
-  asterai env logs <name> [--follow]            Show logs for the running environment
   asterai env add <name> --component <spec>     Add a component (local path or user/component@version)
   asterai env remove <name> --component <spec>  Remove a component
   asterai env set-var <name> --var NAME=VALUE   Set an env var (NAME= to clear)
