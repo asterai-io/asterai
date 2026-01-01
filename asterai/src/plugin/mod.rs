@@ -17,6 +17,8 @@ pub mod set;
 
 pub type PluginModuleId = Checksum;
 
+// TODO: rely on `Resource` to reduce duplication.
+// TODO: rename to Component
 #[derive(Debug, Clone, Getters, Eq, PartialEq, Hash)]
 pub struct Plugin {
     /// This is the plugin ID and includes:
@@ -66,6 +68,7 @@ impl Plugin {
     }
 }
 
+// TODO: rely on `Resource` to reduce duplication.
 /// The plugin ID is similar to `Plugin` except it does not
 /// contain a version string.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
