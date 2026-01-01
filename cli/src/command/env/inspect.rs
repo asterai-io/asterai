@@ -1,4 +1,5 @@
-use crate::command::env::{EnvArgs, EnvironmentCliExt};
+use crate::cli_ext::environment::EnvironmentCliExt;
+use crate::command::env::EnvArgs;
 use asterai_runtime::environment::Environment;
 
 impl EnvArgs {

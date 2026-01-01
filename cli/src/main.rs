@@ -1,6 +1,7 @@
 use crate::command::Command;
 
 pub mod auth;
+pub mod cli_ext;
 mod command;
 pub mod config;
 
