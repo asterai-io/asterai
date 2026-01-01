@@ -1,8 +1,11 @@
 use crate::cli_ext::resource::ResourceCliExt;
+use crate::cli_ext::resource_from_path;
+use crate::cli_ext::resource_metadata::ResourceMetadataCliExt;
 use crate::config::BIN_DIR;
 use asterai_runtime::environment::Environment;
+use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};
-use eyre::{bail, eyre};
+use eyre::bail;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -37,6 +40,16 @@ impl EnvironmentCliExt for Environment {
         let resources = Resource::local_list();
         let mut envs = Vec::new();
         for resource_path in resources {
+            let Ok(metadata) = ResourceMetadata::parse_local(&resource_path) else {
+                eprintln!(
+                    "ERROR: failed to parse metadata for environment at {}",
+                    resource_path.to_str().unwrap_or_default()
+                );
+                continue;
+            };
+            if metadata.kind != ResourceKind::Environment {
+                continue;
+            }
             let Ok(env) = Environment::parse_local(&resource_path) else {
                 eprintln!(
                     "ERROR: failed to parse environment at {}",
@@ -50,7 +63,7 @@ impl EnvironmentCliExt for Environment {
     }
 
     fn parse_local(path: &Path) -> eyre::Result<Self> {
-        let resource = path_to_resource(path)?;
+        let resource = resource_from_path(path)?;
         let env_json_path = path.to_owned().join("env.json");
         let serialized = fs::read_to_string(&env_json_path)?;
         let environment: Environment = serde_json::from_str(&serialized)?;
@@ -64,7 +77,7 @@ impl EnvironmentCliExt for Environment {
         let local_resources = Resource::local_list();
         let mut selected_resource_opt = None;
         for resource_path in local_resources {
-            let resource = path_to_resource(&resource_path)?;
+            let resource = resource_from_path(&resource_path)?;
             if resource.id() != *id {
                 continue;
             }
@@ -85,21 +98,4 @@ impl EnvironmentCliExt for Environment {
         let environment = Self::parse_local(&selected_resource_path)?;
         Ok(environment)
     }
-}
-
-fn path_to_resource(path: &Path) -> eyre::Result<Resource> {
-    let namespace = path
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| eyre!("invalid namespace in path"))?;
-    let name_version = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| eyre!("invalid name@version in path"))?;
-    let (name, version) = name_version
-        .split_once('@')
-        .ok_or_else(|| eyre!("missing version separator '@' in path"))?;
-    let resource_id = ResourceId::new_from_parts(namespace.to_owned(), name.to_owned())?;
-    resource_id.with_version(&version)
 }
