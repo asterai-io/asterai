@@ -5,7 +5,6 @@ use asterai_runtime::plugin::Plugin;
 use asterai_runtime::plugin::interface::PluginInterface;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};
-use eyre::bail;
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
