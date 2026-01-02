@@ -1,44 +1,26 @@
 use crate::cli_ext::resource::ResourceCliExt;
 use crate::cli_ext::resource_from_path;
 use crate::cli_ext::resource_metadata::ResourceMetadataCliExt;
-use crate::config::BIN_DIR;
-use asterai_runtime::environment::Environment;
+use asterai_runtime::plugin::Plugin;
+use asterai_runtime::plugin::interface::PluginInterface;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::bail;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::str::FromStr;
 
-pub trait EnvironmentCliExt: Sized {
-    fn local_disk_dir(&self) -> PathBuf;
-    fn local_disk_file_path(&self) -> PathBuf;
-    fn local_metadata_file_path(&self) -> PathBuf;
+pub trait ComponentCliExt: Sized {
     fn local_list() -> Vec<Self>;
     fn parse_local(path: &Path) -> eyre::Result<Self>;
     /// Fetches the most recent with the given ID.
     fn local_fetch(id: &ResourceId) -> eyre::Result<Self>;
 }
 
-impl EnvironmentCliExt for Environment {
-    fn local_disk_dir(&self) -> PathBuf {
-        let resource = self.resource();
-        BIN_DIR
-            .join("resources")
-            .join(resource.namespace())
-            .join(format!("{}@{}", resource.name(), resource.version()))
-    }
-
-    fn local_disk_file_path(&self) -> PathBuf {
-        self.local_disk_dir().join("env.json")
-    }
-
-    fn local_metadata_file_path(&self) -> PathBuf {
-        self.local_disk_dir().join("metadata.json")
-    }
-
+impl ComponentCliExt for PluginInterface {
     fn local_list() -> Vec<Self> {
         let resources = Resource::local_list();
-        let mut envs = Vec::new();
+        let mut components = Vec::new();
         for resource_path in resources {
             let Ok(metadata) = ResourceMetadata::parse_local(&resource_path) else {
                 eprintln!(
@@ -47,30 +29,28 @@ impl EnvironmentCliExt for Environment {
                 );
                 continue;
             };
-            if metadata.kind != ResourceKind::Environment {
+            if metadata.kind != ResourceKind::Component {
                 continue;
             }
-            let Ok(env) = Environment::parse_local(&resource_path) else {
+            let Ok(env) = Self::parse_local(&resource_path) else {
                 eprintln!(
                     "ERROR: failed to parse environment at {}",
                     resource_path.to_str().unwrap_or_default()
                 );
                 continue;
             };
-            envs.push(env);
+            components.push(env);
         }
-        envs
+        components
     }
 
     fn parse_local(path: &Path) -> eyre::Result<Self> {
         let resource = resource_from_path(path)?;
-        let env_json_path = path.to_owned().join("env.json");
-        let serialized = fs::read_to_string(&env_json_path)?;
-        let environment: Environment = serde_json::from_str(&serialized)?;
-        if *environment.resource() != resource {
-            bail!("env.json resource does not match dir resource data");
-        }
-        Ok(environment)
+        let component_path = path.to_owned().join("package.wasm");
+        let component_bytes = fs::read(&component_path)?;
+        let plugin = Plugin::from_str(&resource.to_string())?;
+        let item = Self::from_component_bytes(plugin, component_bytes)?;
+        Ok(item)
     }
 
     fn local_fetch(id: &ResourceId) -> eyre::Result<Self> {

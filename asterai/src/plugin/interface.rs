@@ -24,6 +24,7 @@ use wit_parser::{
 
 /// A Plugin Manifest represents the metadata of a plugin,
 /// including its interface, types, functions and name.
+// TODO: rename? this includes the interface as well as binary
 #[derive(Clone)]
 pub struct PluginInterface {
     plugin: Plugin,
@@ -84,7 +85,12 @@ struct SerializablePluginInterfaceFunctionInput {
 
 impl PluginInterface {
     pub async fn fetch(plugin: Plugin, wkg_client: &wasm_pkg_client::Client) -> eyre::Result<Self> {
-        let component_bytes = download_warg_component_package(plugin.clone(), wkg_client).await?;
+        let component_bytes =
+            download_component_package_from_registry(plugin.clone(), wkg_client).await?;
+        Self::from_component_bytes(plugin, component_bytes)
+    }
+
+    pub fn from_component_bytes(plugin: Plugin, component_bytes: Vec<u8>) -> eyre::Result<Self> {
         let decoded_wasm = wit_parser::decoding::decode(&component_bytes).map_err(|e| eyre!(e))?;
         let (wit_resolve, world_id) = match decoded_wasm {
             DecodedWasm::WitPackage(_, _) => {
@@ -342,7 +348,7 @@ impl Debug for PluginInterface {
     }
 }
 
-async fn download_warg_component_package(
+async fn download_component_package_from_registry(
     plugin: Plugin,
     wkg_client: &wasm_pkg_client::Client,
 ) -> eyre::Result<Vec<u8>> {

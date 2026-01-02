@@ -2,6 +2,7 @@ use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::eyre;
 use std::path::Path;
 
+pub mod component;
 pub mod environment;
 pub mod resource;
 pub mod resource_metadata;
