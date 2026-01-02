@@ -1,15 +1,19 @@
 use crate::command::auth::AuthArgs;
+use crate::command::component::ComponentArgs;
 use crate::command::env::EnvArgs;
 use crate::command::help::Help;
 use eyre::bail;
 
 mod auth;
+mod component;
 mod env;
 mod help;
+mod resource_or_id;
 
 pub enum Command {
     Auth(AuthArgs),
     Env(EnvArgs),
+    Component(ComponentArgs),
     Help,
 }
 
@@ -21,6 +25,7 @@ impl Command {
         match first_token.as_str() {
             "auth" => AuthArgs::parse(args).map(Self::Auth),
             "env" => EnvArgs::parse(args).map(Self::Env),
+            "component" => ComponentArgs::parse(args).map(Self::Component),
             _ => Ok(Self::Help),
         }
     }
@@ -29,6 +34,7 @@ impl Command {
         match self {
             Command::Auth(args) => args.execute().await,
             Command::Env(args) => args.execute().await,
+            Command::Component(args) => args.execute().await,
             _ => Help::execute(),
         }
     }

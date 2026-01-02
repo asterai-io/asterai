@@ -4,50 +4,32 @@ use eyre::{bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
-mod init;
-mod inspect;
-mod list;
-mod run;
+pub mod list;
 
-pub struct EnvArgs {
-    action: EnvAction,
-    env_resource_or_id: Option<ResourceOrIdArg>,
+pub struct ComponentArgs {
+    action: ComponentAction,
+    component_resource_or_id: Option<ResourceOrIdArg>,
     plugin_name: Option<&'static str>,
     env_var: Option<&'static str>,
 }
 
 #[derive(Copy, Clone, EnumString)]
 #[strum(serialize_all = "kebab-case")]
-pub enum EnvAction {
-    Run,
-    Init,
-    Inspect,
+pub enum ComponentAction {
     List,
 }
 
-impl EnvArgs {
+impl ComponentArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let Some(action_string) = args.next() else {
             bail!("missing env command action");
         };
         let action =
-            EnvAction::from_str(&action_string).map_err(|_| eyre!("unknown env action"))?;
-        let mut parse_env_name_or_id = || -> eyre::Result<ResourceOrIdArg> {
-            let Some(env_name_or_id_string) = args.next() else {
-                bail!("missing env name/id");
-            };
-            ResourceOrIdArg::from_str(&env_name_or_id_string).map_err(|e| eyre!(e))
-        };
+            ComponentAction::from_str(&action_string).map_err(|_| eyre!("unknown env action"))?;
         let env_args = match action {
-            action @ (EnvAction::Run | EnvAction::Inspect | EnvAction::Init) => Self {
+            ComponentAction::List => Self {
                 action,
-                env_resource_or_id: Some(parse_env_name_or_id()?),
-                plugin_name: None,
-                env_var: None,
-            },
-            EnvAction::List => Self {
-                action,
-                env_resource_or_id: None,
+                component_resource_or_id: None,
                 plugin_name: None,
                 env_var: None,
             },
@@ -57,16 +39,7 @@ impl EnvArgs {
 
     pub async fn execute(&self) -> eyre::Result<()> {
         match self.action {
-            EnvAction::Init => {
-                self.init()?;
-            }
-            EnvAction::Run => {
-                self.run().await?;
-            }
-            EnvAction::Inspect => {
-                self.inspect()?;
-            }
-            EnvAction::List => {
+            ComponentAction::List => {
                 self.list()?;
             }
         }
@@ -76,10 +49,11 @@ impl EnvArgs {
     /// If a resource name is present, this returns the
     /// `ResourceId` using a fallback namespace if no namespace was given.
     /// Otherwise, if no resource name, it returns an `Err`.
-    /// TODO also add method for Resource (including version).
+    /// TODO also add method for Resource (including version
+    /// TODO reduce duplication with env module?
     fn resource_id(&self) -> eyre::Result<ResourceId> {
         let resource_id_string = self
-            .env_resource_or_id
+            .component_resource_or_id
             .as_ref()
             .unwrap()
             .with_local_namespace_fallback();

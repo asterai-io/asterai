@@ -5,13 +5,13 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct EnvResourceOrId {
+pub struct ResourceOrIdArg {
     namespace: Option<String>,
     name: String,
     version: Option<Version>,
 }
 
-impl EnvResourceOrId {
+impl ResourceOrIdArg {
     pub fn with_local_namespace_fallback(&self) -> String {
         let namespace = self
             .namespace
@@ -26,7 +26,7 @@ impl EnvResourceOrId {
     }
 }
 
-impl FromStr for EnvResourceOrId {
+impl FromStr for ResourceOrIdArg {
     type Err = Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -53,7 +53,7 @@ impl FromStr for EnvResourceOrId {
     }
 }
 
-impl Display for EnvResourceOrId {
+impl Display for ResourceOrIdArg {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let namespace = self
             .namespace

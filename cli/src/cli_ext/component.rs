@@ -24,7 +24,7 @@ impl ComponentCliExt for PluginInterface {
         for resource_path in resources {
             let Ok(metadata) = ResourceMetadata::parse_local(&resource_path) else {
                 eprintln!(
-                    "ERROR: failed to parse metadata for environment at {}",
+                    "ERROR: failed to parse metadata for component at {}",
                     resource_path.to_str().unwrap_or_default()
                 );
                 continue;
@@ -32,12 +32,15 @@ impl ComponentCliExt for PluginInterface {
             if metadata.kind != ResourceKind::Component {
                 continue;
             }
-            let Ok(env) = Self::parse_local(&resource_path) else {
-                eprintln!(
-                    "ERROR: failed to parse environment at {}",
-                    resource_path.to_str().unwrap_or_default()
-                );
-                continue;
+            let env = match Self::parse_local(&resource_path) {
+                Ok(env) => env,
+                Err(e) => {
+                    eprintln!(
+                        "ERROR: failed to parse component at {}: {e:#?}",
+                        resource_path.to_str().unwrap_or_default()
+                    );
+                    continue;
+                }
             };
             components.push(env);
         }
@@ -46,7 +49,7 @@ impl ComponentCliExt for PluginInterface {
 
     fn parse_local(path: &Path) -> eyre::Result<Self> {
         let resource = resource_from_path(path)?;
-        let component_path = path.to_owned().join("package.wasm");
+        let component_path = path.to_owned().join("component.wasm");
         let component_bytes = fs::read(&component_path)?;
         let plugin = Plugin::from_str(&resource.to_string())?;
         let item = Self::from_component_bytes(plugin, component_bytes)?;
@@ -55,7 +58,7 @@ impl ComponentCliExt for PluginInterface {
 
     fn local_fetch(id: &ResourceId) -> eyre::Result<Self> {
         let path = Resource::local_fetch_path(id)?;
-        let environment = Self::parse_local(&path)?;
-        Ok(environment)
+        let component = Self::parse_local(&path)?;
+        Ok(component)
     }
 }
