@@ -11,8 +11,8 @@ impl EnvArgs {
         };
         println!(
             "environment {env_resource} has {plugin_count} components",
-            env_resource = env.resource(),
-            plugin_count = env.plugins().len()
+            env_resource = env.resource,
+            plugin_count = env.plugins.len()
         );
         Ok(())
     }

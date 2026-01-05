@@ -10,8 +10,8 @@ impl EnvArgs {
         for env in envs {
             let line = format!(
                 " - {env_resource}: {plugin_count} components\n",
-                env_resource = env.resource(),
-                plugin_count = env.plugins().len()
+                env_resource = env.resource,
+                plugin_count = env.plugins.len()
             );
             output.push_str(&line);
         }

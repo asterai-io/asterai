@@ -21,11 +21,14 @@ pub trait EnvironmentCliExt: Sized {
 
 impl EnvironmentCliExt for Environment {
     fn local_disk_dir(&self) -> PathBuf {
-        let resource = self.resource();
         BIN_DIR
             .join("resources")
-            .join(resource.namespace())
-            .join(format!("{}@{}", resource.name(), resource.version()))
+            .join(self.resource.namespace())
+            .join(format!(
+                "{}@{}",
+                self.resource.name(),
+                self.resource.version()
+            ))
     }
 
     fn local_disk_file_path(&self) -> PathBuf {
@@ -67,7 +70,7 @@ impl EnvironmentCliExt for Environment {
         let env_json_path = path.to_owned().join("env.json");
         let serialized = fs::read_to_string(&env_json_path)?;
         let environment: Environment = serde_json::from_str(&serialized)?;
-        if *environment.resource() != resource {
+        if environment.resource != resource {
             bail!("env.json resource does not match dir resource data");
         }
         Ok(environment)
