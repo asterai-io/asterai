@@ -1,14 +1,13 @@
 use crate::plugin::Plugin;
 use crate::resource::Resource;
-use derive_getters::Getters;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone, Getters, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Environment {
-    resource: Resource,
-    plugins: HashSet<Plugin>,
-    vars: HashMap<String, String>,
+    pub resource: Resource,
+    pub plugins: HashSet<Plugin>,
+    pub vars: HashMap<String, String>,
 }
 
 impl Environment {

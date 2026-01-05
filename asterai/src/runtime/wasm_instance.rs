@@ -48,7 +48,6 @@ impl PluginRuntimeEngine {
     pub async fn new(
         mut plugins: Vec<PluginInterface>,
         app_id: Uuid,
-        asterai_http_api_origin: String,
         plugin_output_tx: mpsc::Sender<PluginOutput>,
     ) -> eyre::Result<Self> {
         let engine = &ENGINE;
@@ -74,7 +73,6 @@ impl PluginRuntimeEngine {
             wasi_ctx,
             http_ctx,
             table,
-            asterai_http_api_origin,
             plugin_output_tx,
         };
         let mut store = Store::new(engine, host_env);

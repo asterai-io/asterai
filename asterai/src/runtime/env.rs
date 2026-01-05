@@ -16,8 +16,6 @@ pub struct HostEnv {
     pub table: ResourceTable,
     pub wasi_ctx: WasiCtx,
     pub http_ctx: WasiHttpCtx,
-    /// asterai API origin used for querying other agents.
-    pub asterai_http_api_origin: String,
     pub runtime_data: Option<HostEnvRuntimeData>,
     pub plugin_output_tx: mpsc::Sender<PluginOutput>,
 }

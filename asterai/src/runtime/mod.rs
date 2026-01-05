@@ -38,12 +38,9 @@ impl PluginRuntime {
         plugins: Vec<PluginInterface>,
         // TODO: change app ID for resource ID?
         app_id: Uuid,
-        asterai_http_api_origin: String,
         plugin_output_tx: mpsc::Sender<PluginOutput>,
     ) -> eyre::Result<Self> {
-        let instance =
-            PluginRuntimeEngine::new(plugins, app_id, asterai_http_api_origin, plugin_output_tx)
-                .await?;
+        let instance = PluginRuntimeEngine::new(plugins, app_id, plugin_output_tx).await?;
         Ok(Self {
             app_id,
             engine: instance,
