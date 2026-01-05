@@ -25,6 +25,7 @@ pub struct SerializableVal {
 
 /// The runtime which holds all instantiated plugins
 /// within an app.
+/// TODO: rename to EnvironmentRuntime?
 #[derive(Getters)]
 pub struct PluginRuntime {
     app_id: Uuid,
@@ -35,6 +36,7 @@ pub struct PluginRuntime {
 impl PluginRuntime {
     pub async fn new(
         plugins: Vec<PluginInterface>,
+        // TODO: change app ID for resource ID?
         app_id: Uuid,
         asterai_http_api_origin: String,
         plugin_output_tx: mpsc::Sender<PluginOutput>,
