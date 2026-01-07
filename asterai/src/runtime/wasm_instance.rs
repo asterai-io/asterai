@@ -273,6 +273,7 @@ async fn call_wasm_component_function<'a>(
         plugin.id()
     );
     set_last_plugin(plugin, &mut store);
+    // TODO update this to call_concurrent?
     func.call_async(&mut store, args, results)
         .await
         .map_err(|e| {
