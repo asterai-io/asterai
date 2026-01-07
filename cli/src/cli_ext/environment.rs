@@ -53,12 +53,15 @@ impl EnvironmentCliExt for Environment {
             if metadata.kind != ResourceKind::Environment {
                 continue;
             }
-            let Ok(env) = Environment::parse_local(&resource_path) else {
-                eprintln!(
-                    "ERROR: failed to parse environment at {}",
-                    resource_path.to_str().unwrap_or_default()
-                );
-                continue;
+            let env = match Environment::parse_local(&resource_path) {
+                Ok(env) => env,
+                Err(e) => {
+                    eprintln!(
+                        "ERROR: failed to parse environment at {} ({e:#?})",
+                        resource_path.to_str().unwrap_or_default()
+                    );
+                    continue;
+                }
             };
             envs.push(env);
         }

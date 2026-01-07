@@ -7,6 +7,7 @@ pub mod config;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let args = std::env::args().skip(1);
     let command = match Command::parse(args) {
         Ok(c) => c,

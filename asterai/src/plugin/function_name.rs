@@ -2,6 +2,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
+/// The name of a function, which may have an interface or be part of the root
+/// world of the component's package.
+/// Note that this function may be part of the component's own package,
+/// or implement a function defined in an external package.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PluginFunctionName {
     pub interface: Option<String>,

@@ -5,6 +5,7 @@ edition = { workspace = true }
 
 [dependencies]
 tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
 once_cell = { workspace = true }
 eyre = { workspace = true }
 asterai_runtime = { path = "../asterai" }
@@ -12,3 +13,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
+uuid = { workspace = true }

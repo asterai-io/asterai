@@ -1,5 +1,5 @@
 use crate::command::resource_or_id::ResourceOrIdArg;
-use asterai_runtime::resource::ResourceId;
+use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::{bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
@@ -76,7 +76,7 @@ impl EnvArgs {
     /// If a resource name is present, this returns the
     /// `ResourceId` using a fallback namespace if no namespace was given.
     /// Otherwise, if no resource name, it returns an `Err`.
-    /// TODO also add method for Resource (including version).
+    /// TODO should this remove the version if present, or let it fail?.
     fn resource_id(&self) -> eyre::Result<ResourceId> {
         let resource_id_string = self
             .env_resource_or_id
@@ -84,5 +84,15 @@ impl EnvArgs {
             .unwrap()
             .with_local_namespace_fallback();
         ResourceId::from_str(&resource_id_string).map_err(|e| eyre!(e))
+    }
+
+    // TODO if only resource_id available, should this get latest version?
+    fn resource(&self) -> eyre::Result<Resource> {
+        let resource_id_string = self
+            .env_resource_or_id
+            .as_ref()
+            .unwrap()
+            .with_local_namespace_fallback();
+        Resource::from_str(&resource_id_string).map_err(|e| eyre!(e))
     }
 }

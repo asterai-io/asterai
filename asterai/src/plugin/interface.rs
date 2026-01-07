@@ -4,6 +4,7 @@ use derive_getters::Getters;
 use eyre::WrapErr;
 use eyre::{OptionExt, eyre};
 use log::trace;
+use semver::Version;
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt::Debug;
 use std::str::FromStr;
@@ -19,7 +20,8 @@ use wasmtime::{AsContextMut, Engine};
 use wit_bindgen::rt::async_support::futures::StreamExt;
 use wit_parser::decoding::DecodedWasm;
 use wit_parser::{
-    Function, Resolve, Results, Type, TypeDef, TypeDefKind, TypeOwner, World, WorldId, WorldItem,
+    Function, PackageId, PackageName, Resolve, Results, Type, TypeDef, TypeDefKind, TypeOwner,
+    World, WorldId, WorldItem,
 };
 
 /// A Plugin Manifest represents the metadata of a plugin,
@@ -47,6 +49,12 @@ enum ComponentBinary {
 
 #[derive(Getters, Debug, Clone)]
 pub struct PluginFunctionInterface {
+    /// Package name where the function signature is defined.
+    ///
+    /// The package may be the component's own package, e.g. user:my-component or
+    /// an external package, e.g. wasi:cli if the component implements an external
+    /// package's interface, such as wasi:cli's run function for WASI CLI binaries.
+    pub package_name: PackageName,
     pub name: PluginFunctionName,
     /// List of named function inputs and their type defs.
     pub inputs: Vec<(String, TypeDef)>,
@@ -56,6 +64,8 @@ pub struct PluginFunctionInterface {
     /// although they were initially specified.
     /// Instead, a tuple can be used (which is a single wrapper type).
     pub output_type: Option<TypeDef>,
+    /// What component this function belongs to,
+    /// i.e. this includes the package name where the function is implemented.
     pub plugin: Plugin,
 }
 
@@ -159,12 +169,22 @@ impl PluginInterface {
 
     pub fn get_functions(&self) -> Vec<PluginFunctionInterface> {
         let world = self.component_world();
+        let component_package_name = self.plugin.package_name();
         world
             .exports
             .iter()
             .flat_map(|(_, item)| match item {
                 WorldItem::Interface { id, .. } => {
                     let interface = self.component_wit_resolve.interfaces.get(*id).unwrap();
+                    let package_name = match interface.package {
+                        None => component_package_name,
+                        Some(package_id) => {
+                            let package_opt = self.component_wit_resolve.packages.get(package_id);
+                            package_opt
+                                .map(|p| &p.name)
+                                .unwrap_or(component_package_name)
+                        }
+                    };
                     let interface_name = interface.name.clone().unwrap_or_else(|| String::new());
                     interface
                         .functions
@@ -173,12 +193,14 @@ impl PluginInterface {
                             self.map_wit_function_plugin_function(
                                 function,
                                 Some(interface_name.clone()),
+                                package_name.clone(),
                             )
                         })
                         .collect()
                 }
                 WorldItem::Function(function) => {
-                    vec![self.map_wit_function_plugin_function(function, None)]
+                    let package_name = self.plugin.package_name.clone();
+                    vec![self.map_wit_function_plugin_function(function, None, package_name)]
                 }
                 WorldItem::Type(_) => Vec::new(),
             })
@@ -203,6 +225,7 @@ impl PluginInterface {
         &self,
         function: &Function,
         interface_name: Option<String>,
+        package_name: PackageName,
     ) -> PluginFunctionInterface {
         let output_type = {
             if function.results.len() == 0 {
@@ -224,6 +247,7 @@ impl PluginInterface {
             .map(|(name, wit_type)| (name, self.map_type_to_type_def(wit_type)))
             .collect();
         PluginFunctionInterface {
+            package_name,
             name: PluginFunctionName::new(interface_name, function.name.clone()),
             inputs: input_types,
             output_type,
@@ -259,6 +283,25 @@ impl PluginFunctionInterface {
         }
     }
 
+    /// Create a new function for the wasi:cli/run interface used for running binaries.
+    /// TODO define whether to do this
+    pub fn cli_run(plugin: Plugin) -> Self {
+        Self {
+            package_name: PackageName {
+                namespace: "wasi".to_string(),
+                name: "cli".to_string(),
+                version: Some(Version::from_str("0.2.0").unwrap()),
+            },
+            name: PluginFunctionName {
+                interface: Some("wasi".to_owned()),
+                name: "cli".to_owned(),
+            },
+            inputs: vec![],
+            output_type: None,
+            plugin,
+        }
+    }
+
     pub fn get_func(
         &self,
         mut store: impl AsContextMut,
@@ -271,17 +314,26 @@ impl PluginFunctionInterface {
                 .ok_or_eyre(eyre!("function not found"))?;
             return Ok(func);
         };
-        let version_string = self.plugin.version().to_string();
+        let version_string = self
+            .package_name
+            .version
+            .as_ref()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        let package_name = format!("{}:{}", self.package_name.namespace, self.package_name.name);
         // Export name example: asterai:hello/greet@0.2.0
-        let export_name = format!("{}/{}@{version_string}", self.plugin.id(), interface_name);
+        let export_name = format!("{package_name}/{interface_name}@{version_string}");
         trace!("interface export name: {}", export_name);
         let interface_export = instance
             .get_export(&mut store, None, &export_name)
-            .ok_or_eyre(eyre!("interface export not found"))?;
+            .ok_or_eyre(eyre!("interface export '{export_name}' not found"))?;
         trace!("function export name: {}", &self.name);
         let func_export = instance
             .get_export(&mut store, Some(&interface_export), &self.name.name)
-            .ok_or_eyre(eyre!("function export not found"))?;
+            .ok_or_eyre(eyre!(
+                "function export '{export_name}/{}' not found",
+                self.name.name
+            ))?;
         let func = instance
             .get_func(&mut store, &func_export)
             .ok_or_eyre(eyre!("function not found"))?;

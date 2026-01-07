@@ -8,10 +8,12 @@ use wit_parser::TypeDef;
 
 #[derive(Getters, Clone)]
 pub struct PluginOutput {
+    // TODO: rename to structured_output_opt?
     pub function_output_opt: Option<PluginFunctionOutput>,
     /// The output that the agent sees.
     /// This may be an overrided response, or a serialized version
     /// of `function_output_opt`.
+    // TODO: rename to natural_language_output_opt?
     pub plugin_response_to_agent_opt: Option<String>,
 }
 

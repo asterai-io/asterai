@@ -1,14 +1,17 @@
-use crate::plugin::PluginId;
 use crate::plugin::function_name::PluginFunctionName;
 use crate::plugin::interface::{PluginFunctionInterface, PluginInterface};
+use crate::plugin::{Plugin, PluginId};
 use crate::runtime::output::{PluginFunctionOutput, PluginOutput};
 use crate::runtime::wasm_instance::PluginRuntimeEngine;
 use derive_getters::Getters;
+use once_cell::sync::Lazy;
+use semver::Version;
 use serde_json::Value;
 use std::fmt::Debug;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 pub use wasmtime::component::Val;
+use wit_parser::PackageName;
 
 mod entry;
 pub mod env;
@@ -16,6 +19,12 @@ pub mod output;
 mod std_out_err;
 mod wasm_instance;
 mod wit_bindings;
+
+// The `run/run` function, commonly defined by `wasi:cli`.
+static CLI_RUN_FUNCTION_NAME: Lazy<PluginFunctionName> = Lazy::new(|| PluginFunctionName {
+    interface: Some("run".to_owned()),
+    name: "run".to_owned(),
+});
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SerializableVal {
@@ -68,15 +77,40 @@ impl PluginRuntime {
         &self,
         plugin_id: &PluginId,
         function_name: &PluginFunctionName,
+        package_name_opt: Option<PackageName>,
     ) -> Option<PluginFunctionInterface> {
         self.plugin_interfaces().iter().find_map(|interface| {
             if interface.plugin().id() != *plugin_id {
                 return None;
             }
             let functions = interface.get_functions();
-            let function = functions.into_iter().find(|f| &f.name == function_name);
+            let function = functions.into_iter().find(|f| {
+                if let Some(package_name) = &package_name_opt {
+                    // When specified, ensure the package name matches.
+                    if f.package_name != *package_name {
+                        return false;
+                    }
+                }
+                &f.name == function_name
+            });
             function
         })
+    }
+
+    /// Call the `run/run` function, which is commonly defined by `wasi:cli`
+    /// to run CLI components.
+    pub async fn call_run(&mut self, plugin_id: &PluginId) -> eyre::Result<()> {
+        let function = self
+            .find_function(
+                plugin_id,
+                &CLI_RUN_FUNCTION_NAME,
+                // Do not specify a package, as usually this is only implemented once.
+                // e.g. a common target would be wasi:cli@0.2.0
+                None,
+            )
+            .unwrap();
+        self.call_function(function, &[]).await?;
+        Ok(())
     }
 }
 
