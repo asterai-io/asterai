@@ -59,8 +59,8 @@ impl HostOutputStream for PluginStdOutErrWriter {
     fn write(&mut self, buf: Bytes) -> Result<(), wasmtime_wasi::StreamError> {
         let output = String::from_utf8_lossy(&buf);
         let std_type = match self.is_stderr {
-            true => "out",
-            false => "err",
+            true => "err",
+            false => "out",
         };
         let Some(plugin) = self.plugin.clone() else {
             error!(
