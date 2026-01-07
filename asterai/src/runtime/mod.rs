@@ -102,7 +102,7 @@ impl PluginRuntime {
 
     /// Call the `run/run` function, which is commonly defined by `wasi:cli`
     /// to run CLI components.
-    /// TODO: call on ALL plugins concurrently.
+    /// TODO: call on ALL plugins concurrently. Goal is to use `Func::call_concurrent`.
     pub async fn call_run(&mut self, plugin_id: &PluginId) -> eyre::Result<()> {
         let run_function_opt = self.find_function(
             plugin_id,
