@@ -12,7 +12,7 @@ impl EnvArgs {
         println!("running env {resource}");
         let environment = Environment::local_fetch(&resource.id())?;
         let mut runtime = PluginRuntime::from_environment(environment).await?;
-        // TODO: allow passing component, or maybe try to run all components?
+        // TODO: run all components concurrently instead of specifying one.
         let plugin_id = PluginId::from_str("lorenzo:http-server")?;
         runtime.call_run(&plugin_id).await?;
         Ok(())

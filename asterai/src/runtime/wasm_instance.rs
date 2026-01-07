@@ -16,6 +16,7 @@ use uuid::Uuid;
 use wasmtime::component::*;
 use wasmtime::{AsContext, AsContextMut, Config, Engine, Store, StoreContext, StoreContextMut};
 use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi::p2::add_to_linker_async;
 use wasmtime_wasi_http::WasiHttpCtx;
 
 static ENGINE: Lazy<Engine> = Lazy::new(|| {
@@ -26,7 +27,7 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
 
 pub struct PluginRuntimeEngine {
     store: Store<StoreState>,
-    instances: Vec<PluginRuntimeInstance>,
+    pub(super) instances: Vec<PluginRuntimeInstance>,
 }
 
 #[derive(Clone)]
@@ -79,14 +80,15 @@ impl PluginRuntimeEngine {
         let mut linker = Linker::new(engine);
         // Prevent "defined twice" errors.
         linker.allow_shadowing(true);
-        wasmtime_wasi::add_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
+        add_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
         wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
         add_asterai_host_to_linker(&mut linker)?;
         let mut instances = Vec::new();
         // Sort by ascending order of imports count,
         // so that components with no dependencies are added first.
         plugins.sort_by(|a, b| b.get_imports_count().cmp(&a.get_imports_count()));
-        // TODO fix this up.
+        // TODO fix this up. See if possible to link before instantiation,
+        // using Linker::define or Linker::define_instance -- or maybe Grok hallucinated it?
         for interface in plugins.into_iter() {
             trace!("@ interface {}", interface.plugin().id());
             trace!("imports count: {}", interface.get_imports_count());
@@ -220,7 +222,7 @@ impl PluginRuntimeInstance {
                 exported_instance
                     .func_new_async(
                         &func_name_cloned.name,
-                        move |mut store, params, mut results| {
+                        move |mut store, _, params, mut results| {
                             let plugin = plugin.clone();
                             let func_name = func_name.clone();
                             let function_cloned = function.clone();

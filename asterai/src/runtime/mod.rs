@@ -4,6 +4,9 @@ use crate::plugin::{Plugin, PluginId};
 use crate::runtime::output::{PluginFunctionOutput, PluginOutput};
 use crate::runtime::wasm_instance::PluginRuntimeEngine;
 use derive_getters::Getters;
+use eyre::eyre;
+use futures::future::{join_all, try_join_all};
+use log::error;
 use once_cell::sync::Lazy;
 use semver::Version;
 use serde_json::Value;
@@ -99,17 +102,19 @@ impl PluginRuntime {
 
     /// Call the `run/run` function, which is commonly defined by `wasi:cli`
     /// to run CLI components.
+    /// TODO: call on ALL plugins concurrently.
     pub async fn call_run(&mut self, plugin_id: &PluginId) -> eyre::Result<()> {
-        let function = self
-            .find_function(
-                plugin_id,
-                &CLI_RUN_FUNCTION_NAME,
-                // Do not specify a package, as usually this is only implemented once.
-                // e.g. a common target would be wasi:cli@0.2.0
-                None,
-            )
-            .unwrap();
-        self.call_function(function, &[]).await?;
+        let run_function_opt = self.find_function(
+            plugin_id,
+            &CLI_RUN_FUNCTION_NAME,
+            // Do not specify a package, as usually this is only implemented once.
+            // e.g. a common target would be wasi:cli@0.2.0
+            None,
+        );
+        let Some(run_function) = run_function_opt else {
+            return Ok(());
+        };
+        self.call_function(run_function, &[]).await?;
         Ok(())
     }
 }
@@ -209,6 +214,9 @@ impl ValExt for Val {
             Val::Record(_) => todo!(),
             Val::Flags(_) => return None,
             Val::Resource(_) => return None,
+            Val::Future(_) => return None,
+            Val::Stream(_) => return None,
+            Val::ErrorContext(_) => return None,
         };
         Some(value)
     }

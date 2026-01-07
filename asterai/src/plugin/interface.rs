@@ -324,11 +324,11 @@ impl PluginFunctionInterface {
         // Export name example: asterai:hello/greet@0.2.0
         let export_name = format!("{package_name}/{interface_name}@{version_string}");
         trace!("interface export name: {}", export_name);
-        let interface_export = instance
+        let (_, interface_export) = instance
             .get_export(&mut store, None, &export_name)
             .ok_or_eyre(eyre!("interface export '{export_name}' not found"))?;
         trace!("function export name: {}", &self.name);
-        let func_export = instance
+        let (_, func_export) = instance
             .get_export(&mut store, Some(&interface_export), &self.name.name)
             .ok_or_eyre(eyre!(
                 "function export '{export_name}/{}' not found",
@@ -361,11 +361,11 @@ impl PluginFunctionInterface {
         // Export name example: asterai:hello/greet@0.2.0
         let export_name = format!("{}/{}@{version_string}", self.plugin.id(), interface_name);
         trace!("interface export name: {}", export_name);
-        let interface_export = instance
+        let (_, interface_export) = instance
             .get_export(&mut store, None, &export_name)
             .ok_or_eyre(eyre!("interface export not found"))?;
         trace!("function export name: {}", &self.name);
-        let func_export = instance
+        let (_, func_export) = instance
             .get_export(&mut store, Some(&interface_export), &self.name.name)
             .ok_or_eyre(eyre!("function export not found"))?;
         let func = instance
