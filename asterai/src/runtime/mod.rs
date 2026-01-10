@@ -2,7 +2,7 @@ use crate::plugin::function_name::PluginFunctionName;
 use crate::plugin::interface::{PluginFunctionInterface, PluginInterface};
 use crate::plugin::{Plugin, PluginId};
 use crate::runtime::output::{PluginFunctionOutput, PluginOutput};
-use crate::runtime::wasm_instance::PluginRuntimeEngine;
+use crate::runtime::wasm_instance::{PluginRuntimeEngine, call_wasm_component_function_concurrent};
 use derive_getters::Getters;
 use eyre::eyre;
 use futures::future::{join_all, try_join_all};
@@ -13,6 +13,7 @@ use serde_json::Value;
 use std::fmt::Debug;
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use wasmtime::AsContextMut;
 pub use wasmtime::component::Val;
 use wit_parser::PackageName;
 
@@ -100,21 +101,45 @@ impl PluginRuntime {
         })
     }
 
-    /// Call the `run/run` function, which is commonly defined by `wasi:cli`
-    /// to run CLI components.
-    /// TODO: call on ALL plugins concurrently. Goal is to use `Func::call_concurrent`.
-    pub async fn call_run(&mut self, plugin_id: &PluginId) -> eyre::Result<()> {
-        let run_function_opt = self.find_function(
-            plugin_id,
-            &CLI_RUN_FUNCTION_NAME,
-            // Do not specify a package, as usually this is only implemented once.
-            // e.g. a common target would be wasi:cli@0.2.0
-            None,
-        );
-        let Some(run_function) = run_function_opt else {
-            return Ok(());
-        };
-        self.call_function(run_function, &[]).await?;
+    /// Call all the `run` functions concurrently, which is commonly defined by `wasi:cli/run`
+    /// to run CLI components, on all components that implement it.
+    pub async fn run(&mut self) -> eyre::Result<()> {
+        let mut funcs = Vec::new();
+        for instance in &self.engine.instances {
+            let plugin = instance.plugin_interface.plugin().clone();
+            let run_function_opt = self.find_function(
+                &plugin.id(),
+                &CLI_RUN_FUNCTION_NAME,
+                // Do not specify a package, as usually this is only implemented once.
+                // e.g. a common target would be wasi:cli@0.2.0
+                None,
+            );
+            let Some(run_function) = run_function_opt else {
+                return Ok(());
+            };
+            let func = run_function.get_func(&mut self.engine.store, &instance.instance)?;
+            funcs.push((func, run_function.name, plugin));
+        }
+        self.engine
+            .store
+            .run_concurrent(async |a| {
+                for (func, func_name, plugin) in funcs {
+                    let result = call_wasm_component_function_concurrent(
+                        &func,
+                        &func_name,
+                        a,
+                        &[],
+                        &mut vec![Val::Bool(false)],
+                        plugin,
+                    )
+                    .await;
+                    if let Err(e) = result {
+                        error!("{e:#?}");
+                    }
+                }
+            })
+            .await
+            .map_err(|e| eyre!(e))?;
         Ok(())
     }
 }

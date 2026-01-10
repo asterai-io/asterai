@@ -26,7 +26,7 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
 });
 
 pub struct PluginRuntimeEngine {
-    store: Store<StoreState>,
+    pub(super) store: Store<StoreState>,
     pub(super) instances: Vec<PluginRuntimeInstance>,
 }
 
@@ -36,10 +36,8 @@ pub struct PluginRuntimeInstance {
     // in host entry functions.
     pub plugin_interface: PluginInterface,
     pub app_id: Uuid,
-    instance: Instance,
+    pub(super) instance: Instance,
 }
-
-unsafe impl Send for HostEnv {}
 
 // #[derive(Debug)]
 // pub struct StoreState {}
@@ -57,14 +55,8 @@ impl PluginRuntimeEngine {
         // share this context. `WasiCtxBuilder` provides a number of ways to
         // configure what the target program will have access to.
         let wasi_ctx = WasiCtxBuilder::new()
-            .stdout(PluginStdout {
-                app_id,
-                plugin: last_plugin.clone(),
-            })
-            .stderr(PluginStderr {
-                app_id,
-                plugin: last_plugin.clone(),
-            })
+            .stdout(PluginStdout { app_id })
+            .stderr(PluginStderr { app_id })
             .inherit_network()
             .build();
         let http_ctx = WasiHttpCtx::new();
@@ -273,7 +265,6 @@ async fn call_wasm_component_function<'a>(
         plugin.id()
     );
     set_last_plugin(plugin, &mut store);
-    // TODO update this to call_concurrent?
     func.call_async(&mut store, args, results)
         .await
         .map_err(|e| {
@@ -284,13 +275,38 @@ async fn call_wasm_component_function<'a>(
         })?;
     func.post_return_async(&mut store)
         .await
-        .map_err(|e| eyre!("{e:#?}"))?;
+        .map_err(|e| eyre!(e))?;
+    Ok(())
+}
+
+pub async fn call_wasm_component_function_concurrent<'a>(
+    func: &Func,
+    func_name: &PluginFunctionName,
+    accessor: &Accessor<HostEnv>,
+    args: &[Val],
+    results: &mut [Val],
+    plugin: Plugin,
+) -> eyre::Result<()> {
+    let plugin_id = plugin.id().clone();
+    trace!(
+        "calling function '{func_name}' from plugin '{}'",
+        plugin.id()
+    );
+    func.call_concurrent(accessor, args, results)
+        .await
+        .map_err(|e| {
+            eyre!(
+                "failed to call func '{func_name}' from plugin '{}': {e:#?}",
+                plugin_id,
+            )
+        })?;
     Ok(())
 }
 
 /// Set this plugin as the last one called.
 /// This is necessary for knowing the plugin ID in case the function
 /// called accesses host functions such as logging or any other part of the host API.
+/// TODO: this doesnt currently work with concurrent calls, decide whether to keep it.
 fn set_last_plugin(plugin: Plugin, store: &mut StoreContextMut<HostEnv>) {
     *store
         .data_mut()

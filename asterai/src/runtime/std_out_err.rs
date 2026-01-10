@@ -1,28 +1,23 @@
-use crate::plugin::Plugin;
 use log::trace;
 use std::io::Error;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
 use uuid::Uuid;
 use wasmtime_wasi::cli::{IsTerminal, StdoutStream};
-use wiggle::tracing::error;
 
 pub struct PluginStdout {
+    // TODO rename to env?
     pub app_id: Uuid,
-    pub plugin: Arc<Mutex<Option<Plugin>>>,
 }
 
 pub struct PluginStderr {
     pub app_id: Uuid,
-    pub plugin: Arc<Mutex<Option<Plugin>>>,
 }
 
 struct PluginStdOutErrWriter {
     is_stderr: bool,
     app_id: Uuid,
-    plugin: Option<Plugin>,
 }
 
 impl IsTerminal for PluginStdout {
@@ -42,7 +37,6 @@ impl StdoutStream for PluginStdout {
         Box::new(PluginStdOutErrWriter {
             is_stderr: false,
             app_id: self.app_id,
-            plugin: self.plugin.lock().unwrap().clone(),
         })
     }
 }
@@ -52,7 +46,6 @@ impl StdoutStream for PluginStderr {
         Box::new(PluginStdOutErrWriter {
             is_stderr: true,
             app_id: self.app_id,
-            plugin: self.plugin.lock().unwrap().clone(),
         })
     }
 }
@@ -68,18 +61,7 @@ impl AsyncWrite for PluginStdOutErrWriter {
             true => "err",
             false => "out",
         };
-        if let Some(plugin) = self.plugin.clone() {
-            trace!(
-                "[app {}] [plugin {}] [std{std_type}] {output}",
-                self.app_id,
-                plugin.id(),
-            );
-        } else {
-            error!(
-                "received std{std_type} for app {} with missing plugin",
-                self.app_id
-            );
-        }
+        trace!("[app {}] [std{std_type}] {output}", self.app_id,);
         Poll::Ready(Ok(buf.len()))
     }
 
