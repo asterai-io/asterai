@@ -55,7 +55,7 @@ impl ComponentArgs {
                 self.list()?;
             }
             ComponentAction::Pkg => {
-                self.list()?;
+                self.pkg().await?;
             }
         }
         Ok(())
