@@ -90,8 +90,15 @@ impl PluginRuntime {
             let functions = interface.get_functions();
             let function = functions.into_iter().find(|f| {
                 if let Some(package_name) = &package_name_opt {
+                    let is_same_package = f.package_name.name == package_name.name
+                        && f.package_name.namespace == package_name.namespace;
                     // When specified, ensure the package name matches.
-                    if f.package_name != *package_name {
+                    if !is_same_package {
+                        return false;
+                    }
+                    let is_compatible_version = package_name.version.is_none()
+                        || package_name.version == f.package_name.version;
+                    if !is_compatible_version {
                         return false;
                     }
                 }

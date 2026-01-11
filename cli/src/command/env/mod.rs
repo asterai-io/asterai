@@ -1,9 +1,11 @@
 use crate::command::resource_or_id::ResourceOrIdArg;
+use asterai_runtime::plugin::Plugin;
 use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::{bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
+mod call;
 mod init;
 mod inspect;
 mod list;
@@ -12,7 +14,9 @@ mod run;
 pub struct EnvArgs {
     action: EnvAction,
     env_resource_or_id: Option<ResourceOrIdArg>,
-    plugin_name: Option<&'static str>,
+    plugin: Option<Plugin>,
+    function: Option<String>,
+    function_args: Vec<String>,
     env_var: Option<&'static str>,
 }
 
@@ -20,6 +24,7 @@ pub struct EnvArgs {
 #[strum(serialize_all = "kebab-case")]
 pub enum EnvAction {
     Run,
+    Call,
     Init,
     Inspect,
     List,
@@ -42,13 +47,28 @@ impl EnvArgs {
             action @ (EnvAction::Run | EnvAction::Inspect | EnvAction::Init) => Self {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
-                plugin_name: None,
+                plugin: None,
+                function: None,
+                function_args: vec![],
+                env_var: None,
+            },
+            EnvAction::Call => Self {
+                action,
+                env_resource_or_id: Some(parse_env_name_or_id()?),
+                plugin: Some(
+                    Plugin::from_str(&args.next().expect("missing component name"))
+                        .expect("invalid component name"),
+                ),
+                function: Some(args.next().expect("missing function")),
+                function_args: args.collect::<Vec<_>>(),
                 env_var: None,
             },
             EnvAction::List => Self {
                 action,
                 env_resource_or_id: None,
-                plugin_name: None,
+                plugin: None,
+                function: None,
+                function_args: vec![],
                 env_var: None,
             },
         };
@@ -68,6 +88,9 @@ impl EnvArgs {
             }
             EnvAction::List => {
                 self.list()?;
+            }
+            EnvAction::Call => {
+                self.call().await?;
             }
         }
         Ok(())
