@@ -283,25 +283,6 @@ impl PluginFunctionInterface {
         }
     }
 
-    /// Create a new function for the wasi:cli/run interface used for running binaries.
-    /// TODO define whether to do this
-    pub fn cli_run(plugin: Plugin) -> Self {
-        Self {
-            package_name: PackageName {
-                namespace: "wasi".to_string(),
-                name: "cli".to_string(),
-                version: Some(Version::from_str("0.2.0").unwrap()),
-            },
-            name: PluginFunctionName {
-                interface: Some("wasi".to_owned()),
-                name: "cli".to_owned(),
-            },
-            inputs: vec![],
-            output_type: None,
-            plugin,
-        }
-    }
-
     pub fn get_func(
         &self,
         mut store: impl AsContextMut,
