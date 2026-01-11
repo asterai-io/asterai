@@ -1,3 +1,4 @@
+use crate::command::component::pkg::PkgArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
 use asterai_runtime::resource::ResourceId;
 use eyre::{bail, eyre};
@@ -5,18 +6,21 @@ use std::str::FromStr;
 use strum_macros::EnumString;
 
 pub mod list;
+pub mod pkg;
 
 pub struct ComponentArgs {
     action: ComponentAction,
     component_resource_or_id: Option<ResourceOrIdArg>,
     plugin_name: Option<&'static str>,
     env_var: Option<&'static str>,
+    pkg_args: Option<PkgArgs>,
 }
 
 #[derive(Copy, Clone, EnumString)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ComponentAction {
     List,
+    Pkg,
 }
 
 impl ComponentArgs {
@@ -32,6 +36,14 @@ impl ComponentArgs {
                 component_resource_or_id: None,
                 plugin_name: None,
                 env_var: None,
+                pkg_args: None,
+            },
+            ComponentAction::Pkg => Self {
+                action,
+                component_resource_or_id: None,
+                plugin_name: None,
+                env_var: None,
+                pkg_args: Some(PkgArgs::parse(args)?),
             },
         };
         Ok(env_args)
@@ -40,6 +52,9 @@ impl ComponentArgs {
     pub async fn execute(&self) -> eyre::Result<()> {
         match self.action {
             ComponentAction::List => {
+                self.list()?;
+            }
+            ComponentAction::Pkg => {
                 self.list()?;
             }
         }
