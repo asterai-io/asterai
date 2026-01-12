@@ -11,7 +11,7 @@ Environment commands:
   asterai env init <name>                          Create a new local environment project
   asterai env run <name>                           Run the environment locally (Ctrl+C to stop)
   asterai env call <name> <component> <fn> [args]  Call a function in the given environment
-  asterai env publish <name>                       Publish the local environment <name> to the registry
+  asterai env push <name>                          Push the local environment <name> to the registry
   asterai env list                                 List all environments you have write access to
                                                    (shows local and published; tags indicate status)
   asterai env inspect <name>                       Show components, env vars, and metadata
@@ -22,6 +22,6 @@ Environment commands:
 Component commands:
   asterai component init <name> [language]         Scaffold a new local WASM component project
   asterai component pkg                            Package the component's WIT into a WASM package.
-  asterai component publish                        Publish the current component (from project dir) to registry
+  asterai component push                           Push the current component (from project dir) to the registry
   asterai component list                           List all components you have write access to
                                                    (shows local and published; tags indicate status)
