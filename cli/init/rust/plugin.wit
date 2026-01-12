@@ -1,0 +1,10 @@
+package your-username:greeter@0.1.0;
+
+interface greeter {
+  greet: func(name: string);
+}
+
+world plugin {
+  import asterai:host/api@0.1.0;
+  export greeter;
+}

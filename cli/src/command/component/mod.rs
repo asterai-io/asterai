@@ -1,3 +1,4 @@
+use crate::command::component::init::InitArgs;
 use crate::command::component::pkg::PkgArgs;
 use crate::command::component::push::PushArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
@@ -6,6 +7,7 @@ use eyre::{bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
+pub mod init;
 pub mod list;
 pub mod pkg;
 pub mod push;
@@ -18,11 +20,13 @@ pub struct ComponentArgs {
     env_var: Option<&'static str>,
     pkg_args: Option<PkgArgs>,
     push_args: Option<PushArgs>,
+    init_args: Option<InitArgs>,
 }
 
 #[derive(Debug, Copy, Clone, EnumString)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ComponentAction {
+    Init,
     List,
     Pkg,
     Push,
@@ -36,6 +40,15 @@ impl ComponentArgs {
         let action =
             ComponentAction::from_str(&action_string).map_err(|_| eyre!("unknown env action"))?;
         let command_args = match action {
+            ComponentAction::Init => Self {
+                action,
+                component_resource_or_id: None,
+                plugin_name: None,
+                env_var: None,
+                pkg_args: None,
+                push_args: None,
+                init_args: Some(InitArgs::parse(args)?),
+            },
             ComponentAction::List => Self {
                 action,
                 component_resource_or_id: None,
@@ -43,6 +56,7 @@ impl ComponentArgs {
                 env_var: None,
                 pkg_args: None,
                 push_args: None,
+                init_args: None,
             },
             ComponentAction::Pkg => Self {
                 action,
@@ -51,6 +65,7 @@ impl ComponentArgs {
                 env_var: None,
                 pkg_args: Some(PkgArgs::parse(args)?),
                 push_args: None,
+                init_args: None,
             },
             ComponentAction::Push => Self {
                 action,
@@ -59,6 +74,7 @@ impl ComponentArgs {
                 env_var: None,
                 pkg_args: None,
                 push_args: Some(PushArgs::parse(args)?),
+                init_args: None,
             },
         };
         Ok(command_args)
@@ -66,6 +82,9 @@ impl ComponentArgs {
 
     pub async fn execute(&self) -> eyre::Result<()> {
         match self.action {
+            ComponentAction::Init => {
+                self.init()?;
+            }
             ComponentAction::List => {
                 self.list()?;
             }
