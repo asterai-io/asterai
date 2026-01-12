@@ -12,7 +12,6 @@ const RETRY_FIND_FILE_DIR: &str = "build/";
 pub(super) struct PushArgs {
     plugin: String,
     pkg: String,
-    agent: Option<String>,
     endpoint: String,
     staging: bool,
 }
@@ -21,15 +20,10 @@ impl PushArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut plugin = "plugin.wasm".to_string();
         let mut pkg = "package.wasm".to_string();
-        let mut agent = None;
         let mut endpoint = BASE_API_URL.to_string();
         let mut staging = false;
-
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "-a" | "--agent" => {
-                    agent = Some(args.next().ok_or_eyre("missing value for agent flag")?);
-                }
                 "-e" | "--endpoint" => {
                     endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
                 }
@@ -45,11 +39,9 @@ impl PushArgs {
                 _ => bail!("unknown flag: {}", arg),
             }
         }
-
         Ok(Self {
             plugin,
             pkg,
-            agent,
             endpoint,
             staging,
         })
@@ -77,19 +69,12 @@ impl PushArgs {
                     .file_name("package.wasm")
                     .mime_str("application/octet-stream")?,
             );
-
-        // Add agent_id if provided
-        if let Some(agent_id) = &self.agent {
-            form = form.text("agent_id", agent_id.clone());
-        }
-
         // Determine base URL
         let base_url = if self.staging {
             BASE_API_URL_STAGING
         } else {
             &self.endpoint
         };
-
         // Send request
         let response = client
             .put(format!("{}/v1/plugin", base_url))
