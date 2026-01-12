@@ -1,10 +1,11 @@
 use crate::command::component::ComponentArgs;
-use eyre::{bail, Context, OptionExt};
+use eyre::{Context, OptionExt, bail};
+use include_dir::{Dir, include_dir};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-const INIT_TYPESCRIPT_DIR: &str = "init/typescript";
-const INIT_RUST_DIR: &str = "init/rust";
+static TYPESCRIPT_TEMPLATE: Dir = include_dir!("$CARGO_MANIFEST_DIR/init/typescript");
+static RUST_TEMPLATE: Dir = include_dir!("$CARGO_MANIFEST_DIR/init/rust");
 
 #[derive(Debug)]
 pub(super) struct InitArgs {
@@ -48,8 +49,13 @@ impl InitArgs {
         // Validate flags
         self.validate_language_flags()?;
 
-        // Determine source directory
-        let source_dir = self.get_source_dir()?;
+        // Get the template
+        let template = if self.rust {
+            &RUST_TEMPLATE
+        } else {
+            // Typescript is default
+            &TYPESCRIPT_TEMPLATE
+        };
 
         // Resolve output directory
         let out_dir = fs::canonicalize(".")
@@ -60,9 +66,9 @@ impl InitArgs {
             bail!("output directory already exists: {:?}", out_dir);
         }
 
-        // Copy template directory
-        copy_dir_recursive(&source_dir, &out_dir)
-            .wrap_err_with(|| format!("failed to copy template from {:?} to {:?}", source_dir, out_dir))?;
+        // Extract template to output directory
+        extract_template(template, &out_dir)
+            .wrap_err_with(|| format!("failed to extract template to {:?}", out_dir))?;
 
         println!("Initialized plugin project at {:?}", out_dir);
         Ok(())
@@ -83,41 +89,6 @@ impl InitArgs {
 
         Ok(())
     }
-
-    fn get_source_dir(&self) -> eyre::Result<PathBuf> {
-        // Get the executable's directory
-        let exe_path = std::env::current_exe()
-            .wrap_err("failed to get executable path")?;
-        let exe_dir = exe_path.parent()
-            .ok_or_eyre("failed to get executable directory")?;
-
-        // Try relative to executable first (for installed binary)
-        let template_dir = if self.rust {
-            INIT_RUST_DIR
-        } else {
-            // Typescript is default
-            INIT_TYPESCRIPT_DIR
-        };
-
-        let source_dir = exe_dir.join(template_dir);
-        if source_dir.exists() {
-            return Ok(source_dir);
-        }
-
-        // Try relative to current directory (for development)
-        let source_dir = PathBuf::from("cli").join(template_dir);
-        if source_dir.exists() {
-            return Ok(source_dir);
-        }
-
-        // Try relative to workspace root
-        let source_dir = PathBuf::from("..").join("cli").join(template_dir);
-        if source_dir.exists() {
-            return Ok(source_dir);
-        }
-
-        bail!("could not find template directory: {}", template_dir);
-    }
 }
 
 impl ComponentArgs {
@@ -127,24 +98,25 @@ impl ComponentArgs {
     }
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> eyre::Result<()> {
-    fs::create_dir_all(dst)
-        .wrap_err_with(|| format!("failed to create directory: {:?}", dst))?;
+fn extract_template(template: &Dir, dst: &Path) -> eyre::Result<()> {
+    fs::create_dir_all(dst).wrap_err_with(|| format!("failed to create directory: {:?}", dst))?;
 
-    for entry in fs::read_dir(src)
-        .wrap_err_with(|| format!("failed to read directory: {:?}", src))?
-    {
-        let entry = entry.wrap_err("failed to read directory entry")?;
-        let path = entry.path();
-        let file_name = entry.file_name();
-        let dst_path = dst.join(&file_name);
-
-        if path.is_dir() {
-            copy_dir_recursive(&path, &dst_path)?;
-        } else {
-            fs::copy(&path, &dst_path)
-                .wrap_err_with(|| format!("failed to copy file from {:?} to {:?}", path, dst_path))?;
+    // Extract all files from the embedded directory
+    for file in template.files() {
+        let file_path = dst.join(file.path());
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent)
+                .wrap_err_with(|| format!("failed to create parent directory: {:?}", parent))?;
         }
+        fs::write(&file_path, file.contents())
+            .wrap_err_with(|| format!("failed to write file: {:?}", file_path))?;
+    }
+
+    // Extract all directories
+    for dir in template.dirs() {
+        let dir_path = dst.join(dir.path());
+        fs::create_dir_all(&dir_path)
+            .wrap_err_with(|| format!("failed to create directory: {:?}", dir_path))?;
     }
 
     Ok(())

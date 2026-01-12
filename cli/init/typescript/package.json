@@ -12,7 +12,7 @@
     "compile": "tsc",
     "componentize": "jco componentize build/plugin.js -w build/package.wit -n plugin -o build/plugin.wasm",
     "build": "run-s gen:pkg gen:types compile componentize",
-    "deploy": "asterai deploy"
+    "deploy": "asterai component push"
   },
   "devDependencies": {
     "@asterai/cli": "latest",
