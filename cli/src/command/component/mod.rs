@@ -1,4 +1,5 @@
 use crate::command::component::pkg::PkgArgs;
+use crate::command::component::push::PushArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
 use asterai_runtime::resource::ResourceId;
 use eyre::{bail, eyre};
@@ -7,6 +8,7 @@ use strum_macros::EnumString;
 
 pub mod list;
 pub mod pkg;
+pub mod push;
 
 #[derive(Debug)]
 pub struct ComponentArgs {
@@ -15,6 +17,7 @@ pub struct ComponentArgs {
     plugin_name: Option<&'static str>,
     env_var: Option<&'static str>,
     pkg_args: Option<PkgArgs>,
+    push_args: Option<PushArgs>,
 }
 
 #[derive(Debug, Copy, Clone, EnumString)]
@@ -22,6 +25,7 @@ pub struct ComponentArgs {
 pub enum ComponentAction {
     List,
     Pkg,
+    Push,
 }
 
 impl ComponentArgs {
@@ -38,6 +42,7 @@ impl ComponentArgs {
                 plugin_name: None,
                 env_var: None,
                 pkg_args: None,
+                push_args: None,
             },
             ComponentAction::Pkg => Self {
                 action,
@@ -45,6 +50,15 @@ impl ComponentArgs {
                 plugin_name: None,
                 env_var: None,
                 pkg_args: Some(PkgArgs::parse(args)?),
+                push_args: None,
+            },
+            ComponentAction::Push => Self {
+                action,
+                component_resource_or_id: None,
+                plugin_name: None,
+                env_var: None,
+                pkg_args: None,
+                push_args: Some(PushArgs::parse(args)?),
             },
         };
         Ok(command_args)
@@ -57,6 +71,9 @@ impl ComponentArgs {
             }
             ComponentAction::Pkg => {
                 self.pkg().await?;
+            }
+            ComponentAction::Push => {
+                self.push().await?;
             }
         }
         Ok(())
