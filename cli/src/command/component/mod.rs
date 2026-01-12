@@ -8,6 +8,7 @@ use strum_macros::EnumString;
 pub mod list;
 pub mod pkg;
 
+#[derive(Debug)]
 pub struct ComponentArgs {
     action: ComponentAction,
     component_resource_or_id: Option<ResourceOrIdArg>,
@@ -16,7 +17,7 @@ pub struct ComponentArgs {
     pkg_args: Option<PkgArgs>,
 }
 
-#[derive(Copy, Clone, EnumString)]
+#[derive(Debug, Copy, Clone, EnumString)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ComponentAction {
     List,
@@ -30,7 +31,7 @@ impl ComponentArgs {
         };
         let action =
             ComponentAction::from_str(&action_string).map_err(|_| eyre!("unknown env action"))?;
-        let env_args = match action {
+        let command_args = match action {
             ComponentAction::List => Self {
                 action,
                 component_resource_or_id: None,
@@ -46,7 +47,7 @@ impl ComponentArgs {
                 pkg_args: Some(PkgArgs::parse(args)?),
             },
         };
-        Ok(env_args)
+        Ok(command_args)
     }
 
     pub async fn execute(&self) -> eyre::Result<()> {

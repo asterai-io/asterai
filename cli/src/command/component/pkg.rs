@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 const BASE_API_URL: &str = "https://api.asterai.io";
 
+#[derive(Debug)]
 pub(super) struct PkgArgs {
     wit_input_path: String,
     endpoint: String,
@@ -15,10 +16,10 @@ pub(super) struct PkgArgs {
 
 impl PkgArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
-        let wit_input_path = args.next().unwrap_or_else(|| "plugin.wit".to_string());
+        let mut wit_input_path = None;
         let mut endpoint = BASE_API_URL.to_string();
         let mut output = "package.wasm".to_string();
-        let mut wit = Some("package.wit".to_string());
+        let mut wit = None;
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "-o" | "--output" => {
@@ -30,11 +31,17 @@ impl PkgArgs {
                 "-e" | "--endpoint" => {
                     endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
                 }
-                _ => bail!("unknown flag: {}", arg),
+                _ => {
+                    if wit_input_path.is_none() {
+                        wit_input_path = Some(arg);
+                    } else {
+                        bail!("unexpected argument: {}", arg);
+                    }
+                }
             }
         }
         Ok(Self {
-            wit_input_path,
+            wit_input_path: wit_input_path.unwrap_or_else(|| "plugin.wit".to_string()),
             endpoint,
             output,
             wit,
