@@ -20,7 +20,7 @@ pub enum Command {
 impl Command {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let Some(first_token) = args.next() else {
-            bail!("no input");
+            return Ok(Self::Help);
         };
         match first_token.as_str() {
             "auth" => AuthArgs::parse(args).map(Self::Auth),
