@@ -14,6 +14,16 @@ impl EnvArgs {
             env_resource = env.resource,
             plugin_count = env.components.len()
         );
+        if env.components.is_empty() {
+            println!("components: (none)");
+            return Ok(());
+        }
+        let mut components: Vec<_> = env.components.iter().map(|component| component.to_string()).collect();
+        components.sort();
+        println!("components:");
+        for component in components {
+            println!(" - {component}");
+        }
         Ok(())
     }
 }
