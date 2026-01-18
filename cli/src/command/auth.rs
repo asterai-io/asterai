@@ -21,6 +21,9 @@ impl AuthArgs {
                 let api_key = args
                     .next()
                     .ok_or_else(|| eyre::eyre!("missing <api-key> argument"))?;
+                if api_key.trim().len() < 3 {
+                    bail!("invalid api key (too short)");
+                }
                 Ok(Self {
                     action: AuthAction::Login(api_key),
                 })
