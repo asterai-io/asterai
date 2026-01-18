@@ -10,6 +10,7 @@ mod call;
 mod init;
 mod inspect;
 mod list;
+mod remove;
 mod run;
 
 pub struct EnvArgs {
@@ -30,6 +31,7 @@ pub enum EnvAction {
     Inspect,
     List,
     Add,
+    Remove,
 }
 
 impl EnvArgs {
@@ -67,20 +69,19 @@ impl EnvArgs {
             },
             EnvAction::Add => {
                 let env_resource_or_id = parse_env_name_or_id()?;
-                let mut component = None;
-                while let Some(arg) = args.next() {
-                    match arg.as_str() {
-                        "--component" => {
-                            let component_string =
-                                args.next().ok_or_eyre("missing value for component flag")?;
-                            let parsed_component =
-                                Component::from_str(&component_string).map_err(|e| eyre!(e))?;
-                            component = Some(parsed_component);
-                        }
-                        _ => bail!("unknown flag: {}", arg),
-                    }
+                let component = parse_component_flag(&mut args)?;
+                Self {
+                    action,
+                    env_resource_or_id: Some(env_resource_or_id),
+                    component: Some(component),
+                    function: None,
+                    function_args: vec![],
+                    env_var: None,
                 }
-                let component = component.ok_or_eyre("missing component flag")?;
+            }
+            EnvAction::Remove => {
+                let env_resource_or_id = parse_env_name_or_id()?;
+                let component = parse_component_flag(&mut args)?;
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
@@ -122,6 +123,9 @@ impl EnvArgs {
             EnvAction::Add => {
                 self.add()?;
             }
+            EnvAction::Remove => {
+                self.remove()?;
+            }
         }
         Ok(())
     }
@@ -148,4 +152,19 @@ impl EnvArgs {
             .with_local_namespace_fallback();
         Resource::from_str(&resource_id_string).map_err(|e| eyre!(e))
     }
+}
+
+fn parse_component_flag(args: &mut impl Iterator<Item = String>) -> eyre::Result<Component> {
+    let mut component = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--component" => {
+                let component_string = args.next().ok_or_eyre("missing value for component flag")?;
+                let parsed_component = Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                component = Some(parsed_component);
+            }
+            _ => bail!("unknown flag: {}", arg),
+        }
+    }
+    component.ok_or_eyre("missing component flag")
 }
