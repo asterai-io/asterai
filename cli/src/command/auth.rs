@@ -47,7 +47,11 @@ impl AuthArgs {
                 Auth::clear_api_key()?;
             }
             AuthAction::Status => {
-                unimplemented!()
+                if Auth::read_stored_api_key().is_none() {
+                    println!("you are logged out");
+                } else {
+                    unimplemented!()
+                }
             }
         }
         Ok(())
