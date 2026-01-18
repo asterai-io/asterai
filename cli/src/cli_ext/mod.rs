@@ -3,6 +3,7 @@ use eyre::eyre;
 use std::path::Path;
 
 pub mod component;
+pub mod component_binary;
 pub mod component_runtime;
 pub mod environment;
 pub mod resource;

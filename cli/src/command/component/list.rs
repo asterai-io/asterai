@@ -1,4 +1,4 @@
-use crate::cli_ext::component::ComponentCliExt;
+use crate::cli_ext::component_binary::ComponentBinaryCliExt;
 use crate::command::component::ComponentArgs;
 use asterai_runtime::component::interface::ComponentBinary;
 
