@@ -17,6 +17,7 @@ pub trait EnvironmentCliExt: Sized {
     fn parse_local(path: &Path) -> eyre::Result<Self>;
     /// Fetches the most recent with the given ID.
     fn local_fetch(id: &ResourceId) -> eyre::Result<Self>;
+    fn write_to_disk(&self) -> eyre::Result<()>;
 }
 
 impl EnvironmentCliExt for Environment {
@@ -83,5 +84,13 @@ impl EnvironmentCliExt for Environment {
         let path = Resource::local_fetch_path(id)?;
         let environment = Self::parse_local(&path)?;
         Ok(environment)
+    }
+
+    fn write_to_disk(&self) -> eyre::Result<()> {
+        let serialized = serde_json::to_string(&self)?;
+        let file_path = self.local_disk_file_path();
+        fs::create_dir_all(self.local_disk_dir())?;
+        fs::write(file_path, serialized)?;
+        Ok(())
     }
 }
