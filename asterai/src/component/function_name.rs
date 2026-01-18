@@ -63,6 +63,6 @@ impl<'de> Deserialize<'de> for ComponentFunctionName {
     {
         let s = String::deserialize(deserializer)?;
         ComponentFunctionName::from_str(s.as_str())
-            .map_err(|_| serde::de::Error::custom(format!("invalid plugin function name: {s}")))
+            .map_err(|_| serde::de::Error::custom(format!("invalid component function name: {s}")))
     }
 }

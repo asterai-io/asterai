@@ -67,7 +67,7 @@ pub async fn build_component_wit_pkg(
         Some(v) => format!("@{v}"),
     };
     info!(
-        "built plugin wit pkg bin: {pkg_ref}{version_string} ({} bytes)",
+        "built component wit pkg bin: {pkg_ref}{version_string} ({} bytes)",
         pkg_bin_bytes.len()
     );
     Ok(pkg_bin_bytes)

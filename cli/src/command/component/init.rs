@@ -39,7 +39,7 @@ impl InitArgs {
         }
 
         Ok(Self {
-            out_dir: out_dir.unwrap_or_else(|| "plugin".to_string()),
+            out_dir: out_dir.unwrap_or_else(|| "component".to_string()),
             rust,
             typescript,
         })
@@ -70,7 +70,7 @@ impl InitArgs {
         extract_template(template, &out_dir)
             .wrap_err_with(|| format!("failed to extract template to {:?}", out_dir))?;
 
-        println!("Initialized plugin project at {:?}", out_dir);
+        println!("Initialized component project at {:?}", out_dir);
         Ok(())
     }
 

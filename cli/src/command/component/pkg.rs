@@ -41,7 +41,7 @@ impl PkgArgs {
             }
         }
         Ok(Self {
-            wit_input_path: wit_input_path.unwrap_or_else(|| "plugin.wit".to_string()),
+            wit_input_path: wit_input_path.unwrap_or_else(|| "component.wit".to_string()),
             endpoint,
             output,
             wit,

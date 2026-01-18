@@ -13,7 +13,7 @@ use std::str::FromStr;
 impl EnvArgs {
     pub async fn call(&self) -> eyre::Result<()> {
         let resource = self.resource()?;
-        let component = self.plugin.as_ref().unwrap();
+        let component = self.component.as_ref().unwrap();
         let function_string = self.function.clone().unwrap();
         println!("calling env {resource}'s {component} component function {function_string}");
         let environment = Environment::local_fetch(&resource.id())?;

@@ -30,7 +30,7 @@ impl Serialize for ComponentFunctionOutput {
         S: Serializer,
     {
         let mut state = serializer.serialize_struct("ComponentOutput", 4)?;
-        state.serialize_field("plugin", &self.function_interface.component().id())?;
+        state.serialize_field("component", &self.function_interface.component().id())?;
         state.serialize_field(
             "version",
             &self.function_interface.component().version().to_string(),
@@ -140,7 +140,7 @@ mod test {
     use wit_parser::{TypeDefKind, TypeOwner};
 
     #[test]
-    fn test_serialize_plugin_function_output_struct() {
+    fn test_serialize_component_function_output_struct() {
         let output = ComponentFunctionOutput {
             type_def: TypeDef {
                 name: None,
@@ -157,16 +157,21 @@ mod test {
                 name: ComponentFunctionName::from_str("important_function").unwrap(),
                 inputs: vec![],
                 output_type: None,
-                plugin: Component::from_str("namespace:plugin@0.1.0").unwrap(),
+                component: Component::from_str("namespace:component@0.1.0").unwrap(),
+                package_name: wit_parser::PackageName {
+                    namespace: "namespace".to_owned(),
+                    name: "component".to_owned(),
+                    version: Some(semver::Version::new(0, 1, 0)),
+                },
             },
         };
         let serialized = serde_json::to_string(&output).unwrap();
-        let expected = r#"{"plugin":"namespace:plugin","version":"0.1.0","function":"important_function","value":{"foo":"bar"}}"#;
+        let expected = r#"{"component":"namespace:component","version":"0.1.0","function":"important_function","value":{"foo":"bar"}}"#;
         assert_eq!(serialized, expected);
     }
 
     #[test]
-    fn test_serialize_plugin_function_output_number() {
+    fn test_serialize_component_function_output_number() {
         let output = ComponentFunctionOutput {
             type_def: TypeDef {
                 name: None,
@@ -183,11 +188,16 @@ mod test {
                 name: ComponentFunctionName::from_str("important_function").unwrap(),
                 inputs: vec![],
                 output_type: None,
-                plugin: Component::from_str("namespace:plugin@0.1.0").unwrap(),
+                component: Component::from_str("namespace:component@0.1.0").unwrap(),
+                package_name: wit_parser::PackageName {
+                    namespace: "namespace".to_owned(),
+                    name: "component".to_owned(),
+                    version: Some(semver::Version::new(0, 1, 0)),
+                },
             },
         };
         let serialized = serde_json::to_string(&output).unwrap();
-        let expected = r#"{"plugin":"namespace:plugin","version":"0.1.0","function":"important_function","value":1337}"#;
+        let expected = r#"{"component":"namespace:component","version":"0.1.0","function":"important_function","value":1337}"#;
         assert_eq!(serialized, expected);
     }
 }

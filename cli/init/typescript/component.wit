@@ -1,6 +1,6 @@
 package example:math@0.1.0;
 
-world plugin {
+world component {
   import asterai:host/api@0.1.0;
 
   export mul: func(a: f32, b: f32) -> binary-operation-result;

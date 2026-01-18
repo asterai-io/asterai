@@ -16,7 +16,7 @@ pub mod push;
 pub struct ComponentArgs {
     action: ComponentAction,
     component_resource_or_id: Option<ResourceOrIdArg>,
-    plugin_name: Option<&'static str>,
+    component_name: Option<&'static str>,
     env_var: Option<&'static str>,
     pkg_args: Option<PkgArgs>,
     push_args: Option<PushArgs>,
@@ -43,7 +43,7 @@ impl ComponentArgs {
             ComponentAction::Init => Self {
                 action,
                 component_resource_or_id: None,
-                plugin_name: None,
+                component_name: None,
                 env_var: None,
                 pkg_args: None,
                 push_args: None,
@@ -52,7 +52,7 @@ impl ComponentArgs {
             ComponentAction::List => Self {
                 action,
                 component_resource_or_id: None,
-                plugin_name: None,
+                component_name: None,
                 env_var: None,
                 pkg_args: None,
                 push_args: None,
@@ -61,7 +61,7 @@ impl ComponentArgs {
             ComponentAction::Pkg => Self {
                 action,
                 component_resource_or_id: None,
-                plugin_name: None,
+                component_name: None,
                 env_var: None,
                 pkg_args: Some(PkgArgs::parse(args)?),
                 push_args: None,
@@ -70,7 +70,7 @@ impl ComponentArgs {
             ComponentAction::Push => Self {
                 action,
                 component_resource_or_id: None,
-                plugin_name: None,
+                component_name: None,
                 env_var: None,
                 pkg_args: None,
                 push_args: Some(PushArgs::parse(args)?),

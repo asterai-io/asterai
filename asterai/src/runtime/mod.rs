@@ -72,10 +72,10 @@ impl ComponentRuntime {
 
     pub async fn call_function(
         &mut self,
-        plugin_manifest_function: ComponentFunctionInterface,
+        component_manifest_function: ComponentFunctionInterface,
         inputs: &[Val],
     ) -> eyre::Result<Option<ComponentOutput>> {
-        let output_opt = self.engine.call(plugin_manifest_function, inputs).await?;
+        let output_opt = self.engine.call(component_manifest_function, inputs).await?;
         Ok(output_opt)
     }
 
@@ -156,11 +156,11 @@ impl ComponentRuntime {
 impl ComponentOutput {
     pub fn from(
         val_opt: Option<Val>,
-        plugin_function_interface: ComponentFunctionInterface,
+        component_function_interface: ComponentFunctionInterface,
         component_response_to_agent_opt: Option<String>,
     ) -> Option<ComponentOutput> {
         let function_output_opt = val_opt.and_then(|val| {
-            plugin_function_interface
+            component_function_interface
                 .clone()
                 .output_type
                 .map(|type_def| {
@@ -168,7 +168,7 @@ impl ComponentOutput {
                     ComponentFunctionOutput {
                         type_def,
                         value: SerializableVal { name, val },
-                        function_interface: plugin_function_interface,
+                        function_interface: component_function_interface,
                     }
                 })
         });

@@ -25,10 +25,10 @@ impl ComponentRuntimeCliExt for ComponentRuntime {
         }
         // TODO update this according to new API.
         let app_id = Uuid::new_v4();
-        let (plugin_output_tx, mut plugin_output_rx) = mpsc::channel(32);
+        let (component_output_tx, mut component_output_rx) = mpsc::channel(32);
         // Just drain the messages for now. TODO add to this fn's arg?
-        tokio::spawn(async move { while let Some(_) = plugin_output_rx.recv().await {} });
-        ComponentRuntime::new(components, app_id, plugin_output_tx).await
+        tokio::spawn(async move { while let Some(_) = component_output_rx.recv().await {} });
+        ComponentRuntime::new(components, app_id, component_output_tx).await
     }
 }
 

@@ -50,8 +50,8 @@ impl ComponentCliExt for ComponentInterface {
         let resource = resource_from_path(path)?;
         let component_path = path.to_owned().join("component.wasm");
         let component_bytes = fs::read(&component_path)?;
-        let plugin = Component::from_str(&resource.to_string())?;
-        let item = Self::from_component_bytes(plugin, component_bytes)?;
+        let component = Component::from_str(&resource.to_string())?;
+        let item = Self::from_component_bytes(component, component_bytes)?;
         Ok(item)
     }
 

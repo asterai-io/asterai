@@ -14,7 +14,7 @@ mod run;
 pub struct EnvArgs {
     action: EnvAction,
     env_resource_or_id: Option<ResourceOrIdArg>,
-    plugin: Option<Component>,
+    component: Option<Component>,
     function: Option<String>,
     function_args: Vec<String>,
     env_var: Option<&'static str>,
@@ -47,7 +47,7 @@ impl EnvArgs {
             action @ (EnvAction::Run | EnvAction::Inspect | EnvAction::Init) => Self {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
-                plugin: None,
+                component: None,
                 function: None,
                 function_args: vec![],
                 env_var: None,
@@ -55,7 +55,7 @@ impl EnvArgs {
             EnvAction::Call => Self {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
-                plugin: Some(
+                component: Some(
                     Component::from_str(&args.next().expect("missing component name"))
                         .expect("invalid component name"),
                 ),
@@ -66,7 +66,7 @@ impl EnvArgs {
             EnvAction::List => Self {
                 action,
                 env_resource_or_id: None,
-                plugin: None,
+                component: None,
                 function: None,
                 function_args: vec![],
                 env_var: None,

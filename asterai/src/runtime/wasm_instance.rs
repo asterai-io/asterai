@@ -176,7 +176,7 @@ impl ComponentRuntimeInstance {
         mut store: impl AsContextMut,
     ) -> eyre::Result<()> {
         trace!(
-            "adding plugin to linker: {}",
+            "adding component to linker: {}",
             self.component_interface.component()
         );
         let functions = self.component_interface.get_functions();
@@ -208,7 +208,7 @@ impl ComponentRuntimeInstance {
                 let func = function
                     .get_func(&mut store, &self.instance)
                     .map_err(|e| eyre!("{e:#?}"))?;
-                let plugin = self.component_interface.component().clone();
+                let component = self.component_interface.component().clone();
                 let func_name_cloned = function.name.clone();
                 let func_name = function.name.clone();
                 trace!("adding function to linker (export {instance_name}): '{func_name_cloned}'");
@@ -216,7 +216,7 @@ impl ComponentRuntimeInstance {
                     .func_new_async(
                         &func_name_cloned.name,
                         move |mut store, _, params, mut results| {
-                            let plugin = plugin.clone();
+                            let component_cloned = component.clone();
                             let func_name = func_name.clone();
                             let function_cloned = function.clone();
                             Box::new(async move {
@@ -226,7 +226,7 @@ impl ComponentRuntimeInstance {
                                     store.as_context_mut(),
                                     params,
                                     &mut results,
-                                    plugin,
+                                    component_cloned,
                                 )
                                 .await
                                 .unwrap();
@@ -258,17 +258,17 @@ async fn call_wasm_component_function<'a>(
     mut store: StoreContextMut<'a, HostEnv>,
     args: &[Val],
     results: &mut [Val],
-    plugin: Component,
+    component: Component,
 ) -> eyre::Result<()> {
-    let plugin_id = plugin.id().clone();
-    trace!("calling function' from component '{}'", plugin.id());
-    set_last_component(plugin, &mut store);
+    let component_id = component.id().clone();
+    trace!("calling function' from component '{}'", component.id());
+    set_last_component(component, &mut store);
     func.call_async(&mut store, args, results)
         .await
         .map_err(|e| {
             eyre!(
                 "failed to call func' from component '{}': {e:#?}",
-                plugin_id,
+                component_id,
             )
         })?;
     func.post_return_async(&mut store)
@@ -283,26 +283,26 @@ pub async fn call_wasm_component_function_concurrent<'a>(
     accessor: &Accessor<HostEnv>,
     args: &[Val],
     results: &mut [Val],
-    plugin: Component,
+    component: Component,
 ) -> eyre::Result<()> {
-    let plugin_id = plugin.id().clone();
-    trace!("calling function' from component '{}'", plugin.id());
+    let component_id = component.id().clone();
+    trace!("calling function' from component '{}'", component.id());
     func.call_concurrent(accessor, args, results)
         .await
         .map_err(|e| {
             eyre!(
                 "failed to call func' from component '{}': {e:#?}",
-                plugin_id,
+                component_id,
             )
         })?;
     Ok(())
 }
 
-/// Set this plugin as the last one called.
-/// This is necessary for knowing the plugin ID in case the function
+/// Set this component as the last one called.
+/// This is necessary for knowing the component ID in case the function
 /// called accesses host functions such as logging or any other part of the host API.
 /// TODO: this doesnt currently work with concurrent calls, decide whether to keep it.
-fn set_last_component(plugin: Component, store: &mut StoreContextMut<HostEnv>) {
+fn set_last_component(component: Component, store: &mut StoreContextMut<HostEnv>) {
     *store
         .data_mut()
         .runtime_data
@@ -310,7 +310,7 @@ fn set_last_component(plugin: Component, store: &mut StoreContextMut<HostEnv>) {
         .unwrap()
         .last_component
         .lock()
-        .unwrap() = Some(plugin);
+        .unwrap() = Some(component);
 }
 
 fn parse_component_output(

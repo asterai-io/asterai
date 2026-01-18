@@ -10,9 +10,9 @@ impl EnvArgs {
             return Ok(());
         };
         println!(
-            "environment {env_resource} has {plugin_count} components",
+            "environment {env_resource} has {component_count} components",
             env_resource = env.resource,
-            plugin_count = env.components.len()
+            component_count = env.components.len()
         );
         if env.components.is_empty() {
             println!("components: (none)");

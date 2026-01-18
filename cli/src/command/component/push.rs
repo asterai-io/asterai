@@ -10,7 +10,7 @@ const RETRY_FIND_FILE_DIR: &str = "build/";
 
 #[derive(Debug)]
 pub(super) struct PushArgs {
-    plugin: String,
+    component: String,
     pkg: String,
     endpoint: String,
     staging: bool,
@@ -18,7 +18,7 @@ pub(super) struct PushArgs {
 
 impl PushArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
-        let mut plugin = "plugin.wasm".to_string();
+        let mut component = "component.wasm".to_string();
         let mut pkg = "package.wasm".to_string();
         let mut endpoint = BASE_API_URL.to_string();
         let mut staging = false;
@@ -30,8 +30,8 @@ impl PushArgs {
                 "-s" | "--staging" => {
                     staging = true;
                 }
-                "--plugin" => {
-                    plugin = args.next().ok_or_eyre("missing value for plugin flag")?;
+                "--component" => {
+                    component = args.next().ok_or_eyre("missing value for component flag")?;
                 }
                 "--pkg" => {
                     pkg = args.next().ok_or_eyre("missing value for pkg flag")?;
@@ -40,7 +40,7 @@ impl PushArgs {
             }
         }
         Ok(Self {
-            plugin,
+            component,
             pkg,
             endpoint,
             staging,
@@ -52,15 +52,15 @@ impl PushArgs {
         let client = reqwest::Client::new();
 
         // Read files with retry logic
-        let plugin_bytes = read_file(&self.plugin)?;
+        let component_bytes = read_file(&self.component)?;
         let pkg_bytes = read_file(&self.pkg)?;
 
         // Build multipart form
         let mut form = reqwest::multipart::Form::new()
             .part(
-                "plugin.wasm",
-                reqwest::multipart::Part::bytes(plugin_bytes)
-                    .file_name("plugin.wasm")
+                "component.wasm",
+                reqwest::multipart::Part::bytes(component_bytes)
+                    .file_name("component.wasm")
                     .mime_str("application/octet-stream")?,
             )
             .part(
@@ -77,7 +77,7 @@ impl PushArgs {
         };
         // Send request
         let response = client
-            .put(format!("{}/v1/plugin", base_url))
+            .put(format!("{}/v1/component", base_url))
             .header("Authorization", api_key.trim())
             .multipart(form)
             .send()
