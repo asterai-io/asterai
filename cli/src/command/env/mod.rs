@@ -1,10 +1,11 @@
 use crate::command::resource_or_id::ResourceOrIdArg;
 use asterai_runtime::component::Component;
 use asterai_runtime::resource::{Resource, ResourceId};
-use eyre::{bail, eyre};
+use eyre::{OptionExt, bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
+mod add;
 mod call;
 mod init;
 mod inspect;
@@ -28,6 +29,7 @@ pub enum EnvAction {
     Init,
     Inspect,
     List,
+    Add,
 }
 
 impl EnvArgs {
@@ -63,6 +65,31 @@ impl EnvArgs {
                 function_args: args.collect::<Vec<_>>(),
                 env_var: None,
             },
+            EnvAction::Add => {
+                let env_resource_or_id = parse_env_name_or_id()?;
+                let mut component = None;
+                while let Some(arg) = args.next() {
+                    match arg.as_str() {
+                        "--component" => {
+                            let component_string =
+                                args.next().ok_or_eyre("missing value for component flag")?;
+                            let parsed_component =
+                                Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                            component = Some(parsed_component);
+                        }
+                        _ => bail!("unknown flag: {}", arg),
+                    }
+                }
+                let component = component.ok_or_eyre("missing component flag")?;
+                Self {
+                    action,
+                    env_resource_or_id: Some(env_resource_or_id),
+                    component: Some(component),
+                    function: None,
+                    function_args: vec![],
+                    env_var: None,
+                }
+            }
             EnvAction::List => Self {
                 action,
                 env_resource_or_id: None,
@@ -91,6 +118,9 @@ impl EnvArgs {
             }
             EnvAction::Call => {
                 self.call().await?;
+            }
+            EnvAction::Add => {
+                self.add()?;
             }
         }
         Ok(())
