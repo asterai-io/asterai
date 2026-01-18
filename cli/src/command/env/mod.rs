@@ -159,8 +159,10 @@ fn parse_component_flag(args: &mut impl Iterator<Item = String>) -> eyre::Result
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--component" => {
-                let component_string = args.next().ok_or_eyre("missing value for component flag")?;
-                let parsed_component = Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                let component_string =
+                    args.next().ok_or_eyre("missing value for component flag")?;
+                let parsed_component =
+                    Component::from_str(&component_string).map_err(|e| eyre!(e))?;
                 component = Some(parsed_component);
             }
             _ => bail!("unknown flag: {}", arg),
