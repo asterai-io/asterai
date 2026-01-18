@@ -7,18 +7,18 @@ use std::str::FromStr;
 /// Note that this function may be part of the component's own package,
 /// or implement a function defined in an external package.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct PluginFunctionName {
+pub struct ComponentFunctionName {
     pub interface: Option<String>,
     pub name: String,
 }
 
-impl PluginFunctionName {
+impl ComponentFunctionName {
     pub fn new(interface: Option<String>, name: String) -> Self {
         Self { interface, name }
     }
 }
 
-impl Display for PluginFunctionName {
+impl Display for ComponentFunctionName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let interface_string = self
             .interface
@@ -29,7 +29,7 @@ impl Display for PluginFunctionName {
     }
 }
 
-impl FromStr for PluginFunctionName {
+impl FromStr for ComponentFunctionName {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -47,7 +47,7 @@ impl FromStr for PluginFunctionName {
     }
 }
 
-impl Serialize for PluginFunctionName {
+impl Serialize for ComponentFunctionName {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -56,13 +56,13 @@ impl Serialize for PluginFunctionName {
     }
 }
 
-impl<'de> Deserialize<'de> for PluginFunctionName {
+impl<'de> Deserialize<'de> for ComponentFunctionName {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        PluginFunctionName::from_str(s.as_str())
+        ComponentFunctionName::from_str(s.as_str())
             .map_err(|_| serde::de::Error::custom(format!("invalid plugin function name: {s}")))
     }
 }

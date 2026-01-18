@@ -6,12 +6,12 @@ use tokio::io::AsyncWrite;
 use uuid::Uuid;
 use wasmtime_wasi::cli::{IsTerminal, StdoutStream};
 
-pub struct PluginStdout {
+pub struct ComponentStdout {
     // TODO rename to env?
     pub app_id: Uuid,
 }
 
-pub struct PluginStderr {
+pub struct ComponentStderr {
     pub app_id: Uuid,
 }
 
@@ -20,19 +20,19 @@ struct PluginStdOutErrWriter {
     app_id: Uuid,
 }
 
-impl IsTerminal for PluginStdout {
+impl IsTerminal for ComponentStdout {
     fn is_terminal(&self) -> bool {
         false
     }
 }
 
-impl IsTerminal for PluginStderr {
+impl IsTerminal for ComponentStderr {
     fn is_terminal(&self) -> bool {
         false
     }
 }
 
-impl StdoutStream for PluginStdout {
+impl StdoutStream for ComponentStdout {
     fn async_stream(&self) -> Box<dyn AsyncWrite + Send + Sync> {
         Box::new(PluginStdOutErrWriter {
             is_stderr: false,
@@ -41,7 +41,7 @@ impl StdoutStream for PluginStdout {
     }
 }
 
-impl StdoutStream for PluginStderr {
+impl StdoutStream for ComponentStderr {
     fn async_stream(&self) -> Box<dyn AsyncWrite + Send + Sync> {
         Box::new(PluginStdOutErrWriter {
             is_stderr: true,

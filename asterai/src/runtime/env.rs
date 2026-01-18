@@ -1,6 +1,6 @@
-use crate::plugin::Plugin;
-use crate::runtime::output::PluginOutput;
-use crate::runtime::wasm_instance::PluginRuntimeInstance;
+use crate::component::Component;
+use crate::runtime::output::ComponentOutput;
+use crate::runtime::wasm_instance::ComponentRuntimeInstance;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -8,27 +8,27 @@ use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
 
-/// The plugin host env data.
+/// The component host env data.
 /// Data held here is accessible as a function argument
-/// when handling host functions called by plugins, for
-/// accessing host resources when handling a plugin request.
+/// when handling host functions called by components, for
+/// accessing host resources when handling a component request.
 pub struct HostEnv {
     pub table: ResourceTable,
     pub wasi_ctx: WasiCtx,
     pub http_ctx: WasiHttpCtx,
     pub runtime_data: Option<HostEnvRuntimeData>,
-    pub plugin_output_tx: mpsc::Sender<PluginOutput>,
+    pub component_output_tx: mpsc::Sender<ComponentOutput>,
 }
 
 #[derive(Clone)]
 pub struct HostEnvRuntimeData {
     pub app_id: Uuid,
-    pub instances: Vec<PluginRuntimeInstance>,
-    /// The last plugin that was called.
+    pub instances: Vec<ComponentRuntimeInstance>,
+    /// The last component that was called.
     /// Plugins need to only be able to access their own storage,
     /// so this needs to be implemented correctly for security purposes.
-    pub last_plugin: Arc<Mutex<Option<Plugin>>>,
-    pub plugin_response_to_agent: Option<String>,
+    pub last_component: Arc<Mutex<Option<Component>>>,
+    pub component_response_to_agent: Option<String>,
 }
 
 impl WasiView for HostEnv {

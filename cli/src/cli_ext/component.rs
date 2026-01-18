@@ -1,8 +1,8 @@
 use crate::cli_ext::resource::ResourceCliExt;
 use crate::cli_ext::resource_from_path;
 use crate::cli_ext::resource_metadata::ResourceMetadataCliExt;
-use asterai_runtime::plugin::Plugin;
-use asterai_runtime::plugin::interface::PluginInterface;
+use asterai_runtime::component::Component;
+use asterai_runtime::component::interface::ComponentInterface;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};
 use std::fs;
@@ -16,7 +16,7 @@ pub trait ComponentCliExt: Sized {
     fn local_fetch(id: &ResourceId) -> eyre::Result<Self>;
 }
 
-impl ComponentCliExt for PluginInterface {
+impl ComponentCliExt for ComponentInterface {
     fn local_list() -> Vec<Self> {
         let resources = Resource::local_list();
         let mut components = Vec::new();
@@ -50,7 +50,7 @@ impl ComponentCliExt for PluginInterface {
         let resource = resource_from_path(path)?;
         let component_path = path.to_owned().join("component.wasm");
         let component_bytes = fs::read(&component_path)?;
-        let plugin = Plugin::from_str(&resource.to_string())?;
+        let plugin = Component::from_str(&resource.to_string())?;
         let item = Self::from_component_bytes(plugin, component_bytes)?;
         Ok(item)
     }

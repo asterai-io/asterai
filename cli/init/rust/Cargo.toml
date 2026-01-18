@@ -1,7 +1,7 @@
 [package]
-name = "plugin"
-# Note that this version does not matter for the plugin,
-# only the one in plugin.wit is used.
+name = "component"
+# Note that this version does not matter for the component,
+# only the one in component.wit is used.
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -20,6 +20,6 @@ strip = true
 lto = true
 
 [package.metadata.component]
-package = "your-username:plugin"
+package = "your-username:component"
 
 [package.metadata.component.dependencies]

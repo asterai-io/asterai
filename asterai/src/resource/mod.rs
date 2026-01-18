@@ -1,9 +1,9 @@
 //! A publishable item, including the namespace, name, and version.
-//! Resources include plugins, environments, and blueprints.
+//! Resources include components, environments, and blueprints.
 //! All resources are published to the same registry, and each resource
 //! must have a unique name and version.
+use crate::component::interface::PackageNameRegistry;
 use crate::error::AsteraiError;
-use crate::plugin::interface::PackageNameRegistry;
 use derive_getters::Getters;
 use eyre::{bail, eyre};
 use semver::Version;

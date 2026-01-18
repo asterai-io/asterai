@@ -1,10 +1,10 @@
-use crate::plugin::Plugin;
-use crate::plugin::function_name::PluginFunctionName;
-use crate::plugin::interface::{PluginFunctionInterface, PluginInterface};
+use crate::component::Component;
+use crate::component::function_name::ComponentFunctionName;
+use crate::component::interface::{ComponentFunctionInterface, ComponentInterface};
 use crate::runtime::entry::add_asterai_host_to_linker;
 use crate::runtime::env::{HostEnv, HostEnvRuntimeData};
-use crate::runtime::output::PluginOutput;
-use crate::runtime::std_out_err::{PluginStderr, PluginStdout};
+use crate::runtime::output::ComponentOutput;
+use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
 use eyre::{Context, eyre};
 use log::trace;
 use once_cell::sync::Lazy;
@@ -25,16 +25,16 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
     Engine::new(&config).unwrap()
 });
 
-pub struct PluginRuntimeEngine {
+pub struct ComponentRuntimeEngine {
     pub(super) store: Store<StoreState>,
-    pub(super) instances: Vec<PluginRuntimeInstance>,
+    pub(super) instances: Vec<ComponentRuntimeInstance>,
 }
 
 #[derive(Clone)]
-pub struct PluginRuntimeInstance {
+pub struct ComponentRuntimeInstance {
     // TODO add app_plugin_id here to make it easily accessible
     // in host entry functions.
-    pub plugin_interface: PluginInterface,
+    pub component_interface: ComponentInterface,
     pub app_id: Uuid,
     pub(super) instance: Instance,
 }
@@ -43,20 +43,20 @@ pub struct PluginRuntimeInstance {
 // pub struct StoreState {}
 pub type StoreState = HostEnv;
 
-impl PluginRuntimeEngine {
+impl ComponentRuntimeEngine {
     pub async fn new(
-        mut plugins: Vec<PluginInterface>,
+        mut components: Vec<ComponentInterface>,
         app_id: Uuid,
-        plugin_output_tx: mpsc::Sender<PluginOutput>,
+        component_output_tx: mpsc::Sender<ComponentOutput>,
     ) -> eyre::Result<Self> {
         let engine = &ENGINE;
-        let last_plugin = Arc::new(Mutex::new(None));
+        let last_component = Arc::new(Mutex::new(None));
         // Create a WASI context and put it in a Store; all instances in the store
         // share this context. `WasiCtxBuilder` provides a number of ways to
         // configure what the target program will have access to.
         let wasi_ctx = WasiCtxBuilder::new()
-            .stdout(PluginStdout { app_id })
-            .stderr(PluginStderr { app_id })
+            .stdout(ComponentStdout { app_id })
+            .stderr(ComponentStderr { app_id })
             .inherit_network()
             .build();
         let http_ctx = WasiHttpCtx::new();
@@ -66,7 +66,7 @@ impl PluginRuntimeEngine {
             wasi_ctx,
             http_ctx,
             table,
-            plugin_output_tx,
+            component_output_tx,
         };
         let mut store = Store::new(engine, host_env);
         let mut linker = Linker::new(engine);
@@ -78,11 +78,11 @@ impl PluginRuntimeEngine {
         let mut instances = Vec::new();
         // Sort by ascending order of imports count,
         // so that components with no dependencies are added first.
-        plugins.sort_by(|a, b| b.get_imports_count().cmp(&a.get_imports_count()));
+        components.sort_by(|a, b| b.get_imports_count().cmp(&a.get_imports_count()));
         // TODO fix this up. See if possible to link before instantiation,
         // using Linker::define or Linker::define_instance -- or maybe Grok hallucinated it?
-        for interface in plugins.into_iter() {
-            trace!("@ interface {}", interface.plugin().id());
+        for interface in components.into_iter() {
+            trace!("@ interface {}", interface.component().id());
             trace!("imports count: {}", interface.get_imports_count());
             let component = interface.fetch_compiled_component(engine).await?;
             trace!("fetched compiled component");
@@ -91,8 +91,8 @@ impl PluginRuntimeEngine {
                 .await
                 .map_err(|e| eyre!("{e:#?}"))
                 .with_context(|| "failed to initiate component")?;
-            let instance = PluginRuntimeInstance {
-                plugin_interface: interface,
+            let instance = ComponentRuntimeInstance {
+                component_interface: interface,
                 app_id,
                 instance,
             };
@@ -106,38 +106,39 @@ impl PluginRuntimeEngine {
         runtime_engine.store.data_mut().runtime_data = Some(HostEnvRuntimeData {
             app_id,
             instances,
-            last_plugin,
-            plugin_response_to_agent: None,
+            last_component,
+            component_response_to_agent: None,
         });
         Ok(runtime_engine)
     }
 
-    pub fn instances(&self) -> &[PluginRuntimeInstance] {
+    pub fn instances(&self) -> &[ComponentRuntimeInstance] {
         &self.instances
     }
 
     pub async fn call(
         &mut self,
-        function_interface: PluginFunctionInterface,
+        function_interface: ComponentFunctionInterface,
         inputs: &[Val],
-    ) -> eyre::Result<Option<PluginOutput>> {
+    ) -> eyre::Result<Option<ComponentOutput>> {
         // This is an uninitialised vec of the results.
         let mut results = function_interface.new_results_vec();
         self.call_raw(&function_interface, &inputs, &mut results)
             .await?;
-        let output_opt = parse_plugin_output(self.store.as_context(), results, function_interface);
+        let output_opt =
+            parse_component_output(self.store.as_context(), results, function_interface);
         Ok(output_opt)
     }
 
     /// Makes a function call to a WASM component.
     async fn call_raw(
         &mut self,
-        function_interface: &PluginFunctionInterface,
+        function_interface: &ComponentFunctionInterface,
         args: &[Val],
         results: &mut [Val],
     ) -> eyre::Result<()> {
         let instance_opt = self.instances.iter().find(|instance| {
-            instance.plugin_interface.plugin().id() == function_interface.plugin.id()
+            instance.component_interface.component().id() == function_interface.component.id()
         });
         let Some(instance) = instance_opt else {
             return Err(eyre!(
@@ -145,7 +146,7 @@ impl PluginRuntimeEngine {
                 function_interface
             ));
         };
-        let functions = instance.plugin_interface.get_functions();
+        let functions = instance.component_interface.get_functions();
         let function_opt = functions
             .into_iter()
             .find(|f| &f.name == function_interface.name());
@@ -153,21 +154,21 @@ impl PluginRuntimeEngine {
             return Err(eyre!("function not found in instance"));
         };
         let func = function.get_func(&mut self.store, &instance.instance)?;
-        let plugin = function.plugin.clone();
+        let component = function.component.clone();
         call_wasm_component_function(
             &func,
             &function.name,
             self.store.as_context_mut(),
             args,
             results,
-            plugin,
+            component,
         )
         .await?;
         Ok(())
     }
 }
 
-impl PluginRuntimeInstance {
+impl ComponentRuntimeInstance {
     /// Add all plugin exports to the linker.
     pub fn add_to_linker(
         &self,
@@ -176,10 +177,10 @@ impl PluginRuntimeInstance {
     ) -> eyre::Result<()> {
         trace!(
             "adding plugin to linker: {}",
-            self.plugin_interface.plugin()
+            self.component_interface.component()
         );
-        let functions = self.plugin_interface.get_functions();
-        let mut functions_by_instance: HashMap<String, Vec<PluginFunctionInterface>> =
+        let functions = self.component_interface.get_functions();
+        let mut functions_by_instance: HashMap<String, Vec<ComponentFunctionInterface>> =
             HashMap::new();
         for function in functions {
             let Some(instance_export_name) = function.get_instance_export_name() else {
@@ -207,7 +208,7 @@ impl PluginRuntimeInstance {
                 let func = function
                     .get_func(&mut store, &self.instance)
                     .map_err(|e| eyre!("{e:#?}"))?;
-                let plugin = self.plugin_interface.plugin().clone();
+                let plugin = self.component_interface.component().clone();
                 let func_name_cloned = function.name.clone();
                 let func_name = function.name.clone();
                 trace!("adding function to linker (export {instance_name}): '{func_name_cloned}'");
@@ -229,7 +230,7 @@ impl PluginRuntimeInstance {
                                 )
                                 .await
                                 .unwrap();
-                                let output_opt = parse_plugin_output(
+                                let output_opt = parse_component_output(
                                     store.as_context(),
                                     results.to_vec(),
                                     function_cloned,
@@ -238,7 +239,7 @@ impl PluginRuntimeInstance {
                                     // Forward output to channel.
                                     // This output is not from the directly called function,
                                     // but from an internal function call somewhere in the stack.
-                                    store.data().plugin_output_tx.send(output).await.unwrap();
+                                    store.data().component_output_tx.send(output).await.unwrap();
                                 }
                                 Ok(())
                             })
@@ -253,23 +254,20 @@ impl PluginRuntimeInstance {
 
 async fn call_wasm_component_function<'a>(
     func: &Func,
-    func_name: &PluginFunctionName,
+    func_name: &ComponentFunctionName,
     mut store: StoreContextMut<'a, HostEnv>,
     args: &[Val],
     results: &mut [Val],
-    plugin: Plugin,
+    plugin: Component,
 ) -> eyre::Result<()> {
     let plugin_id = plugin.id().clone();
-    trace!(
-        "calling function '{func_name}' from plugin '{}'",
-        plugin.id()
-    );
-    set_last_plugin(plugin, &mut store);
+    trace!("calling function' from component '{}'", plugin.id());
+    set_last_component(plugin, &mut store);
     func.call_async(&mut store, args, results)
         .await
         .map_err(|e| {
             eyre!(
-                "failed to call func '{func_name}' from plugin '{}': {e:#?}",
+                "failed to call func' from component '{}': {e:#?}",
                 plugin_id,
             )
         })?;
@@ -281,22 +279,19 @@ async fn call_wasm_component_function<'a>(
 
 pub async fn call_wasm_component_function_concurrent<'a>(
     func: &Func,
-    func_name: &PluginFunctionName,
+    func_name: &ComponentFunctionName,
     accessor: &Accessor<HostEnv>,
     args: &[Val],
     results: &mut [Val],
-    plugin: Plugin,
+    plugin: Component,
 ) -> eyre::Result<()> {
     let plugin_id = plugin.id().clone();
-    trace!(
-        "calling function '{func_name}' from plugin '{}'",
-        plugin.id()
-    );
+    trace!("calling function' from component '{}'", plugin.id());
     func.call_concurrent(accessor, args, results)
         .await
         .map_err(|e| {
             eyre!(
-                "failed to call func '{func_name}' from plugin '{}': {e:#?}",
+                "failed to call func' from component '{}': {e:#?}",
                 plugin_id,
             )
         })?;
@@ -307,28 +302,28 @@ pub async fn call_wasm_component_function_concurrent<'a>(
 /// This is necessary for knowing the plugin ID in case the function
 /// called accesses host functions such as logging or any other part of the host API.
 /// TODO: this doesnt currently work with concurrent calls, decide whether to keep it.
-fn set_last_plugin(plugin: Plugin, store: &mut StoreContextMut<HostEnv>) {
+fn set_last_component(plugin: Component, store: &mut StoreContextMut<HostEnv>) {
     *store
         .data_mut()
         .runtime_data
         .as_mut()
         .unwrap()
-        .last_plugin
+        .last_component
         .lock()
         .unwrap() = Some(plugin);
 }
 
-fn parse_plugin_output(
+fn parse_component_output(
     store: StoreContext<HostEnv>,
     results: Vec<Val>,
-    interface: PluginFunctionInterface,
-) -> Option<PluginOutput> {
+    interface: ComponentFunctionInterface,
+) -> Option<ComponentOutput> {
     let val_opt = results.into_iter().next();
-    let plugin_response_to_agent_opt = store
+    let component_response_to_agent_opt = store
         .data()
         .runtime_data
         .as_ref()
-        .and_then(|r| r.plugin_response_to_agent.clone());
+        .and_then(|r| r.component_response_to_agent.clone());
     // If the app is an agent, then the return value of functions will be serialized to text
     // and sent to the agent unless the function calls the API method `send_response_to_agent`
     // which can be used to override the return value.
@@ -338,21 +333,21 @@ fn parse_plugin_output(
     // allowing the plugin to re-word the output as natural language while keeping the structured
     // output usable for the client to consume it.
     //
-    // The input to `send_response_to_agent` is represented by `plugin_response_to_agent_opt` here.
+    // The input to `send_response_to_agent` is represented by `component_response_to_agent_opt` here.
     // TODO: add API method for `send_no_response_to_agent` to prevent any response from being sent.
     // TODO: revisit above if app is not an agent (e.g. blueprint app)
-    let plugin_response_to_agent_opt =
-        plugin_response_to_agent_opt.or(val_opt.clone().map(|v| format!("{v:#?}")));
-    PluginOutput::from(val_opt, interface, plugin_response_to_agent_opt)
+    let component_response_to_agent_opt =
+        component_response_to_agent_opt.or(val_opt.clone().map(|v| format!("{v:#?}")));
+    ComponentOutput::from(val_opt, interface, component_response_to_agent_opt)
 }
 
-impl Debug for PluginRuntimeEngine {
+impl Debug for ComponentRuntimeEngine {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:#?}")
     }
 }
 
-impl Debug for PluginRuntimeInstance {
+impl Debug for ComponentRuntimeInstance {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:#?}")
     }

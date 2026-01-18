@@ -18,7 +18,11 @@ impl EnvArgs {
             println!("components: (none)");
             return Ok(());
         }
-        let mut components: Vec<_> = env.components.iter().map(|component| component.to_string()).collect();
+        let mut components: Vec<_> = env
+            .components
+            .iter()
+            .map(|component| component.to_string())
+            .collect();
         components.sort();
         println!("components:");
         for component in components {

@@ -1,5 +1,5 @@
 use crate::auth::Auth;
-use asterai_runtime::plugin::Version;
+use asterai_runtime::component::Version;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;

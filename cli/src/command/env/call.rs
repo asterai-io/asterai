@@ -1,12 +1,12 @@
+use crate::cli_ext::component_runtime::ComponentRuntimeCliExt;
 use crate::cli_ext::environment::EnvironmentCliExt;
-use crate::cli_ext::plugin_runtime::PluginRuntimeCliExt;
 use crate::command::env::EnvArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
+use asterai_runtime::component::function_name::ComponentFunctionName;
+use asterai_runtime::component::interface::PackageNameRegistry;
+use asterai_runtime::component::{PackageName, Version};
 use asterai_runtime::environment::Environment;
-use asterai_runtime::plugin::function_name::PluginFunctionName;
-use asterai_runtime::plugin::interface::PackageNameRegistry;
-use asterai_runtime::plugin::{PackageName, Version};
-use asterai_runtime::runtime::{PluginRuntime, Val};
+use asterai_runtime::runtime::{ComponentRuntime, Val};
 use eyre::{OptionExt, bail, eyre};
 use std::str::FromStr;
 
@@ -17,7 +17,7 @@ impl EnvArgs {
         let function_string = self.function.clone().unwrap();
         println!("calling env {resource}'s {component} component function {function_string}");
         let environment = Environment::local_fetch(&resource.id())?;
-        let mut runtime = PluginRuntime::from_environment(environment).await?;
+        let mut runtime = ComponentRuntime::from_environment(environment).await?;
         let (function_name, package_name_opt) = parse_function_string_into_parts(function_string)?;
         let function = runtime
             .find_function(&component.id(), &function_name, package_name_opt)
@@ -30,11 +30,11 @@ impl EnvArgs {
 
 fn parse_function_string_into_parts(
     function_str: String,
-) -> eyre::Result<(PluginFunctionName, Option<PackageName>)> {
+) -> eyre::Result<(ComponentFunctionName, Option<PackageName>)> {
     let (package_name_str, function) = match function_str.split_once('/') {
         None => {
             return Ok((
-                PluginFunctionName {
+                ComponentFunctionName {
                     interface: None,
                     name: function_str,
                 },
@@ -44,7 +44,7 @@ fn parse_function_string_into_parts(
         Some((a, b)) => {
             if !a.contains(":") {
                 return Ok((
-                    PluginFunctionName {
+                    ComponentFunctionName {
                         interface: Some(a.to_owned()),
                         name: b.to_owned(),
                     },
@@ -60,7 +60,7 @@ fn parse_function_string_into_parts(
         Some((a, b)) => (a, Some(b)),
     };
     Ok((
-        PluginFunctionName {
+        ComponentFunctionName {
             interface: interface_opt.map(|v| v.to_owned()),
             name: function_name.to_owned(),
         },

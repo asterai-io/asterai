@@ -5,11 +5,11 @@ This includes the asterai CLI tool and the runtime.
 
 # Overview
 
-| Directory            | Description             |
-|----------------------|-------------------------| 
-| [cli][1]             | The asterai CLI utility |
-| [runtime][2]         | The asterai runtime     |
-| [plugin-examples][3] | Example plugins         |
+| Directory               | Description                 |
+|-------------------------|-----------------------------|
+| [cli][1]                | The asterai CLI utility     |
+| [asterai][2]            | The asterai runtime library |
+| [component-examples][3] | Example components          |
 
 # Documentation
 
@@ -17,4 +17,4 @@ The asterai documentation is available at [docs.asterai.io](https://docs.asterai
 
 [1]: ./cli
 [2]: ./runtime
-[3]: ./plugin-examples
+[3]: ./component-examples

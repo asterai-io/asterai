@@ -644,7 +644,7 @@ mod _rt {
 /// ```
 #[allow(unused_macros)]
 #[doc(hidden)]
-macro_rules! __export_plugin_impl {
+macro_rules! __export_component_impl {
     ($ty:ident) => {
         self::export!($ty with_types_in self);
     };
@@ -656,15 +656,15 @@ macro_rules! __export_plugin_impl {
     };
 }
 #[doc(inline)]
-pub(crate) use __export_plugin_impl as export;
+pub(crate) use __export_component_impl as export;
 #[cfg(target_arch = "wasm32")]
-#[link_section = "component-type:wit-bindgen:0.36.0:your-username:greeter@0.1.0:plugin:encoded world"]
+#[link_section = "component-type:wit-bindgen:0.36.0:your-username:greeter@0.1.0:component:encoded world"]
 #[doc(hidden)]
 pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 776] = *b"\
 \0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x8b\x05\x01A\x02\x01\
 A\x04\x01B\x1f\x01o\x02ss\x01p\0\x01r\x02\x05scorev\x07payload\x01\x04\0\x1aembe\
 dding-similarity-score\x03\0\x02\x01ks\x01r\x02\x07contents\x07user-id\x04\x04\0\
-\x05query\x03\0\x05\x01r\x02\x05query\x06\x06app-ids\x04\0\x0eplugin-context\x03\
+\x05query\x03\0\x05\x01r\x02\x05query\x06\x06app-ids\x04\0\x0ecomponent-context\x03\
 \0\x07\x01r\x03\x05querys\x08agent-ids\x09query-key\x04\x04\0\x10query-agent-arg\
 s\x03\0\x09\x01r\x01\x07contents\x04\0\x14query-agent-response\x03\0\x0b\x01@\x02\
 \x07contents\x0fcollection-names\x01\0\x04\0\x0fembedding-store\x01\x0d\x01p\x03\
@@ -675,8 +675,8 @@ alue\x04\x07user-id\x04\x01\0\x04\0\x06kv-set\x01\x11\x01@\x01\x03keys\0\x04\x04
 onses\x01\0\x04\0\x16send-response-to-agent\x01\x14\x01j\x01\x0c\x01s\x01@\x01\x04\
 args\x0a\0\x15\x04\0\x0bquery-agent\x01\x16\x03\0\x16asterai:host/api@0.1.0\x05\0\
 \x01B\x02\x01@\x01\x04names\x01\0\x04\0\x05greet\x01\0\x04\0#your-username:greet\
-er/greeter@0.1.0\x05\x01\x04\0\"your-username:greeter/plugin@0.1.0\x04\0\x0b\x0c\
-\x01\0\x06plugin\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-componen\
+er/greeter@0.1.0\x05\x01\x04\0\"your-username:greeter/component@0.1.0\x04\0\x0b\x0c\
+\x01\0\x06component\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-componen\
 t\x070.220.0\x10wit-bindgen-rust\x060.36.0";
 #[inline(never)]
 #[doc(hidden)]

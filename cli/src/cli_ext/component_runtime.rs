@@ -1,18 +1,18 @@
 use crate::cli_ext::component::ComponentCliExt;
+use asterai_runtime::component::ComponentId;
+use asterai_runtime::component::interface::ComponentInterface;
 use asterai_runtime::environment::Environment;
-use asterai_runtime::plugin::PluginId;
-use asterai_runtime::plugin::interface::PluginInterface;
-use asterai_runtime::runtime::PluginRuntime;
+use asterai_runtime::runtime::ComponentRuntime;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-pub trait PluginRuntimeCliExt: Sized {
+pub trait ComponentRuntimeCliExt: Sized {
     async fn from_environment(environment: Environment) -> eyre::Result<Self>;
 }
 
-impl PluginRuntimeCliExt for PluginRuntime {
+impl ComponentRuntimeCliExt for ComponentRuntime {
     async fn from_environment(environment: Environment) -> eyre::Result<Self> {
-        let mut local_components = PluginInterface::local_list();
+        let mut local_components = ComponentInterface::local_list();
         let mut components = Vec::with_capacity(environment.components.len());
         for env_component in environment.components {
             let local_component_opt = find_component(&env_component.id(), &mut local_components);
@@ -28,12 +28,15 @@ impl PluginRuntimeCliExt for PluginRuntime {
         let (plugin_output_tx, mut plugin_output_rx) = mpsc::channel(32);
         // Just drain the messages for now. TODO add to this fn's arg?
         tokio::spawn(async move { while let Some(_) = plugin_output_rx.recv().await {} });
-        PluginRuntime::new(components, app_id, plugin_output_tx).await
+        ComponentRuntime::new(components, app_id, plugin_output_tx).await
     }
 }
 
-fn find_component(id: &PluginId, components: &mut Vec<PluginInterface>) -> Option<PluginInterface> {
-    let Some(index) = components.iter().position(|c| c.plugin().id() == *id) else {
+fn find_component(
+    id: &ComponentId,
+    components: &mut Vec<ComponentInterface>,
+) -> Option<ComponentInterface> {
+    let Some(index) = components.iter().position(|c| c.component().id() == *id) else {
         return None;
     };
     Some(components.swap_remove(index))

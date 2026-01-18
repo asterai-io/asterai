@@ -1,5 +1,5 @@
 use crate::command::resource_or_id::ResourceOrIdArg;
-use asterai_runtime::plugin::Plugin;
+use asterai_runtime::component::Component;
 use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::{bail, eyre};
 use std::str::FromStr;
@@ -14,7 +14,7 @@ mod run;
 pub struct EnvArgs {
     action: EnvAction,
     env_resource_or_id: Option<ResourceOrIdArg>,
-    plugin: Option<Plugin>,
+    plugin: Option<Component>,
     function: Option<String>,
     function_args: Vec<String>,
     env_var: Option<&'static str>,
@@ -56,7 +56,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
                 plugin: Some(
-                    Plugin::from_str(&args.next().expect("missing component name"))
+                    Component::from_str(&args.next().expect("missing component name"))
                         .expect("invalid component name"),
                 ),
                 function: Some(args.next().expect("missing function")),

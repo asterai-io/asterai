@@ -1,4 +1,4 @@
-use crate::plugin::interface::PluginFunctionInterface;
+use crate::component::interface::ComponentFunctionInterface;
 use crate::runtime::SerializableVal;
 use derive_getters::Getters;
 use serde::ser::{SerializeSeq, SerializeStruct};
@@ -7,33 +7,33 @@ use wasmtime::component::Val;
 use wit_parser::TypeDef;
 
 #[derive(Getters, Clone)]
-pub struct PluginOutput {
+pub struct ComponentOutput {
     // TODO: rename to structured_output_opt?
-    pub function_output_opt: Option<PluginFunctionOutput>,
+    pub function_output_opt: Option<ComponentFunctionOutput>,
     /// The output that the agent sees.
     /// This may be an overrided response, or a serialized version
     /// of `function_output_opt`.
     // TODO: rename to natural_language_output_opt?
-    pub plugin_response_to_agent_opt: Option<String>,
+    pub component_response_to_agent_opt: Option<String>,
 }
 
 #[derive(Clone)]
-pub struct PluginFunctionOutput {
+pub struct ComponentFunctionOutput {
     pub type_def: TypeDef,
     pub value: SerializableVal,
-    pub(super) function_interface: PluginFunctionInterface,
+    pub(super) function_interface: ComponentFunctionInterface,
 }
 
-impl Serialize for PluginFunctionOutput {
+impl Serialize for ComponentFunctionOutput {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("PluginOutput", 4)?;
-        state.serialize_field("plugin", &self.function_interface.plugin().id())?;
+        let mut state = serializer.serialize_struct("ComponentOutput", 4)?;
+        state.serialize_field("plugin", &self.function_interface.component().id())?;
         state.serialize_field(
             "version",
-            &self.function_interface.plugin().version().to_string(),
+            &self.function_interface.component().version().to_string(),
         )?;
         state.serialize_field("function", self.function_interface.name())?;
         state.serialize_field("value", &self.value)?;
@@ -74,7 +74,7 @@ impl Serialize for SerializableVal {
                 let name = self
                     .name
                     .clone()
-                    .unwrap_or_else(|| "PluginOutput".to_owned());
+                    .unwrap_or_else(|| "ComponentOutput".to_owned());
                 // TODO fix leak
                 let mut state =
                     serializer.serialize_struct(Box::leak(name.into_boxed_str()), v.len())?;
@@ -134,14 +134,14 @@ impl Serialize for SerializableVal {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::plugin::Plugin;
-    use crate::plugin::function_name::PluginFunctionName;
+    use crate::component::Component;
+    use crate::component::function_name::ComponentFunctionName;
     use std::str::FromStr;
     use wit_parser::{TypeDefKind, TypeOwner};
 
     #[test]
     fn test_serialize_plugin_function_output_struct() {
-        let output = PluginFunctionOutput {
+        let output = ComponentFunctionOutput {
             type_def: TypeDef {
                 name: None,
                 kind: TypeDefKind::Resource,
@@ -153,11 +153,11 @@ mod test {
                 name: None,
                 val: Val::Record(vec![("foo".to_owned(), Val::String("bar".to_owned()))]),
             },
-            function_interface: PluginFunctionInterface {
-                name: PluginFunctionName::from_str("important_function").unwrap(),
+            function_interface: ComponentFunctionInterface {
+                name: ComponentFunctionName::from_str("important_function").unwrap(),
                 inputs: vec![],
                 output_type: None,
-                plugin: Plugin::from_str("namespace:plugin@0.1.0").unwrap(),
+                plugin: Component::from_str("namespace:plugin@0.1.0").unwrap(),
             },
         };
         let serialized = serde_json::to_string(&output).unwrap();
@@ -167,7 +167,7 @@ mod test {
 
     #[test]
     fn test_serialize_plugin_function_output_number() {
-        let output = PluginFunctionOutput {
+        let output = ComponentFunctionOutput {
             type_def: TypeDef {
                 name: None,
                 kind: TypeDefKind::Resource,
@@ -179,11 +179,11 @@ mod test {
                 name: None,
                 val: Val::U32(1337),
             },
-            function_interface: PluginFunctionInterface {
-                name: PluginFunctionName::from_str("important_function").unwrap(),
+            function_interface: ComponentFunctionInterface {
+                name: ComponentFunctionName::from_str("important_function").unwrap(),
                 inputs: vec![],
                 output_type: None,
-                plugin: Plugin::from_str("namespace:plugin@0.1.0").unwrap(),
+                plugin: Component::from_str("namespace:plugin@0.1.0").unwrap(),
             },
         };
         let serialized = serde_json::to_string(&output).unwrap();

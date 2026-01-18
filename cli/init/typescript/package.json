@@ -1,5 +1,5 @@
 {
-  "name": "plugin",
+  "name": "component",
   "version": "0.1.0",
   "description": "",
   "author": "",
@@ -8,9 +8,9 @@
   "scripts": {
     "auth": "asterai auth",
     "gen:pkg": "mkdirp build && asterai pkg -o build/package.wasm -w build/package.wit",
-    "gen:types": "jco guest-types build/package.wit -n plugin -o generated/",
+    "gen:types": "jco guest-types build/package.wit -n component -o generated/",
     "compile": "tsc",
-    "componentize": "jco componentize build/plugin.js -w build/package.wit -n plugin -o build/plugin.wasm",
+    "componentize": "jco componentize build/component.js -w build/package.wit -n component -o build/component.wasm",
     "build": "run-s gen:pkg gen:types compile componentize",
     "deploy": "asterai component push"
   },

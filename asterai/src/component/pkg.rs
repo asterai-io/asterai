@@ -13,7 +13,7 @@ use wasm_pkg_core::wit;
 use wasm_pkg_core::wit::OutputType;
 
 #[derive(Error, Debug)]
-pub enum BuildPluginWitPkgError {
+pub enum BuildComponentWitPkgError {
     #[error("Internal error: {0:#?}")]
     Internal(#[from] Report),
     #[error("Failed to fetch dependencies: {0}")]
@@ -22,13 +22,13 @@ pub enum BuildPluginWitPkgError {
 
 // TODO: add access control to prevent users from downloading private packages
 // from others.
-// This is done such that users can't activate private plugins into agents,
-// but with the `pkg` command they can currently fetch private plugin
+// This is done such that users can't activate private components into agents,
+// but with the `pkg` command they can currently fetch private component
 // interfaces / WITs (though not the component implementation).
-pub async fn build_plugin_wit_pkg(
+pub async fn build_component_wit_pkg(
     pkg_wit_bytes: &[u8],
     wkg_client: wasm_pkg_client::Client,
-) -> Result<Vec<u8>, BuildPluginWitPkgError> {
+) -> Result<Vec<u8>, BuildComponentWitPkgError> {
     // Initialise temp directories and write package file.
     let pkg_dir = tempdir().map_err(|e| eyre!(e))?;
     let cache_dir = tempdir_in(&pkg_dir).map_err(|e| eyre!(e))?;
@@ -56,7 +56,7 @@ pub async fn build_plugin_wit_pkg(
     )
     .await
     .map_err(|e| eyre!(e))
-    .map_err(BuildPluginWitPkgError::FetchDependencies)?;
+    .map_err(BuildComponentWitPkgError::FetchDependencies)?;
     let (pkg_ref, version, pkg_bin_bytes) =
         wit::build_package(&wkg_config, &pkg_dir, &mut lock_file, wkg_caching_client)
             .await

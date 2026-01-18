@@ -1,8 +1,10 @@
-use crate::plugin::function_name::PluginFunctionName;
-use crate::plugin::interface::{PluginFunctionInterface, PluginInterface};
-use crate::plugin::{Plugin, PluginId};
-use crate::runtime::output::{PluginFunctionOutput, PluginOutput};
-use crate::runtime::wasm_instance::{PluginRuntimeEngine, call_wasm_component_function_concurrent};
+use crate::component::function_name::ComponentFunctionName;
+use crate::component::interface::{ComponentFunctionInterface, ComponentInterface};
+use crate::component::{Component, ComponentId};
+use crate::runtime::output::{ComponentFunctionOutput, ComponentOutput};
+use crate::runtime::wasm_instance::{
+    ComponentRuntimeEngine, call_wasm_component_function_concurrent,
+};
 use derive_getters::Getters;
 use eyre::eyre;
 use futures::future::{join_all, try_join_all};
@@ -25,7 +27,7 @@ mod wasm_instance;
 mod wit_bindings;
 
 // The `run/run` function, commonly defined by `wasi:cli`.
-static CLI_RUN_FUNCTION_NAME: Lazy<PluginFunctionName> = Lazy::new(|| PluginFunctionName {
+static CLI_RUN_FUNCTION_NAME: Lazy<ComponentFunctionName> = Lazy::new(|| ComponentFunctionName {
     interface: Some("run".to_owned()),
     name: "run".to_owned(),
 });
@@ -36,55 +38,55 @@ pub struct SerializableVal {
     pub val: Val,
 }
 
-/// The runtime which holds all instantiated plugins
+/// The runtime which holds all instantiated components
 /// within an app.
 /// TODO: rename to EnvironmentRuntime?
 #[derive(Getters)]
-pub struct PluginRuntime {
+pub struct ComponentRuntime {
     app_id: Uuid,
     #[getter(skip)]
-    engine: PluginRuntimeEngine,
+    engine: ComponentRuntimeEngine,
 }
 
-impl PluginRuntime {
+impl ComponentRuntime {
     pub async fn new(
-        plugins: Vec<PluginInterface>,
+        components: Vec<ComponentInterface>,
         // TODO: change app ID for resource ID?
         app_id: Uuid,
-        plugin_output_tx: mpsc::Sender<PluginOutput>,
+        component_output_tx: mpsc::Sender<ComponentOutput>,
     ) -> eyre::Result<Self> {
-        let instance = PluginRuntimeEngine::new(plugins, app_id, plugin_output_tx).await?;
+        let instance = ComponentRuntimeEngine::new(components, app_id, component_output_tx).await?;
         Ok(Self {
             app_id,
             engine: instance,
         })
     }
 
-    pub fn plugin_interfaces(&self) -> Vec<PluginInterface> {
+    pub fn component_interfaces(&self) -> Vec<ComponentInterface> {
         self.engine
             .instances()
             .iter()
-            .map(|i| i.plugin_interface.clone())
+            .map(|i| i.component_interface.clone())
             .collect()
     }
 
     pub async fn call_function(
         &mut self,
-        plugin_manifest_function: PluginFunctionInterface,
+        plugin_manifest_function: ComponentFunctionInterface,
         inputs: &[Val],
-    ) -> eyre::Result<Option<PluginOutput>> {
+    ) -> eyre::Result<Option<ComponentOutput>> {
         let output_opt = self.engine.call(plugin_manifest_function, inputs).await?;
         Ok(output_opt)
     }
 
     pub fn find_function(
         &self,
-        plugin_id: &PluginId,
-        function_name: &PluginFunctionName,
+        component_id: &ComponentId,
+        function_name: &ComponentFunctionName,
         package_name_opt: Option<PackageName>,
-    ) -> Option<PluginFunctionInterface> {
-        self.plugin_interfaces().iter().find_map(|interface| {
-            if interface.plugin().id() != *plugin_id {
+    ) -> Option<ComponentFunctionInterface> {
+        self.component_interfaces().iter().find_map(|interface| {
+            if interface.component().id() != *component_id {
                 return None;
             }
             let functions = interface.get_functions();
@@ -113,9 +115,9 @@ impl PluginRuntime {
     pub async fn run(&mut self) -> eyre::Result<()> {
         let mut funcs = Vec::new();
         for instance in &self.engine.instances {
-            let plugin = instance.plugin_interface.plugin().clone();
+            let component = instance.component_interface.component().clone();
             let run_function_opt = self.find_function(
-                &plugin.id(),
+                &component.id(),
                 &CLI_RUN_FUNCTION_NAME,
                 // Do not specify a package, as usually this is only implemented once.
                 // e.g. a common target would be wasi:cli@0.2.0
@@ -125,19 +127,19 @@ impl PluginRuntime {
                 return Ok(());
             };
             let func = run_function.get_func(&mut self.engine.store, &instance.instance)?;
-            funcs.push((func, run_function.name, plugin));
+            funcs.push((func, run_function.name, component));
         }
         self.engine
             .store
             .run_concurrent(async |a| {
-                for (func, func_name, plugin) in funcs {
+                for (func, func_name, component) in funcs {
                     let result = call_wasm_component_function_concurrent(
                         &func,
                         &func_name,
                         a,
                         &[],
                         &mut vec![Val::Bool(false)],
-                        plugin,
+                        component,
                     )
                     .await;
                     if let Err(e) = result {
@@ -151,19 +153,19 @@ impl PluginRuntime {
     }
 }
 
-impl PluginOutput {
+impl ComponentOutput {
     pub fn from(
         val_opt: Option<Val>,
-        plugin_function_interface: PluginFunctionInterface,
-        plugin_response_to_agent_opt: Option<String>,
-    ) -> Option<PluginOutput> {
+        plugin_function_interface: ComponentFunctionInterface,
+        component_response_to_agent_opt: Option<String>,
+    ) -> Option<ComponentOutput> {
         let function_output_opt = val_opt.and_then(|val| {
             plugin_function_interface
                 .clone()
                 .output_type
                 .map(|type_def| {
                     let name = type_def.name.clone();
-                    PluginFunctionOutput {
+                    ComponentFunctionOutput {
                         type_def,
                         value: SerializableVal { name, val },
                         function_interface: plugin_function_interface,
@@ -172,33 +174,33 @@ impl PluginOutput {
         });
         Some(Self {
             function_output_opt,
-            plugin_response_to_agent_opt,
+            component_response_to_agent_opt,
         })
     }
 }
 
-impl Debug for PluginRuntime {
+impl Debug for ComponentRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PluginRuntime")
+        f.debug_struct("ComponentRuntime")
             .field("app_id", &self.app_id)
             .finish()
     }
 }
 
-pub trait PluginFunctionInterfaceExt {
+pub trait ComponentFunctionInterfaceExt {
     async fn call(
         self,
-        runtime: &mut PluginRuntime,
+        runtime: &mut ComponentRuntime,
         inputs: &[Val],
-    ) -> eyre::Result<Option<PluginOutput>>;
+    ) -> eyre::Result<Option<ComponentOutput>>;
 }
 
-impl PluginFunctionInterfaceExt for PluginFunctionInterface {
+impl ComponentFunctionInterfaceExt for ComponentFunctionInterface {
     async fn call(
         self,
-        runtime: &mut PluginRuntime,
+        runtime: &mut ComponentRuntime,
         inputs: &[Val],
-    ) -> eyre::Result<Option<PluginOutput>> {
+    ) -> eyre::Result<Option<ComponentOutput>> {
         runtime.call_function(self, inputs).await
     }
 }
