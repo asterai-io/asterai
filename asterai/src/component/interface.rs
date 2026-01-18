@@ -4,7 +4,6 @@ use derive_getters::Getters;
 use eyre::WrapErr;
 use eyre::{OptionExt, eyre};
 use log::trace;
-use semver::Version;
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt::Debug;
 use std::str::FromStr;
@@ -13,22 +12,20 @@ use tokio::sync::Mutex;
 pub use warg_protocol::registry::PackageName as PackageNameRegistry;
 use wasm_pkg_common::label::Label;
 use wasm_pkg_common::package::PackageRef;
-use wasmtime::component::{
-    Component as WasmtimeComponent, ComponentNamedList, Func, Instance, Lift, Lower, TypedFunc, Val,
-};
+pub use wasmtime::component::Component as WasmtimeComponent;
+use wasmtime::component::{ComponentNamedList, Func, Instance, Lift, Lower, TypedFunc, Val};
 use wasmtime::{AsContextMut, Engine};
 use wit_bindgen::rt::async_support::futures::StreamExt;
 use wit_parser::decoding::DecodedWasm;
 use wit_parser::{
-    Function, PackageId, PackageName, Resolve, Results, Type, TypeDef, TypeDefKind, TypeOwner,
-    World, WorldId, WorldItem,
+    Function, PackageName, Resolve, Results, Type, TypeDef, TypeDefKind, TypeOwner, World, WorldId,
+    WorldItem,
 };
 
-/// A Component Manifest represents the metadata of a component,
-/// including its interface, types, functions and name.
-// TODO: rename? this includes the interface as well as binary
+/// A component with its fully resolved interface
+/// as well as the compiled binary.
 #[derive(Clone)]
-pub struct ComponentInterface {
+pub struct ComponentBinary {
     component: Component,
     /// The Resolve for the component WIT
     /// (not the package/interface WIT).
@@ -93,7 +90,7 @@ struct SerializableComponentInterfaceFunctionInput {
     kind: TypeDefKind,
 }
 
-impl ComponentInterface {
+impl ComponentBinary {
     pub async fn fetch(
         component: Component,
         wkg_client: &wasm_pkg_client::Client,
@@ -390,7 +387,7 @@ impl ComponentFunctionInterface {
     }
 }
 
-impl Debug for ComponentInterface {
+impl Debug for ComponentBinary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ComponentInterface")
             .field("component", &self.component)
@@ -431,7 +428,7 @@ fn type_def_to_string(type_def: &TypeDef) -> String {
     }
 }
 
-impl Serialize for ComponentInterface {
+impl Serialize for ComponentBinary {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -441,8 +438,8 @@ impl Serialize for ComponentInterface {
     }
 }
 
-impl From<&ComponentInterface> for SerializableComponentInterface {
-    fn from(v: &ComponentInterface) -> Self {
+impl From<&ComponentBinary> for SerializableComponentInterface {
+    fn from(v: &ComponentBinary) -> Self {
         let functions = v
             .get_functions()
             .into_iter()

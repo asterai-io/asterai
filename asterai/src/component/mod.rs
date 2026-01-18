@@ -1,5 +1,5 @@
 use crate::checksum::Checksum;
-use crate::component::interface::{ComponentInterface, PackageNameRegistry};
+use crate::component::interface::{ComponentBinary, PackageNameRegistry};
 use crate::error::AsteraiError;
 use derive_getters::Getters;
 use eyre::{bail, eyre};
@@ -45,8 +45,8 @@ impl Component {
     pub async fn fetch_interface(
         &self,
         wkg_client: &wasm_pkg_client::Client,
-    ) -> eyre::Result<ComponentInterface> {
-        ComponentInterface::fetch(self.clone(), wkg_client).await
+    ) -> eyre::Result<ComponentBinary> {
+        ComponentBinary::fetch(self.clone(), wkg_client).await
     }
 
     pub fn namespace(&self) -> &str {

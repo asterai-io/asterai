@@ -2,7 +2,7 @@ use crate::cli_ext::resource::ResourceCliExt;
 use crate::cli_ext::resource_from_path;
 use crate::cli_ext::resource_metadata::ResourceMetadataCliExt;
 use asterai_runtime::component::Component;
-use asterai_runtime::component::interface::ComponentInterface;
+use asterai_runtime::component::interface::ComponentBinary;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};
 use std::fs;
@@ -16,7 +16,7 @@ pub trait ComponentCliExt: Sized {
     fn local_fetch(id: &ResourceId) -> eyre::Result<Self>;
 }
 
-impl ComponentCliExt for ComponentInterface {
+impl ComponentCliExt for ComponentBinary {
     fn local_list() -> Vec<Self> {
         let resources = Resource::local_list();
         let mut components = Vec::new();

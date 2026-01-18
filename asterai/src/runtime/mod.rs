@@ -1,5 +1,5 @@
 use crate::component::function_name::ComponentFunctionName;
-use crate::component::interface::{ComponentFunctionInterface, ComponentInterface};
+use crate::component::interface::{ComponentBinary, ComponentFunctionInterface};
 use crate::component::{Component, ComponentId};
 use crate::runtime::output::{ComponentFunctionOutput, ComponentOutput};
 use crate::runtime::wasm_instance::{
@@ -7,15 +7,12 @@ use crate::runtime::wasm_instance::{
 };
 use derive_getters::Getters;
 use eyre::eyre;
-use futures::future::{join_all, try_join_all};
 use log::error;
 use once_cell::sync::Lazy;
-use semver::Version;
 use serde_json::Value;
 use std::fmt::Debug;
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use wasmtime::AsContextMut;
 pub use wasmtime::component::Val;
 use wit_parser::PackageName;
 
@@ -50,7 +47,7 @@ pub struct ComponentRuntime {
 
 impl ComponentRuntime {
     pub async fn new(
-        components: Vec<ComponentInterface>,
+        components: Vec<ComponentBinary>,
         // TODO: change app ID for resource ID?
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
@@ -62,7 +59,7 @@ impl ComponentRuntime {
         })
     }
 
-    pub fn component_interfaces(&self) -> Vec<ComponentInterface> {
+    pub fn component_interfaces(&self) -> Vec<ComponentBinary> {
         self.engine
             .instances()
             .iter()
@@ -75,7 +72,10 @@ impl ComponentRuntime {
         component_manifest_function: ComponentFunctionInterface,
         inputs: &[Val],
     ) -> eyre::Result<Option<ComponentOutput>> {
-        let output_opt = self.engine.call(component_manifest_function, inputs).await?;
+        let output_opt = self
+            .engine
+            .call(component_manifest_function, inputs)
+            .await?;
         Ok(output_opt)
     }
 

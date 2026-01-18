@@ -1,6 +1,6 @@
 use crate::component::Component;
 use crate::component::function_name::ComponentFunctionName;
-use crate::component::interface::{ComponentFunctionInterface, ComponentInterface};
+use crate::component::interface::{ComponentBinary, ComponentFunctionInterface};
 use crate::runtime::entry::add_asterai_host_to_linker;
 use crate::runtime::env::{HostEnv, HostEnvRuntimeData};
 use crate::runtime::output::ComponentOutput;
@@ -34,7 +34,7 @@ pub struct ComponentRuntimeEngine {
 pub struct ComponentRuntimeInstance {
     // TODO add app_plugin_id here to make it easily accessible
     // in host entry functions.
-    pub component_interface: ComponentInterface,
+    pub component_interface: ComponentBinary,
     pub app_id: Uuid,
     pub(super) instance: Instance,
 }
@@ -45,7 +45,7 @@ pub type StoreState = HostEnv;
 
 impl ComponentRuntimeEngine {
     pub async fn new(
-        mut components: Vec<ComponentInterface>,
+        mut components: Vec<ComponentBinary>,
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
     ) -> eyre::Result<Self> {

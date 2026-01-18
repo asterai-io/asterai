@@ -1,6 +1,6 @@
 use crate::cli_ext::component::ComponentCliExt;
 use asterai_runtime::component::ComponentId;
-use asterai_runtime::component::interface::ComponentInterface;
+use asterai_runtime::component::interface::ComponentBinary;
 use asterai_runtime::environment::Environment;
 use asterai_runtime::runtime::ComponentRuntime;
 use tokio::sync::mpsc;
@@ -12,7 +12,7 @@ pub trait ComponentRuntimeCliExt: Sized {
 
 impl ComponentRuntimeCliExt for ComponentRuntime {
     async fn from_environment(environment: Environment) -> eyre::Result<Self> {
-        let mut local_components = ComponentInterface::local_list();
+        let mut local_components = ComponentBinary::local_list();
         let mut components = Vec::with_capacity(environment.components.len());
         for env_component in environment.components {
             let local_component_opt = find_component(&env_component.id(), &mut local_components);
@@ -34,8 +34,8 @@ impl ComponentRuntimeCliExt for ComponentRuntime {
 
 fn find_component(
     id: &ComponentId,
-    components: &mut Vec<ComponentInterface>,
-) -> Option<ComponentInterface> {
+    components: &mut Vec<ComponentBinary>,
+) -> Option<ComponentBinary> {
     let Some(index) = components.iter().position(|c| c.component().id() == *id) else {
         return None;
     };
