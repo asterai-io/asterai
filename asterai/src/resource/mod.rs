@@ -23,6 +23,9 @@ pub struct Resource {
     /// Although the version in `PackageName` is optional,
     /// it is required in `Resource`s and is therefore
     /// guaranteed to be present.
+    ///
+    /// This accepts either `:` or `/` as a separator between namespace and name,
+    /// but is stored in WIT style (namespace:name).
     package_name: PackageName,
 }
 
@@ -102,8 +105,10 @@ impl FromStr for Resource {
         let Some((resource_id_registry, resource_version)) = str.split_once('@') else {
             return AsteraiError::InputMissingSemVerString.into();
         };
-        let package_name_registry = PackageNameRegistry::new(resource_id_registry)
-            .map_err(AsteraiError::BadRequest.map())?;
+        // Support both WIT-style (namespace:name) and OCI-style (namespace/name).
+        let normalized_id = resource_id_registry.replace('/', ":");
+        let package_name_registry =
+            PackageNameRegistry::new(&normalized_id).map_err(AsteraiError::BadRequest.map())?;
         let version =
             Version::from_str(&resource_version).map_err(AsteraiError::BadRequest.map())?;
         let resource = Self {
@@ -148,7 +153,10 @@ impl FromStr for ResourceId {
     type Err = eyre::Report;
 
     fn from_str(str: &str) -> Result<Self, Self::Err> {
-        let package_name_registry = PackageNameRegistry::new(str).map_err(|e| eyre!(e))?;
+        // Support both WIT-style (namespace:name) and OCI-style (namespace/name).
+        let normalized_id = str.replace('/', ":");
+        let package_name_registry =
+            PackageNameRegistry::new(&normalized_id).map_err(|e| eyre!(e))?;
         let resource = Self {
             package_name: PackageName {
                 namespace: package_name_registry.namespace().to_owned(),
@@ -197,5 +205,39 @@ mod test {
         let resource_id = ResourceId::from_str("asterai:test").unwrap();
         let stringified = resource_id.to_string();
         assert_eq!(stringified, "asterai:test");
+    }
+
+    #[test]
+    fn test_resource_from_wit_style() {
+        let resource = Resource::from_str("asterai:test@0.1.0").unwrap();
+        assert_eq!(resource.namespace(), "asterai");
+        assert_eq!(resource.name(), "test");
+        assert_eq!(resource.version().to_string(), "0.1.0");
+    }
+
+    #[test]
+    fn test_resource_from_oci_style() {
+        let resource = Resource::from_str("asterai/test@0.1.0").unwrap();
+        assert_eq!(resource.namespace(), "asterai");
+        assert_eq!(resource.name(), "test");
+        assert_eq!(resource.version().to_string(), "0.1.0");
+        // Should display in WIT style.
+        assert_eq!(resource.to_string(), "asterai:test@0.1.0");
+    }
+
+    #[test]
+    fn test_resource_id_from_wit_style() {
+        let resource_id = ResourceId::from_str("asterai:test").unwrap();
+        assert_eq!(resource_id.namespace(), "asterai");
+        assert_eq!(resource_id.name(), "test");
+    }
+
+    #[test]
+    fn test_resource_id_from_oci_style() {
+        let resource_id = ResourceId::from_str("asterai/test").unwrap();
+        assert_eq!(resource_id.namespace(), "asterai");
+        assert_eq!(resource_id.name(), "test");
+        // Should display in WIT style.
+        assert_eq!(resource_id.to_string(), "asterai:test");
     }
 }
