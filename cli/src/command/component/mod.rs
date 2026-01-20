@@ -1,5 +1,6 @@
 use crate::command::component::init::InitArgs;
 use crate::command::component::pkg::PkgArgs;
+use crate::command::component::pull::PullArgs;
 use crate::command::component::push::PushArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
 use asterai_runtime::resource::ResourceId;
@@ -10,6 +11,7 @@ use strum_macros::EnumString;
 pub mod init;
 pub mod list;
 pub mod pkg;
+pub mod pull;
 pub mod push;
 
 #[derive(Debug)]
@@ -19,6 +21,7 @@ pub struct ComponentArgs {
     component_name: Option<&'static str>,
     env_var: Option<&'static str>,
     pkg_args: Option<PkgArgs>,
+    pull_args: Option<PullArgs>,
     push_args: Option<PushArgs>,
     init_args: Option<InitArgs>,
 }
@@ -29,6 +32,7 @@ pub enum ComponentAction {
     Init,
     List,
     Pkg,
+    Pull,
     Push,
 }
 
@@ -46,6 +50,7 @@ impl ComponentArgs {
                 component_name: None,
                 env_var: None,
                 pkg_args: None,
+                pull_args: None,
                 push_args: None,
                 init_args: Some(InitArgs::parse(args)?),
             },
@@ -55,6 +60,7 @@ impl ComponentArgs {
                 component_name: None,
                 env_var: None,
                 pkg_args: None,
+                pull_args: None,
                 push_args: None,
                 init_args: None,
             },
@@ -64,6 +70,17 @@ impl ComponentArgs {
                 component_name: None,
                 env_var: None,
                 pkg_args: Some(PkgArgs::parse(args)?),
+                pull_args: None,
+                push_args: None,
+                init_args: None,
+            },
+            ComponentAction::Pull => Self {
+                action,
+                component_resource_or_id: None,
+                component_name: None,
+                env_var: None,
+                pkg_args: None,
+                pull_args: Some(PullArgs::parse(args)?),
                 push_args: None,
                 init_args: None,
             },
@@ -73,6 +90,7 @@ impl ComponentArgs {
                 component_name: None,
                 env_var: None,
                 pkg_args: None,
+                pull_args: None,
                 push_args: Some(PushArgs::parse(args)?),
                 init_args: None,
             },
@@ -90,6 +108,9 @@ impl ComponentArgs {
             }
             ComponentAction::Pkg => {
                 self.pkg().await?;
+            }
+            ComponentAction::Pull => {
+                self.pull().await?;
             }
             ComponentAction::Push => {
                 self.push().await?;
