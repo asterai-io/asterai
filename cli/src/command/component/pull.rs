@@ -2,6 +2,7 @@ use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
 use crate::config::BIN_DIR;
 use asterai_runtime::resource::Resource;
+use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{Context, OptionExt, bail};
 use serde::Deserialize;
 use std::fs;
@@ -64,16 +65,21 @@ impl PullArgs {
         let mut component: Option<Resource> = None;
         let mut api_endpoint = BASE_API_URL.to_string();
         let mut registry_endpoint = BASE_REGISTRY_URL.to_string();
+        let mut did_specify_registry = false;
         let mut staging = false;
         let mut output: Option<String> = None;
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "-e" | "--endpoint" => {
-                    api_endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
-                }
                 "-r" | "--registry" => {
                     registry_endpoint =
                         args.next().ok_or_eyre("missing value for registry flag")?;
+                    did_specify_registry = true;
+                }
+                "-e" | "--endpoint" => {
+                    api_endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
+                    if !did_specify_registry {
+                        registry_endpoint = BASE_REGISTRY_URL_STAGING.to_string();
+                    }
                 }
                 "-s" | "--staging" => {
                     staging = true;
@@ -238,7 +244,7 @@ impl PullArgs {
 
     fn write_metadata(&self, output_dir: &PathBuf, repo_name: &str, tag: &str) -> eyre::Result<()> {
         let metadata = serde_json::json!({
-            "kind": "Component",
+            "kind": ResourceKind::Component.to_string(),
             "pulled_from": format!("{}@{}", repo_name, tag),
         });
         let metadata_path = output_dir.join("metadata.json");
