@@ -1,0 +1,27 @@
+asterai component push - Push a component to the registry
+
+USAGE:
+    asterai component push [OPTIONS]
+
+OPTIONS:
+    --pkg <PATH>          Path to package.wasm (WIT interface) [default: package.wasm]
+    --component <PATH>    Path to component.wasm (implementation) [default: component.wasm]
+    -i, --interface-only  Push only the WIT interface (no implementation)
+    -e, --endpoint <URL>  API endpoint [default: https://api.asterai.io]
+    -s, --staging         Use staging environment
+    -h, --help            Show this help message
+
+EXAMPLES:
+    # Push component with interface (default paths)
+    asterai component push
+
+    # Push with custom paths
+    asterai component push --pkg ./build/package.wasm --component ./build/component.wasm
+
+    # Push interface-only (WIT package without implementation)
+    asterai component push --interface-only --pkg ./my-interface.wasm
+
+NOTES:
+    - package.wasm (WIT interface) is always required
+    - component.wasm is optional; if not found, pushes as interface-only
+    - Files are searched in current directory, then in ./build/
