@@ -141,6 +141,7 @@ dependencies = [
  "include_dir",
  "once_cell",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "strum 0.27.2",

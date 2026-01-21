@@ -1,6 +1,8 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
 use eyre::{Context, OptionExt, bail};
+use reqwest::StatusCode;
+use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,6 +10,17 @@ const BASE_API_URL: &str = "https://api.asterai.io";
 const BASE_API_URL_STAGING: &str = "https://staging.api.asterai.io";
 const RETRY_FIND_FILE_DIR: &str = "build/";
 const COMPONENT_PUSH_HELP: &str = include_str!("../../../help/component_push.txt");
+
+/// Structured error from server when version already exists.
+#[derive(Deserialize)]
+struct VersionConflictError {
+    error: String,
+    message: String,
+    version: String,
+    /// If true, CLI should auto-bump the version.
+    /// If false, CLI should just display the error (user can use --force).
+    can_auto_bump: bool,
+}
 
 #[derive(Debug)]
 pub(super) struct PushArgs {
@@ -19,6 +32,8 @@ pub(super) struct PushArgs {
     staging: bool,
     /// If true, only push the WIT interface (no component implementation).
     interface_only: bool,
+    /// Force overwrite existing version (for private mutable versions).
+    force: bool,
 }
 
 impl PushArgs {
@@ -28,6 +43,7 @@ impl PushArgs {
         let mut endpoint = BASE_API_URL.to_string();
         let mut staging = false;
         let mut interface_only = false;
+        let mut force = false;
         let mut did_specify_pkg = false;
         let print_help_and_exit = || {
             println!("{COMPONENT_PUSH_HELP}");
@@ -50,6 +66,9 @@ impl PushArgs {
                 }
                 "--interface-only" | "-i" => {
                     interface_only = true;
+                }
+                "--force" | "-f" => {
+                    force = true;
                 }
                 "--help" | "-h" | "help" => {
                     print_help_and_exit();
@@ -78,6 +97,7 @@ impl PushArgs {
             endpoint,
             staging,
             interface_only,
+            force,
         })
     }
 
@@ -105,6 +125,10 @@ impl PushArgs {
                 );
             }
         }
+        // Add force flag if set.
+        if self.force {
+            form = form.text("force", "true");
+        }
         // Determine base URL.
         let base_url = if self.staging {
             BASE_API_URL_STAGING
@@ -124,6 +148,22 @@ impl PushArgs {
             .await
             .wrap_err("failed to send push request")?;
         let status = response.status();
+        // Handle version conflict (409 Conflict).
+        if status == StatusCode::CONFLICT {
+            let body = response.text().await?;
+            if let Ok(err) = serde_json::from_str::<VersionConflictError>(&body) {
+                if err.error == "version_exists" {
+                    if err.can_auto_bump {
+                        // Public immutable version: auto-bump and instruct to rebuild.
+                        return self.handle_version_conflict(&err.version);
+                    } else {
+                        // Mutable version or private: just show the error message.
+                        bail!("{}", err.message);
+                    }
+                }
+            }
+            bail!("push failed ({}): {}", status, body);
+        }
         if !status.is_success() {
             let error_text = response
                 .text()
@@ -134,6 +174,72 @@ impl PushArgs {
         println!("done");
         Ok(())
     }
+
+    /// Handles a version conflict by auto-bumping the version in the WIT file
+    /// and instructing the user to rebuild.
+    fn handle_version_conflict(&self, current_version: &str) -> eyre::Result<()> {
+        // Cannot auto-bump :latest.
+        if current_version == "latest" {
+            bail!(
+                "Version :latest already exists but cannot be auto-bumped.\n\
+                 Add a semver version to your WIT package declaration."
+            );
+        }
+        // Bump patch version.
+        let new_version = bump_patch_version(current_version)?;
+        // Update WIT file.
+        let wit_path = self.update_wit_version(current_version, &new_version)?;
+        // Instruct user to rebuild and retry.
+        println!("Version {} already exists in registry.", current_version);
+        println!(
+            "Bumped version in {}: {} -> {}",
+            wit_path.display(),
+            current_version,
+            new_version
+        );
+        println!("\nPlease rebuild your component and push again:");
+        println!("  cargo component build --release");
+        println!("  asterai component push");
+        Ok(())
+    }
+
+    /// Updates the version in the WIT file.
+    fn update_wit_version(&self, old_version: &str, new_version: &str) -> eyre::Result<PathBuf> {
+        // Find WIT files in the project.
+        let wit_dir = Path::new("wit");
+        if !wit_dir.exists() {
+            bail!("wit/ directory not found. Cannot auto-bump version.");
+        }
+        // Look for the package declaration with the old version.
+        for entry in fs::read_dir(wit_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "wit") {
+                let content = fs::read_to_string(&path)?;
+                if content.contains(&format!("@{}", old_version)) {
+                    let new_content =
+                        content.replace(&format!("@{}", old_version), &format!("@{}", new_version));
+                    fs::write(&path, &new_content)?;
+                    return Ok(path);
+                }
+            }
+        }
+        bail!("Could not find version {} in WIT files", old_version);
+    }
+}
+
+/// Bumps the patch version of a semver string.
+/// Only called for immutable release versions (X.Y.Z) that triggered a 409.
+/// Pre-release versions are mutable and never trigger 409, so no special handling needed.
+fn bump_patch_version(version: &str) -> eyre::Result<String> {
+    let semver =
+        semver::Version::parse(version).wrap_err_with(|| format!("Invalid semver: {}", version))?;
+    Ok(format!(
+        "{}.{}.{}",
+        semver.major,
+        semver.minor,
+        semver.patch + 1
+    ))
 }
 
 fn check_does_file_exist(relative_path: &str) -> bool {
