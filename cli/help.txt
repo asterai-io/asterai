@@ -16,9 +16,10 @@ Environment commands:
   asterai env list                                 List all environments you have write access to
                                                    (shows local and published; tags indicate status)
   asterai env inspect <name>                       Show components, env vars, and metadata
-  asterai env add <name> --component <spec>        Add a component (e.g. user:component@version)
-  asterai env remove <name> --component <spec>     Remove a component
+  asterai env add-component <env> <component>      Add a component to an environment
+  asterai env remove-component <env> <component>   Remove a component from an environment
   asterai env set-var <name> --var NAME=VALUE      Set an env var (NAME= to clear)
+  asterai env delete <namespace:name>              Delete an environment and all its versions
 
 Component commands:
   asterai component init <name> [language]         Scaffold a new local WASM component project
