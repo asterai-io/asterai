@@ -98,7 +98,9 @@ impl PullArgs {
         // Download layers.
         for (i, layer) in manifest.layers.iter().enumerate() {
             println!("downloading layer {} ({})...", i + 1, &layer.digest[..19]);
-            let blob_bytes = registry.download_blob(&repo_name, &layer.digest, &token).await?;
+            let blob_bytes = registry
+                .download_blob(&repo_name, &layer.digest, &token)
+                .await?;
             let filename = if i == 0 {
                 "component.wasm"
             } else {

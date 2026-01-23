@@ -1,12 +1,10 @@
 use crate::command::env::EnvArgs;
-use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use crate::runtime::build_runtime;
 use asterai_runtime::component::function_name::ComponentFunctionName;
-use asterai_runtime::component::interface::PackageNameRegistry;
 use asterai_runtime::component::{PackageName, Version};
 use asterai_runtime::runtime::Val;
-use eyre::{OptionExt, bail, eyre};
+use eyre::{OptionExt, bail};
 use std::str::FromStr;
 
 impl EnvArgs {
@@ -67,7 +65,7 @@ fn parse_function_string_into_parts(
     ))
 }
 
-fn parse_inputs_from_string_args(args: &[String]) -> eyre::Result<Vec<Val>> {
+fn parse_inputs_from_string_args(_args: &[String]) -> eyre::Result<Vec<Val>> {
     // TODO
     Ok(Vec::new())
 }

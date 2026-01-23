@@ -3,8 +3,6 @@ use crate::command::component::init::InitArgs;
 use crate::command::component::pkg::PkgArgs;
 use crate::command::component::pull::PullArgs;
 use crate::command::component::push::PushArgs;
-use crate::command::resource_or_id::ResourceOrIdArg;
-use asterai_runtime::resource::ResourceId;
 use eyre::{bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
@@ -19,9 +17,6 @@ pub mod push;
 #[derive(Debug)]
 pub struct ComponentArgs {
     action: ComponentAction,
-    component_resource_or_id: Option<ResourceOrIdArg>,
-    component_name: Option<&'static str>,
-    env_var: Option<&'static str>,
     pkg_args: Option<PkgArgs>,
     pull_args: Option<PullArgs>,
     push_args: Option<PushArgs>,
@@ -50,9 +45,6 @@ impl ComponentArgs {
         let command_args = match action {
             ComponentAction::Init => Self {
                 action,
-                component_resource_or_id: None,
-                component_name: None,
-                env_var: None,
                 pkg_args: None,
                 pull_args: None,
                 push_args: None,
@@ -61,9 +53,6 @@ impl ComponentArgs {
             },
             ComponentAction::List => Self {
                 action,
-                component_resource_or_id: None,
-                component_name: None,
-                env_var: None,
                 pkg_args: None,
                 pull_args: None,
                 push_args: None,
@@ -72,9 +61,6 @@ impl ComponentArgs {
             },
             ComponentAction::Pkg => Self {
                 action,
-                component_resource_or_id: None,
-                component_name: None,
-                env_var: None,
                 pkg_args: Some(PkgArgs::parse(args)?),
                 pull_args: None,
                 push_args: None,
@@ -83,9 +69,6 @@ impl ComponentArgs {
             },
             ComponentAction::Pull => Self {
                 action,
-                component_resource_or_id: None,
-                component_name: None,
-                env_var: None,
                 pkg_args: None,
                 pull_args: Some(PullArgs::parse(args)?),
                 push_args: None,
@@ -94,9 +77,6 @@ impl ComponentArgs {
             },
             ComponentAction::Push => Self {
                 action,
-                component_resource_or_id: None,
-                component_name: None,
-                env_var: None,
                 pkg_args: None,
                 pull_args: None,
                 push_args: Some(PushArgs::parse(args)?),
@@ -105,9 +85,6 @@ impl ComponentArgs {
             },
             ComponentAction::Delete => Self {
                 action,
-                component_resource_or_id: None,
-                component_name: None,
-                env_var: None,
                 pkg_args: None,
                 pull_args: None,
                 push_args: None,
@@ -143,21 +120,10 @@ impl ComponentArgs {
     }
 
     fn delete(&self) -> eyre::Result<()> {
-        let args = self.delete_args.as_ref().ok_or_else(|| eyre!("no delete args"))?;
-        args.execute()
-    }
-
-    /// If a resource name is present, this returns the
-    /// `ResourceId` using a fallback namespace if no namespace was given.
-    /// Otherwise, if no resource name, it returns an `Err`.
-    /// TODO also add method for Resource (including version
-    /// TODO reduce duplication with env module?
-    fn resource_id(&self) -> eyre::Result<ResourceId> {
-        let resource_id_string = self
-            .component_resource_or_id
+        let args = self
+            .delete_args
             .as_ref()
-            .unwrap()
-            .with_local_namespace_fallback();
-        ResourceId::from_str(&resource_id_string).map_err(|e| eyre!(e))
+            .ok_or_else(|| eyre!("no delete args"))?;
+        args.execute()
     }
 }

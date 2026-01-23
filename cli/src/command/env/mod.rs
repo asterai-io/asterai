@@ -23,7 +23,6 @@ pub struct EnvArgs {
     component: Option<Component>,
     function: Option<String>,
     function_args: Vec<String>,
-    env_var: Option<&'static str>,
     run_args: Option<run::RunArgs>,
     set_var_args: Option<set_var::SetVarArgs>,
     push_args: Option<push::PushArgs>,
@@ -67,7 +66,6 @@ impl EnvArgs {
                 component: None,
                 function: None,
                 function_args: vec![],
-                env_var: None,
                 run_args: Some(run::RunArgs::parse(args)?),
                 set_var_args: None,
                 push_args: None,
@@ -80,7 +78,6 @@ impl EnvArgs {
                 component: None,
                 function: None,
                 function_args: vec![],
-                env_var: None,
                 run_args: None,
                 set_var_args: None,
                 push_args: None,
@@ -96,7 +93,6 @@ impl EnvArgs {
                 ),
                 function: Some(args.next().expect("missing function")),
                 function_args: args.collect::<Vec<_>>(),
-                env_var: None,
                 run_args: None,
                 set_var_args: None,
                 push_args: None,
@@ -108,15 +104,13 @@ impl EnvArgs {
                 let component_string = args
                     .next()
                     .ok_or_eyre("missing component (e.g. namespace:component@version)")?;
-                let component =
-                    Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                let component = Component::from_str(&component_string).map_err(|e| eyre!(e))?;
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
                     component: Some(component),
                     function: None,
                     function_args: vec![],
-                    env_var: None,
                     run_args: None,
                     set_var_args: None,
                     push_args: None,
@@ -129,15 +123,13 @@ impl EnvArgs {
                 let component_string = args
                     .next()
                     .ok_or_eyre("missing component (e.g. namespace:component)")?;
-                let component =
-                    Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                let component = Component::from_str(&component_string).map_err(|e| eyre!(e))?;
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
                     component: Some(component),
                     function: None,
                     function_args: vec![],
-                    env_var: None,
                     run_args: None,
                     set_var_args: None,
                     push_args: None,
@@ -151,7 +143,6 @@ impl EnvArgs {
                 component: None,
                 function: None,
                 function_args: vec![],
-                env_var: None,
                 run_args: None,
                 set_var_args: None,
                 push_args: None,
@@ -164,7 +155,6 @@ impl EnvArgs {
                 component: None,
                 function: None,
                 function_args: vec![],
-                env_var: None,
                 run_args: None,
                 set_var_args: Some(set_var::SetVarArgs::parse(args)?),
                 push_args: None,
@@ -177,7 +167,6 @@ impl EnvArgs {
                 component: None,
                 function: None,
                 function_args: vec![],
-                env_var: None,
                 run_args: None,
                 set_var_args: None,
                 push_args: Some(push::PushArgs::parse(args)?),
@@ -190,7 +179,6 @@ impl EnvArgs {
                 component: None,
                 function: None,
                 function_args: vec![],
-                env_var: None,
                 run_args: None,
                 set_var_args: None,
                 push_args: None,
@@ -203,7 +191,6 @@ impl EnvArgs {
                 component: None,
                 function: None,
                 function_args: vec![],
-                env_var: None,
                 run_args: None,
                 set_var_args: None,
                 push_args: None,

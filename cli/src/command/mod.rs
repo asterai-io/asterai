@@ -2,7 +2,6 @@ use crate::command::auth::AuthArgs;
 use crate::command::component::ComponentArgs;
 use crate::command::env::EnvArgs;
 use crate::command::help::Help;
-use eyre::bail;
 
 mod auth;
 mod component;

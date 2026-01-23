@@ -1,7 +1,7 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
 use crate::config::API_URL;
-use eyre::{Context, OptionExt, bail, eyre};
+use eyre::{Context, OptionExt, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 

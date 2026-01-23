@@ -104,8 +104,7 @@ impl DeleteArgs {
                 .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown");
-            fs::remove_dir_all(path)
-                .wrap_err_with(|| format!("failed to delete {}", version))?;
+            fs::remove_dir_all(path).wrap_err_with(|| format!("failed to delete {}", version))?;
             println!("deleted {}", version);
         }
         println!(
@@ -137,7 +136,10 @@ impl DeleteArgs {
                 bail!("confirmation failed: expected '{}', got '{}'", name, input);
             }
         }
-        println!("deleting environment {}:{} from registry...", namespace, name);
+        println!(
+            "deleting environment {}:{} from registry...",
+            namespace, name
+        );
         let base_url = if self.staging {
             API_URL_STAGING
         } else {

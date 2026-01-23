@@ -99,9 +99,7 @@ fn parse_component_reference(s: &str) -> eyre::Result<(String, String)> {
     let (namespace, name) = s
         .split_once(':')
         .or_else(|| s.split_once('/'))
-        .ok_or_else(|| {
-            eyre::eyre!("invalid component reference '{}': use namespace:name", s)
-        })?;
+        .ok_or_else(|| eyre::eyre!("invalid component reference '{}': use namespace:name", s))?;
     Ok((namespace.to_string(), name.to_string()))
 }
 

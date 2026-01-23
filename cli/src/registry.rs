@@ -156,7 +156,12 @@ impl<'a> RegistryClient<'a> {
     }
 
     /// Download a blob from the registry.
-    pub async fn download_blob(&self, repo_name: &str, digest: &str, token: &str) -> eyre::Result<Vec<u8>> {
+    pub async fn download_blob(
+        &self,
+        repo_name: &str,
+        digest: &str,
+        token: &str,
+    ) -> eyre::Result<Vec<u8>> {
         let blob_url = format!("{}/v2/{}/blobs/{}", self.registry_url, repo_name, digest);
         let response = self
             .client
@@ -173,7 +178,10 @@ impl<'a> RegistryClient<'a> {
                 .unwrap_or_else(|_| "unknown error".to_string());
             bail!("failed to fetch blob ({}): {}", status, error_text);
         }
-        let bytes = response.bytes().await.wrap_err("failed to read blob bytes")?;
+        let bytes = response
+            .bytes()
+            .await
+            .wrap_err("failed to read blob bytes")?;
         Ok(bytes.to_vec())
     }
 
@@ -210,7 +218,9 @@ impl<'a> RegistryClient<'a> {
         fs::create_dir_all(&output_dir)?;
         // Download layers.
         for (i, layer) in manifest.layers.iter().enumerate() {
-            let blob_bytes = self.download_blob(&repo_name, &layer.digest, &token).await?;
+            let blob_bytes = self
+                .download_blob(&repo_name, &layer.digest, &token)
+                .await?;
             let filename = if i == 0 {
                 "component.wasm"
             } else {

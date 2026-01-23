@@ -234,9 +234,11 @@ impl LocalStore {
 
     /// Check if a component exists locally.
     pub fn component_exists(component: &Component) -> bool {
-        let component_dir = ARTIFACTS_DIR
-            .join(component.namespace())
-            .join(format!("{}@{}", component.name(), component.version()));
+        let component_dir = ARTIFACTS_DIR.join(component.namespace()).join(format!(
+            "{}@{}",
+            component.name(),
+            component.version()
+        ));
         if !component_dir.exists() {
             return false;
         }
