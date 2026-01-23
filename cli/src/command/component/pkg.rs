@@ -1,10 +1,9 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
+use crate::config::API_URL;
 use eyre::{Context, OptionExt, bail, eyre};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-const BASE_API_URL: &str = "https://api.asterai.io";
 
 #[derive(Debug)]
 pub(super) struct PkgArgs {
@@ -17,7 +16,7 @@ pub(super) struct PkgArgs {
 impl PkgArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut wit_input_path = None;
-        let mut endpoint = BASE_API_URL.to_string();
+        let mut endpoint = API_URL.to_string();
         let mut output = "package.wasm".to_string();
         let mut wit = None;
         while let Some(arg) = args.next() {

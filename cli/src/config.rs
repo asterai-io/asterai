@@ -4,6 +4,11 @@ use std::path::PathBuf;
 
 const APP_DIR_NAME: &str = "asterai";
 
+pub const API_URL: &str = "https://api.asterai.io";
+pub const API_URL_STAGING: &str = "https://staging.api.asterai.io";
+pub const REGISTRY_URL: &str = "https://registry.asterai.io";
+pub const REGISTRY_URL_STAGING: &str = "https://staging.registry.asterai.io";
+
 pub static CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
     let home_dir = if cfg!(windows) {
         env::var("LOCALAPPDATA").unwrap_or_else(|_| env::var("USERPROFILE").unwrap())

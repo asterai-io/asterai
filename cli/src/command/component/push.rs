@@ -1,13 +1,11 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
+use crate::config::{API_URL, API_URL_STAGING};
 use eyre::{Context, OptionExt, bail};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-const BASE_API_URL: &str = "https://api.asterai.io";
-const BASE_API_URL_STAGING: &str = "https://staging.api.asterai.io";
 const RETRY_FIND_FILE_DIR: &str = "build/";
 const COMPONENT_PUSH_HELP: &str = include_str!("../../../help/component_push.txt");
 
@@ -40,7 +38,7 @@ impl PushArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut component: Option<String> = None;
         let mut pkg = "package.wasm".to_string();
-        let mut endpoint = BASE_API_URL.to_string();
+        let mut endpoint = API_URL.to_string();
         let mut staging = false;
         let mut interface_only = false;
         let mut force = false;
@@ -131,7 +129,7 @@ impl PushArgs {
         }
         // Determine base URL.
         let base_url = if self.staging {
-            BASE_API_URL_STAGING
+            API_URL_STAGING
         } else {
             &self.endpoint
         };

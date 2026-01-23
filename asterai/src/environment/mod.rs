@@ -1,21 +1,133 @@
 use crate::component::Component;
-use crate::resource::Resource;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
+/// Environment manifest - the deployable unit in Asterai.
+///
+/// An environment bundles one or more components with configuration
+/// (environment variables/secrets), forming a versioned, immutable artifact.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Environment {
-    pub resource: Resource,
-    pub components: HashSet<Component>,
+    /// Metadata about this environment (namespace, name, version).
+    pub metadata: EnvironmentMetadata,
+    /// Components in this environment.
+    /// Cargo.toml-style: key is "namespace:name", value is "version".
+    pub components: HashMap<String, String>,
+    /// Environment variables/secrets.
     pub vars: HashMap<String, String>,
 }
 
-impl Environment {
-    pub fn new(resource: Resource) -> Self {
-        Self {
-            resource,
-            components: Default::default(),
-            vars: Default::default(),
+/// Metadata for an environment manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct EnvironmentMetadata {
+    pub namespace: String,
+    pub name: String,
+    pub version: String,
+}
+
+/// Reason for a version change when pushing an environment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChangeReason {
+    /// First version of the environment.
+    Initial,
+    /// A component was added.
+    ComponentAdded,
+    /// A component was removed.
+    ComponentRemoved,
+    /// A component was upgraded to a new version.
+    ComponentUpgraded,
+    /// Environment variables were changed.
+    VarsChanged,
+    /// No changes from the previous version.
+    NoChange,
+}
+
+impl ChangeReason {
+    /// Returns the string representation used in API responses and database.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ChangeReason::Initial => "initial",
+            ChangeReason::ComponentAdded => "componentAdded",
+            ChangeReason::ComponentRemoved => "componentRemoved",
+            ChangeReason::ComponentUpgraded => "componentUpgraded",
+            ChangeReason::VarsChanged => "varsChanged",
+            ChangeReason::NoChange => "noChange",
         }
+    }
+}
+
+impl std::fmt::Display for ChangeReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl Environment {
+    /// Create a new empty environment.
+    pub fn new(namespace: String, name: String, version: String) -> Self {
+        Self {
+            metadata: EnvironmentMetadata {
+                namespace,
+                name,
+                version,
+            },
+            components: HashMap::new(),
+            vars: HashMap::new(),
+        }
+    }
+
+    /// Get the namespace of this environment.
+    pub fn namespace(&self) -> &str {
+        &self.metadata.namespace
+    }
+
+    /// Get the name of this environment.
+    pub fn name(&self) -> &str {
+        &self.metadata.name
+    }
+
+    /// Get the version of this environment.
+    pub fn version(&self) -> &str {
+        &self.metadata.version
+    }
+
+    /// Add a component to this environment.
+    pub fn add_component(&mut self, component: &Component) {
+        let key = format!("{}:{}", component.namespace(), component.name());
+        self.components.insert(key, component.version().to_string());
+    }
+
+    /// Remove a component from this environment.
+    pub fn remove_component(&mut self, namespace: &str, name: &str) -> bool {
+        let key = format!("{}:{}", namespace, name);
+        self.components.remove(&key).is_some()
+    }
+
+    /// Set an environment variable.
+    pub fn set_var(&mut self, key: String, value: String) {
+        self.vars.insert(key, value);
+    }
+
+    /// Get an environment variable.
+    pub fn get_var(&self, key: &str) -> Option<&String> {
+        self.vars.get(key)
+    }
+
+    /// Get the full resource reference (namespace:name@version).
+    pub fn resource_ref(&self) -> String {
+        format!(
+            "{}:{}@{}",
+            self.metadata.namespace, self.metadata.name, self.metadata.version
+        )
+    }
+
+    /// Get component references as full strings (namespace:name@version).
+    pub fn component_refs(&self) -> Vec<String> {
+        self.components
+            .iter()
+            .map(|(id, version)| format!("{}@{}", id, version))
+            .collect()
     }
 }

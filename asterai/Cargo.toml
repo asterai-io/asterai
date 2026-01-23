@@ -39,3 +39,4 @@ strum_macros = { workspace = true }
 derive-getters = { workspace = true }
 once_cell = { workspace = true }
 hex = { workspace = true }
+toml = { workspace = true }

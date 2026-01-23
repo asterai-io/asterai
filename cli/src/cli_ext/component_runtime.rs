@@ -3,6 +3,7 @@ use asterai_runtime::component::ComponentId;
 use asterai_runtime::component::interface::ComponentBinary;
 use asterai_runtime::environment::Environment;
 use asterai_runtime::runtime::ComponentRuntime;
+use std::str::FromStr;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -14,14 +15,25 @@ impl ComponentRuntimeCliExt for ComponentRuntime {
     async fn from_environment(environment: Environment) -> eyre::Result<Self> {
         let mut local_components = ComponentBinary::local_list();
         let mut components = Vec::with_capacity(environment.components.len());
-        for env_component in environment.components {
-            let local_component_opt = find_component(&env_component.id(), &mut local_components);
+        // environment.components is HashMap<String, String> where key is "namespace:name" and value is version
+        for (component_id_str, version) in &environment.components {
+            // Parse the component ID (namespace:name)
+            let component_id = ComponentId::from_str(component_id_str).map_err(|e| {
+                eyre::eyre!("failed to parse component ID '{}': {}", component_id_str, e)
+            })?;
+
+            let local_component_opt = find_component(&component_id, &mut local_components);
             if let Some(local_component) = local_component_opt {
+                // TODO: validate version matches
                 components.push(local_component);
                 continue;
             }
             // Local component not found, must fetch from registry.
-            todo!()
+            todo!(
+                "component {}@{} not found locally, need to fetch from registry",
+                component_id_str,
+                version
+            )
         }
         // TODO update this according to new API.
         let app_id = Uuid::new_v4();

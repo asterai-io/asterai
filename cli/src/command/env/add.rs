@@ -13,7 +13,7 @@ impl EnvArgs {
             unimplemented!("component does not exist locally");
         }
         let mut environment = Environment::local_fetch(&resource_id)?;
-        environment.components.insert(component.clone());
+        environment.add_component(component);
         environment.write_to_disk()?;
         Ok(())
     }

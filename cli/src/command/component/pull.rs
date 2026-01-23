@@ -1,6 +1,6 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
-use crate::config::BIN_DIR;
+use crate::config::{API_URL, API_URL_STAGING, BIN_DIR, REGISTRY_URL, REGISTRY_URL_STAGING};
 use asterai_runtime::resource::Resource;
 use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{Context, OptionExt, bail};
@@ -8,11 +8,6 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
-
-const BASE_API_URL: &str = "https://api.asterai.io";
-const BASE_API_URL_STAGING: &str = "https://staging.api.asterai.io";
-const BASE_REGISTRY_URL: &str = "https://registry.asterai.io";
-const BASE_REGISTRY_URL_STAGING: &str = "https://staging.registry.asterai.io";
 
 #[derive(Debug)]
 pub(super) struct PullArgs {
@@ -63,8 +58,8 @@ struct OciDescriptor {
 impl PullArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut component: Option<Resource> = None;
-        let mut api_endpoint = BASE_API_URL.to_string();
-        let mut registry_endpoint = BASE_REGISTRY_URL.to_string();
+        let mut api_endpoint = API_URL.to_string();
+        let mut registry_endpoint = REGISTRY_URL.to_string();
         let mut did_specify_registry = false;
         let mut staging = false;
         let mut output: Option<String> = None;
@@ -78,7 +73,7 @@ impl PullArgs {
                 "-e" | "--endpoint" => {
                     api_endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
                     if !did_specify_registry {
-                        registry_endpoint = BASE_REGISTRY_URL_STAGING.to_string();
+                        registry_endpoint = REGISTRY_URL_STAGING.to_string();
                     }
                 }
                 "-s" | "--staging" => {
@@ -122,7 +117,7 @@ impl PullArgs {
         let tag = &version;
         println!("pulling {}@{}", repo_name, tag);
         let (api_url, registry_url) = if self.staging {
-            (BASE_API_URL_STAGING, BASE_REGISTRY_URL_STAGING)
+            (API_URL_STAGING, REGISTRY_URL_STAGING)
         } else {
             (self.api_endpoint.as_str(), self.registry_endpoint.as_str())
         };

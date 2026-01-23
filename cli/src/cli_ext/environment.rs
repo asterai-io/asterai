@@ -1,5 +1,4 @@
 use crate::cli_ext::resource::ResourceCliExt;
-use crate::cli_ext::resource_from_path;
 use crate::cli_ext::resource_metadata::ResourceMetadataCliExt;
 use crate::config::BIN_DIR;
 use asterai_runtime::environment::Environment;
@@ -24,12 +23,8 @@ impl EnvironmentCliExt for Environment {
     fn local_disk_dir(&self) -> PathBuf {
         BIN_DIR
             .join("resources")
-            .join(self.resource.namespace())
-            .join(format!(
-                "{}@{}",
-                self.resource.name(),
-                self.resource.version()
-            ))
+            .join(self.namespace())
+            .join(format!("{}@{}", self.name(), self.version()))
     }
 
     fn local_disk_file_path(&self) -> PathBuf {
@@ -70,12 +65,14 @@ impl EnvironmentCliExt for Environment {
     }
 
     fn parse_local(path: &Path) -> eyre::Result<Self> {
-        let resource = resource_from_path(path)?;
         let env_json_path = path.to_owned().join("env.json");
         let serialized = fs::read_to_string(&env_json_path)?;
         let environment: Environment = serde_json::from_str(&serialized)?;
-        if environment.resource != resource {
-            bail!("env.json resource does not match dir resource data");
+        // Validate that the environment metadata matches the path
+        let dir_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let expected_dir = format!("{}@{}", environment.name(), environment.version());
+        if dir_name != expected_dir {
+            bail!("env.json metadata does not match directory name");
         }
         Ok(environment)
     }

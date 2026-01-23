@@ -10,23 +10,27 @@ impl EnvArgs {
             return Ok(());
         };
         println!(
-            "environment {env_resource} has {component_count} components",
-            env_resource = env.resource,
-            component_count = env.components.len()
+            "environment {} has {} components",
+            env.resource_ref(),
+            env.components.len()
         );
         if env.components.is_empty() {
             println!("components: (none)");
             return Ok(());
         }
-        let mut components: Vec<_> = env
-            .components
-            .iter()
-            .map(|component| component.to_string())
-            .collect();
+        let mut components: Vec<_> = env.component_refs();
         components.sort();
         println!("components:");
         for component in components {
             println!(" - {component}");
+        }
+        if !env.vars.is_empty() {
+            println!("vars:");
+            let mut vars: Vec<_> = env.vars.keys().collect();
+            vars.sort();
+            for var in vars {
+                println!(" - {var}");
+            }
         }
         Ok(())
     }

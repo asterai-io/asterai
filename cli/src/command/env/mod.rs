@@ -7,9 +7,12 @@ use strum_macros::EnumString;
 
 mod add;
 mod call;
+mod delete;
 mod init;
 mod inspect;
 mod list;
+mod pull;
+mod push;
 mod remove;
 mod run;
 
@@ -20,6 +23,9 @@ pub struct EnvArgs {
     function: Option<String>,
     function_args: Vec<String>,
     env_var: Option<&'static str>,
+    push_args: Option<push::PushArgs>,
+    pull_args: Option<pull::PullArgs>,
+    delete_args: Option<delete::DeleteArgs>,
 }
 
 #[derive(Copy, Clone, EnumString)]
@@ -32,6 +38,9 @@ pub enum EnvAction {
     List,
     Add,
     Remove,
+    Push,
+    Pull,
+    Delete,
 }
 
 impl EnvArgs {
@@ -55,6 +64,9 @@ impl EnvArgs {
                 function: None,
                 function_args: vec![],
                 env_var: None,
+                push_args: None,
+                pull_args: None,
+                delete_args: None,
             },
             EnvAction::Call => Self {
                 action,
@@ -66,6 +78,9 @@ impl EnvArgs {
                 function: Some(args.next().expect("missing function")),
                 function_args: args.collect::<Vec<_>>(),
                 env_var: None,
+                push_args: None,
+                pull_args: None,
+                delete_args: None,
             },
             EnvAction::Add => {
                 let env_resource_or_id = parse_env_name_or_id()?;
@@ -77,6 +92,9 @@ impl EnvArgs {
                     function: None,
                     function_args: vec![],
                     env_var: None,
+                    push_args: None,
+                    pull_args: None,
+                    delete_args: None,
                 }
             }
             EnvAction::Remove => {
@@ -89,6 +107,9 @@ impl EnvArgs {
                     function: None,
                     function_args: vec![],
                     env_var: None,
+                    push_args: None,
+                    pull_args: None,
+                    delete_args: None,
                 }
             }
             EnvAction::List => Self {
@@ -98,6 +119,42 @@ impl EnvArgs {
                 function: None,
                 function_args: vec![],
                 env_var: None,
+                push_args: None,
+                pull_args: None,
+                delete_args: None,
+            },
+            EnvAction::Push => Self {
+                action,
+                env_resource_or_id: None,
+                component: None,
+                function: None,
+                function_args: vec![],
+                env_var: None,
+                push_args: Some(push::PushArgs::parse(args)?),
+                pull_args: None,
+                delete_args: None,
+            },
+            EnvAction::Pull => Self {
+                action,
+                env_resource_or_id: None,
+                component: None,
+                function: None,
+                function_args: vec![],
+                env_var: None,
+                push_args: None,
+                pull_args: Some(pull::PullArgs::parse(args)?),
+                delete_args: None,
+            },
+            EnvAction::Delete => Self {
+                action,
+                env_resource_or_id: None,
+                component: None,
+                function: None,
+                function_args: vec![],
+                env_var: None,
+                push_args: None,
+                pull_args: None,
+                delete_args: Some(delete::DeleteArgs::parse(args)?),
             },
         };
         Ok(env_args)
@@ -115,7 +172,7 @@ impl EnvArgs {
                 self.inspect()?;
             }
             EnvAction::List => {
-                self.list()?;
+                self.list().await?;
             }
             EnvAction::Call => {
                 self.call().await?;
@@ -125,6 +182,15 @@ impl EnvArgs {
             }
             EnvAction::Remove => {
                 self.remove()?;
+            }
+            EnvAction::Push => {
+                self.push().await?;
+            }
+            EnvAction::Pull => {
+                self.pull().await?;
+            }
+            EnvAction::Delete => {
+                self.delete().await?;
             }
         }
         Ok(())
@@ -169,4 +235,21 @@ fn parse_component_flag(args: &mut impl Iterator<Item = String>) -> eyre::Result
         }
     }
     component.ok_or_eyre("missing component flag")
+}
+
+impl EnvArgs {
+    pub async fn push(&self) -> eyre::Result<()> {
+        let args = self.push_args.as_ref().ok_or_eyre("no push args")?;
+        args.execute().await
+    }
+
+    pub async fn pull(&self) -> eyre::Result<()> {
+        let args = self.pull_args.as_ref().ok_or_eyre("no pull args")?;
+        args.execute().await
+    }
+
+    pub async fn delete(&self) -> eyre::Result<()> {
+        let args = self.delete_args.as_ref().ok_or_eyre("no delete args")?;
+        args.execute().await
+    }
 }
