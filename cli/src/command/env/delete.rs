@@ -1,5 +1,7 @@
 use crate::auth::Auth;
-use crate::config::{API_URL, API_URL_STAGING, ARTIFACTS_DIR};
+use crate::cli_ext::resource::ResourceCliExt;
+use crate::config::{API_URL, API_URL_STAGING};
+use asterai_runtime::resource::Resource;
 use eyre::{Context, OptionExt, bail};
 use std::fs;
 
@@ -76,23 +78,7 @@ impl DeleteArgs {
     }
 
     fn execute_local(&self, namespace: &str, name: &str) -> eyre::Result<()> {
-        let namespace_dir = ARTIFACTS_DIR.join(namespace);
-        if !namespace_dir.exists() {
-            bail!("environment '{}:{}' not found locally", namespace, name);
-        }
-        // Find all versions of this environment.
-        let prefix = format!("{}@", name);
-        let mut versions_to_delete: Vec<_> = Vec::new();
-        for entry in fs::read_dir(&namespace_dir)? {
-            let entry = entry?;
-            let file_name = entry.file_name();
-            let Some(name_str) = file_name.to_str() else {
-                continue;
-            };
-            if name_str.starts_with(&prefix) {
-                versions_to_delete.push(entry.path());
-            }
-        }
+        let versions_to_delete = Resource::local_find_all_versions(namespace, name);
         if versions_to_delete.is_empty() {
             bail!("environment '{}:{}' not found locally", namespace, name);
         }

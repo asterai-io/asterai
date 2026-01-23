@@ -1,4 +1,5 @@
-use crate::config::ARTIFACTS_DIR;
+use crate::cli_ext::resource::ResourceCliExt;
+use asterai_runtime::resource::Resource;
 use eyre::{OptionExt, bail};
 use std::fs;
 
@@ -47,27 +48,14 @@ impl DeleteArgs {
 
     pub fn execute(&self) -> eyre::Result<()> {
         let (namespace, name) = parse_component_reference(&self.component_ref)?;
-        let namespace_dir = ARTIFACTS_DIR.join(&namespace);
-        if !namespace_dir.exists() {
-            bail!("component '{}:{}' not found locally", namespace, name);
-        }
         // Find all versions of this component.
-        let prefix = format!("{}@", name);
-        let mut versions_to_delete: Vec<_> = Vec::new();
-        for entry in fs::read_dir(&namespace_dir)? {
-            let entry = entry?;
-            let file_name = entry.file_name();
-            let Some(name_str) = file_name.to_str() else {
-                continue;
-            };
-            if name_str.starts_with(&prefix) {
-                // Verify it's actually a component (has component.wasm).
-                let path = entry.path();
-                if path.join("component.wasm").exists() || path.join("package.wasm").exists() {
-                    versions_to_delete.push(path);
-                }
-            }
-        }
+        let versions_to_delete: Vec<_> = Resource::local_find_all_versions(&namespace, &name)
+            .into_iter()
+            .filter(|path| {
+                // Verify it's actually a component (has component.wasm or package.wasm).
+                path.join("component.wasm").exists() || path.join("package.wasm").exists()
+            })
+            .collect();
         if versions_to_delete.is_empty() {
             bail!("component '{}:{}' not found locally", namespace, name);
         }

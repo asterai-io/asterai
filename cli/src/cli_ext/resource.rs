@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub trait ResourceCliExt {
     fn local_list() -> Vec<PathBuf>;
     fn local_fetch_path(id: &ResourceId) -> eyre::Result<PathBuf>;
+    /// Find all local versions of a resource by namespace and name.
+    fn local_find_all_versions(namespace: &str, name: &str) -> Vec<PathBuf>;
 }
 
 impl ResourceCliExt for Resource {
@@ -52,5 +54,27 @@ impl ResourceCliExt for Resource {
             bail!("no resource found");
         };
         Ok(selected_resource_path)
+    }
+
+    fn local_find_all_versions(namespace: &str, name: &str) -> Vec<PathBuf> {
+        let namespace_dir = ARTIFACTS_DIR.join(namespace);
+        if !namespace_dir.exists() {
+            return Vec::new();
+        }
+        let prefix = format!("{}@", name);
+        let Ok(entries) = fs::read_dir(&namespace_dir) else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .map(|s| s.starts_with(&prefix))
+                    .unwrap_or(false)
+            })
+            .map(|entry| entry.path())
+            .collect()
     }
 }
