@@ -1,3 +1,4 @@
+use crate::command::component::delete::DeleteArgs;
 use crate::command::component::init::InitArgs;
 use crate::command::component::pkg::PkgArgs;
 use crate::command::component::pull::PullArgs;
@@ -8,6 +9,7 @@ use eyre::{bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
+pub mod delete;
 pub mod init;
 pub mod list;
 pub mod pkg;
@@ -24,6 +26,7 @@ pub struct ComponentArgs {
     pull_args: Option<PullArgs>,
     push_args: Option<PushArgs>,
     init_args: Option<InitArgs>,
+    delete_args: Option<DeleteArgs>,
 }
 
 #[derive(Debug, Copy, Clone, EnumString)]
@@ -34,6 +37,7 @@ pub enum ComponentAction {
     Pkg,
     Pull,
     Push,
+    Delete,
 }
 
 impl ComponentArgs {
@@ -53,6 +57,7 @@ impl ComponentArgs {
                 pull_args: None,
                 push_args: None,
                 init_args: Some(InitArgs::parse(args)?),
+                delete_args: None,
             },
             ComponentAction::List => Self {
                 action,
@@ -63,6 +68,7 @@ impl ComponentArgs {
                 pull_args: None,
                 push_args: None,
                 init_args: None,
+                delete_args: None,
             },
             ComponentAction::Pkg => Self {
                 action,
@@ -73,6 +79,7 @@ impl ComponentArgs {
                 pull_args: None,
                 push_args: None,
                 init_args: None,
+                delete_args: None,
             },
             ComponentAction::Pull => Self {
                 action,
@@ -83,6 +90,7 @@ impl ComponentArgs {
                 pull_args: Some(PullArgs::parse(args)?),
                 push_args: None,
                 init_args: None,
+                delete_args: None,
             },
             ComponentAction::Push => Self {
                 action,
@@ -93,6 +101,18 @@ impl ComponentArgs {
                 pull_args: None,
                 push_args: Some(PushArgs::parse(args)?),
                 init_args: None,
+                delete_args: None,
+            },
+            ComponentAction::Delete => Self {
+                action,
+                component_resource_or_id: None,
+                component_name: None,
+                env_var: None,
+                pkg_args: None,
+                pull_args: None,
+                push_args: None,
+                init_args: None,
+                delete_args: Some(DeleteArgs::parse(args)?),
             },
         };
         Ok(command_args)
@@ -115,8 +135,16 @@ impl ComponentArgs {
             ComponentAction::Push => {
                 self.push().await?;
             }
+            ComponentAction::Delete => {
+                self.delete()?;
+            }
         }
         Ok(())
+    }
+
+    fn delete(&self) -> eyre::Result<()> {
+        let args = self.delete_args.as_ref().ok_or_else(|| eyre!("no delete args"))?;
+        args.execute()
     }
 
     /// If a resource name is present, this returns the

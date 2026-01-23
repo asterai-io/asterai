@@ -28,3 +28,4 @@ Component commands:
   asterai component push                           Push the current component (from project dir) to the registry
   asterai component list                           List all components you have write access to
                                                    (shows local and published; tags indicate status)
+  asterai component delete <namespace:name>        Delete a local component and all its versions
