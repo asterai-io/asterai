@@ -147,6 +147,7 @@ dependencies = [
  "strum 0.27.2",
  "strum_macros 0.27.2",
  "tokio",
+ "toml 0.8.23",
  "tracing-subscriber",
  "uuid",
 ]

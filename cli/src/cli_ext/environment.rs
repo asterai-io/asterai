@@ -4,7 +4,7 @@ use crate::config::ARTIFACTS_DIR;
 use asterai_runtime::environment::Environment;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};
-use eyre::{bail, Context};
+use eyre::{Context, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -27,7 +27,7 @@ impl EnvironmentCliExt for Environment {
     }
 
     fn local_disk_file_path(&self) -> PathBuf {
-        self.local_disk_dir().join("env.json")
+        self.local_disk_dir().join("env.toml")
     }
 
     fn local_metadata_file_path(&self) -> PathBuf {
@@ -64,14 +64,14 @@ impl EnvironmentCliExt for Environment {
     }
 
     fn parse_local(path: &Path) -> eyre::Result<Self> {
-        let env_json_path = path.to_owned().join("env.json");
-        let serialized = fs::read_to_string(&env_json_path)?;
-        let environment: Environment = serde_json::from_str(&serialized)?;
+        let env_toml_path = path.to_owned().join("env.toml");
+        let serialized = fs::read_to_string(&env_toml_path)?;
+        let environment: Environment = toml::from_str(&serialized)?;
         // Validate that the environment metadata matches the path
         let dir_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         let expected_dir = format!("{}@{}", environment.name(), environment.version());
         if dir_name != expected_dir {
-            bail!("env.json metadata does not match directory name");
+            bail!("env.toml metadata does not match directory name");
         }
         Ok(environment)
     }
@@ -85,9 +85,9 @@ impl EnvironmentCliExt for Environment {
     fn write_to_disk(&self) -> eyre::Result<()> {
         let dir = self.local_disk_dir();
         fs::create_dir_all(&dir)?;
-        let env_serialized = serde_json::to_string(&self)?;
+        let env_serialized = toml::to_string_pretty(&self)?;
         fs::write(self.local_disk_file_path(), env_serialized)
-            .wrap_err("failed to write env.json")?;
+            .wrap_err("failed to write env.toml")?;
         let metadata = ResourceMetadata {
             kind: ResourceKind::Environment,
         };
