@@ -1,11 +1,11 @@
 use crate::auth::Auth;
 use crate::cli_ext::environment::EnvironmentCliExt;
-use crate::config::{API_URL, API_URL_STAGING, BIN_DIR, REGISTRY_URL, REGISTRY_URL_STAGING};
+use crate::config::{API_URL, API_URL_STAGING, REGISTRY_URL, REGISTRY_URL_STAGING};
+use crate::registry::{GetEnvironmentResponse, RegistryClient};
 use asterai_runtime::component::Component;
 use asterai_runtime::environment::{Environment, EnvironmentMetadata};
 use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{Context, OptionExt, bail};
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
@@ -19,47 +19,6 @@ pub struct PullArgs {
     staging: bool,
     /// Whether to skip pulling components.
     manifest_only: bool,
-}
-
-/// Response from getting an environment.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GetEnvironmentResponse {
-    namespace: String,
-    name: String,
-    version: String,
-    components: Vec<String>,
-    vars: HashMap<String, String>,
-}
-
-/// Token response from the registry.
-#[derive(Deserialize)]
-struct TokenResponse {
-    token: String,
-    #[allow(dead_code)]
-    expires_in: u64,
-    #[allow(dead_code)]
-    issued_at: i64,
-}
-
-/// OCI manifest structure.
-#[derive(Deserialize)]
-struct OciManifest {
-    #[serde(rename = "schemaVersion")]
-    #[allow(dead_code)]
-    schema_version: u32,
-    #[allow(dead_code)]
-    layers: Vec<OciDescriptor>,
-}
-
-#[derive(Deserialize)]
-struct OciDescriptor {
-    #[serde(rename = "mediaType")]
-    #[allow(dead_code)]
-    media_type: String,
-    digest: String,
-    #[allow(dead_code)]
-    size: u64,
 }
 
 impl PullArgs {
@@ -201,139 +160,13 @@ impl PullArgs {
         // Pull component WASMs unless manifest-only.
         if !self.manifest_only {
             println!("\npulling components...");
+            let registry = RegistryClient::new(&client, api_url, registry_url);
             for component in &component_list {
-                self.pull_component(&client, &api_key, api_url, registry_url, component)
-                    .await?;
+                registry.pull_component(&api_key, component, false).await?;
             }
         }
         println!("\ndone");
         Ok(())
-    }
-
-    async fn pull_component(
-        &self,
-        client: &reqwest::Client,
-        api_key: &str,
-        api_url: &str,
-        registry_url: &str,
-        component: &Component,
-    ) -> eyre::Result<()> {
-        let namespace = component.namespace();
-        let name = component.name();
-        let version = component.version().to_string();
-        let repo_name = format!("{}/{}", namespace, name);
-        println!("  pulling {}@{}...", repo_name, version);
-        // Get registry token.
-        let token = self
-            .get_registry_token(client, api_key, api_url, &repo_name)
-            .await?;
-        // Fetch manifest.
-        let manifest = self
-            .fetch_manifest(client, registry_url, &repo_name, &version, &token)
-            .await?;
-        // Create output directory.
-        let output_dir = BIN_DIR
-            .join("resources")
-            .join(namespace)
-            .join(format!("{}@{}", name, version));
-        fs::create_dir_all(&output_dir)?;
-        // Download layers.
-        for (i, layer) in manifest.layers.iter().enumerate() {
-            let blob_url = format!("{}/v2/{}/blobs/{}", registry_url, repo_name, layer.digest);
-            let blob_response = client
-                .get(&blob_url)
-                .header("Authorization", format!("Bearer {}", token))
-                .send()
-                .await
-                .wrap_err("failed to fetch blob")?;
-            if !blob_response.status().is_success() {
-                let status = blob_response.status();
-                let error_text = blob_response
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "unknown error".to_string());
-                bail!("failed to fetch blob ({}): {}", status, error_text);
-            }
-            let blob_bytes = blob_response.bytes().await?;
-            let filename = if i == 0 {
-                "component.wasm"
-            } else {
-                "package.wasm"
-            };
-            let file_path = output_dir.join(filename);
-            fs::write(&file_path, &blob_bytes)?;
-        }
-        // Write component metadata.
-        let metadata = serde_json::json!({
-            "kind": ResourceKind::Component.to_string(),
-            "pulled_from": format!("{}@{}", repo_name, version),
-        });
-        let metadata_path = output_dir.join("metadata.json");
-        fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
-        println!("    saved to {}", output_dir.display());
-        Ok(())
-    }
-
-    async fn get_registry_token(
-        &self,
-        client: &reqwest::Client,
-        api_key: &str,
-        api_url: &str,
-        repo_name: &str,
-    ) -> eyre::Result<String> {
-        let scope = format!("repository:{}:pull", repo_name);
-        let token_url = format!("{}/v1/registry/token?scope={}", api_url, scope);
-        let response = client
-            .get(&token_url)
-            .header("Authorization", format!("Bearer {}", api_key.trim()))
-            .send()
-            .await
-            .wrap_err("failed to get registry token")?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "unknown error".to_string());
-            bail!("failed to get registry token ({}): {}", status, error_text);
-        }
-        let token_response: TokenResponse = response
-            .json()
-            .await
-            .wrap_err("failed to parse token response")?;
-        Ok(token_response.token)
-    }
-
-    async fn fetch_manifest(
-        &self,
-        client: &reqwest::Client,
-        registry_url: &str,
-        repo_name: &str,
-        tag: &str,
-        token: &str,
-    ) -> eyre::Result<OciManifest> {
-        let manifest_url = format!("{}/v2/{}/manifests/{}", registry_url, repo_name, tag);
-        let response = client
-            .get(&manifest_url)
-            .header("Authorization", format!("Bearer {}", token))
-            .header(
-                "Accept",
-                "application/vnd.oci.image.manifest.v1+json, \
-                application/vnd.docker.distribution.manifest.v2+json",
-            )
-            .send()
-            .await
-            .wrap_err("failed to fetch manifest")?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "unknown error".to_string());
-            bail!("failed to fetch manifest ({}): {}", status, error_text);
-        }
-        let manifest: OciManifest = response.json().await.wrap_err("failed to parse manifest")?;
-        Ok(manifest)
     }
 }
 

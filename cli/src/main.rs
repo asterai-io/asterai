@@ -4,6 +4,7 @@ pub mod auth;
 pub mod cli_ext;
 mod command;
 pub mod config;
+pub mod registry;
 
 #[tokio::main]
 async fn main() {

@@ -23,6 +23,7 @@ pub struct EnvArgs {
     function: Option<String>,
     function_args: Vec<String>,
     env_var: Option<&'static str>,
+    run_args: Option<run::RunArgs>,
     push_args: Option<push::PushArgs>,
     pull_args: Option<pull::PullArgs>,
     delete_args: Option<delete::DeleteArgs>,
@@ -57,13 +58,26 @@ impl EnvArgs {
             ResourceOrIdArg::from_str(&env_name_or_id_string).map_err(|e| eyre!(e))
         };
         let env_args = match action {
-            action @ (EnvAction::Run | EnvAction::Inspect | EnvAction::Init) => Self {
+            EnvAction::Run => Self {
+                action,
+                env_resource_or_id: None,
+                component: None,
+                function: None,
+                function_args: vec![],
+                env_var: None,
+                run_args: Some(run::RunArgs::parse(args)?),
+                push_args: None,
+                pull_args: None,
+                delete_args: None,
+            },
+            action @ (EnvAction::Inspect | EnvAction::Init) => Self {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
                 component: None,
                 function: None,
                 function_args: vec![],
                 env_var: None,
+                run_args: None,
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -78,6 +92,7 @@ impl EnvArgs {
                 function: Some(args.next().expect("missing function")),
                 function_args: args.collect::<Vec<_>>(),
                 env_var: None,
+                run_args: None,
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -92,6 +107,7 @@ impl EnvArgs {
                     function: None,
                     function_args: vec![],
                     env_var: None,
+                    run_args: None,
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
@@ -107,6 +123,7 @@ impl EnvArgs {
                     function: None,
                     function_args: vec![],
                     env_var: None,
+                    run_args: None,
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
@@ -119,6 +136,7 @@ impl EnvArgs {
                 function: None,
                 function_args: vec![],
                 env_var: None,
+                run_args: None,
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -130,6 +148,7 @@ impl EnvArgs {
                 function: None,
                 function_args: vec![],
                 env_var: None,
+                run_args: None,
                 push_args: Some(push::PushArgs::parse(args)?),
                 pull_args: None,
                 delete_args: None,
@@ -141,6 +160,7 @@ impl EnvArgs {
                 function: None,
                 function_args: vec![],
                 env_var: None,
+                run_args: None,
                 push_args: None,
                 pull_args: Some(pull::PullArgs::parse(args)?),
                 delete_args: None,
@@ -152,6 +172,7 @@ impl EnvArgs {
                 function: None,
                 function_args: vec![],
                 env_var: None,
+                run_args: None,
                 push_args: None,
                 pull_args: None,
                 delete_args: Some(delete::DeleteArgs::parse(args)?),
@@ -166,7 +187,8 @@ impl EnvArgs {
                 self.init()?;
             }
             EnvAction::Run => {
-                self.run().await?;
+                let args = self.run_args.as_ref().ok_or_eyre("no run args")?;
+                args.execute().await?;
             }
             EnvAction::Inspect => {
                 self.inspect()?;

@@ -1,16 +1,275 @@
+use crate::auth::Auth;
 use crate::cli_ext::component_runtime::ComponentRuntimeCliExt;
 use crate::cli_ext::environment::EnvironmentCliExt;
-use crate::command::env::EnvArgs;
-use asterai_runtime::environment::Environment;
+use crate::config::{API_URL, API_URL_STAGING, REGISTRY_URL, REGISTRY_URL_STAGING};
+use crate::registry::{GetEnvironmentResponse, RegistryClient};
+use asterai_runtime::component::Component;
+use asterai_runtime::environment::{Environment, EnvironmentMetadata};
+use asterai_runtime::resource::metadata::ResourceKind;
 use asterai_runtime::runtime::ComponentRuntime;
+use eyre::{Context, OptionExt, bail};
+use std::collections::HashMap;
+use std::fs;
+use std::str::FromStr;
 
-impl EnvArgs {
-    pub async fn run(&self) -> eyre::Result<()> {
-        let resource = self.resource()?;
-        println!("running env {resource}");
-        let environment = Environment::local_fetch(&resource.id())?;
+#[derive(Debug)]
+pub(super) struct RunArgs {
+    /// Environment reference (namespace:name or namespace:name@version).
+    // TODO also support just `name` and default to user's personal namespace
+    env_ref: String,
+    api_endpoint: String,
+    registry_endpoint: String,
+    staging: bool,
+    /// If true, don't pull from registry - use cached version only.
+    no_pull: bool,
+}
+
+impl RunArgs {
+    pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
+        let mut env_ref: Option<String> = None;
+        let mut api_endpoint = API_URL.to_string();
+        let mut registry_endpoint = REGISTRY_URL.to_string();
+        let mut staging = false;
+        let mut no_pull = false;
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--endpoint" | "-e" => {
+                    api_endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
+                }
+                "--registry" | "-r" => {
+                    registry_endpoint =
+                        args.next().ok_or_eyre("missing value for registry flag")?;
+                }
+                "--staging" | "-s" => {
+                    staging = true;
+                }
+                "--no-pull" => {
+                    no_pull = true;
+                }
+                "--help" | "-h" | "help" => {
+                    print_help();
+                    std::process::exit(0);
+                }
+                other => {
+                    if other.starts_with('-') {
+                        bail!("unknown flag: {}", other);
+                    }
+                    if env_ref.is_some() {
+                        bail!("unexpected argument: {}", other);
+                    }
+                    env_ref = Some(other.to_string());
+                }
+            }
+        }
+        let env_ref = env_ref.ok_or_eyre(
+            "missing environment reference\n\nUsage: asterai env run <namespace:name[@version]>\n\
+             Example: asterai env run myteam:my-env",
+        )?;
+        Ok(Self {
+            env_ref,
+            api_endpoint,
+            registry_endpoint,
+            staging,
+            no_pull,
+        })
+    }
+
+    pub async fn execute(&self) -> eyre::Result<()> {
+        let (namespace, name, version) = parse_env_reference(&self.env_ref)?;
+        // Try to find environment locally first.
+        let local_env = self.find_local_environment(&namespace, &name, version.as_deref());
+        let environment = match local_env {
+            Some(env) => {
+                println!(
+                    "running environment {}:{}@{} (cached)",
+                    env.namespace(),
+                    env.name(),
+                    env.version()
+                );
+                env
+            }
+            None => {
+                if self.no_pull {
+                    bail!(
+                        "environment '{}:{}{}' not found locally (use without --no-pull to fetch from registry)",
+                        namespace,
+                        name,
+                        version
+                            .as_ref()
+                            .map(|v| format!("@{}", v))
+                            .unwrap_or_default()
+                    );
+                }
+                // Pull from registry.
+                self.pull_environment(&namespace, &name, version.as_deref())
+                    .await?
+            }
+        };
+        // Run the environment.
         let mut runtime = ComponentRuntime::from_environment(environment).await?;
         runtime.run().await?;
         Ok(())
     }
+
+    fn find_local_environment(
+        &self,
+        namespace: &str,
+        name: &str,
+        version: Option<&str>,
+    ) -> Option<Environment> {
+        let local_envs = Environment::local_list();
+        if let Some(ver) = version {
+            // Look for specific version.
+            local_envs.into_iter().find(|env| {
+                env.namespace() == namespace && env.name() == name && env.version() == ver
+            })
+        } else {
+            // Find latest local version for this namespace:name.
+            local_envs
+                .into_iter()
+                .filter(|env| env.namespace() == namespace && env.name() == name)
+                .max_by(|a, b| {
+                    // Compare versions using semver if possible.
+                    let ver_a = semver::Version::parse(a.version()).ok();
+                    let ver_b = semver::Version::parse(b.version()).ok();
+                    match (ver_a, ver_b) {
+                        (Some(va), Some(vb)) => va.cmp(&vb),
+                        _ => a.version().cmp(b.version()),
+                    }
+                })
+        }
+    }
+
+    async fn pull_environment(
+        &self,
+        namespace: &str,
+        name: &str,
+        version: Option<&str>,
+    ) -> eyre::Result<Environment> {
+        let api_key = Auth::read_stored_api_key()
+            .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
+        println!(
+            "pulling environment {}:{}{}...",
+            namespace,
+            name,
+            version.map(|v| format!("@{}", v)).unwrap_or_default()
+        );
+        let (api_url, registry_url) = if self.staging {
+            (API_URL_STAGING, REGISTRY_URL_STAGING)
+        } else {
+            (self.api_endpoint.as_str(), self.registry_endpoint.as_str())
+        };
+        // Fetch environment from API.
+        let client = reqwest::Client::new();
+        let url = if let Some(ver) = version {
+            format!("{}/v1/environment/{}/{}/{}", api_url, namespace, name, ver)
+        } else {
+            format!("{}/v1/environment/{}/{}", api_url, namespace, name)
+        };
+        let response = client
+            .get(&url)
+            .header("Authorization", api_key.trim())
+            .send()
+            .await
+            .wrap_err("failed to fetch environment")?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            bail!("environment '{}:{}' not found in registry", namespace, name);
+        }
+        if response.status() == reqwest::StatusCode::FORBIDDEN {
+            bail!(
+                "forbidden: you don't have access to environment '{}:{}'",
+                namespace,
+                name
+            );
+        }
+        if !response.status().is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown error".to_string());
+            bail!("failed to fetch environment: {}", error_text);
+        }
+        let env_data: GetEnvironmentResponse = response
+            .json()
+            .await
+            .wrap_err("failed to parse environment response")?;
+        println!("  version: {}", env_data.version);
+        println!("  components: {}", env_data.components.len());
+        // Parse component refs into components map.
+        let mut components_map: HashMap<String, String> = HashMap::new();
+        let mut component_list: Vec<Component> = Vec::new();
+        for comp_ref in &env_data.components {
+            let component = Component::from_str(comp_ref)
+                .wrap_err_with(|| format!("failed to parse component: {}", comp_ref))?;
+            let key = format!("{}:{}", component.namespace(), component.name());
+            components_map.insert(key, component.version().to_string());
+            component_list.push(component);
+        }
+        // Create local environment.
+        let environment = Environment {
+            metadata: EnvironmentMetadata {
+                namespace: env_data.namespace.clone(),
+                name: env_data.name.clone(),
+                version: env_data.version.clone(),
+            },
+            components: components_map,
+            vars: env_data.vars,
+        };
+        environment.write_to_disk()?;
+        // Write metadata.
+        let metadata_path = environment.local_metadata_file_path();
+        let metadata = serde_json::json!({
+            "kind": ResourceKind::Environment.to_string(),
+            "pulled_from": format!("{}:{}@{}", env_data.namespace, env_data.name, env_data.version),
+        });
+        fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
+        println!("  saved to {}", environment.local_disk_dir().display());
+        // Pull component WASMs using shared registry client.
+        println!("\npulling components...");
+        let registry = RegistryClient::new(&client, api_url, registry_url);
+        for component in &component_list {
+            registry.pull_component(&api_key, component, false).await?;
+        }
+        Ok(environment)
+    }
+}
+
+/// Parse an environment reference like "namespace:name" or "namespace:name@version".
+fn parse_env_reference(s: &str) -> eyre::Result<(String, String, Option<String>)> {
+    let (id_part, version) = if let Some((id, ver)) = s.split_once('@') {
+        (id, Some(ver.to_string()))
+    } else {
+        (s, None)
+    };
+    let (namespace, name) = id_part
+        .split_once(':')
+        .or_else(|| id_part.split_once('/'))
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "invalid environment reference '{}': use namespace:name or namespace:name@version",
+                s
+            )
+        })?;
+    Ok((namespace.to_string(), name.to_string(), version))
+}
+
+fn print_help() {
+    println!(
+        r#"Run an environment locally.
+
+Usage: asterai env run <namespace:name[@version]> [options]
+
+Arguments:
+  <namespace:name[@version]>  Environment reference (runs latest if no version specified)
+
+Options:
+  --no-pull             Don't pull from registry, use cached version only
+  -h, --help            Show this help message
+
+Examples:
+  asterai env run myteam:my-env             # Pull (if needed) and run latest
+  asterai env run myteam:my-env@1.2.0       # Pull (if needed) and run specific version
+  asterai env run myteam:my-env --no-pull   # Run cached version only
+"#
+    );
 }
