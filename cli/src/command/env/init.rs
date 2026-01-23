@@ -7,12 +7,12 @@ impl EnvArgs {
     pub fn init(&self) -> eyre::Result<()> {
         let resource_id = self.resource_id()?;
         if LocalStore::fetch_environment(&resource_id).is_ok() {
-            bail!(
+            println!(
                 "environment '{}' already exists.\n\
                  To delete it, run: asterai env delete {}",
-                resource_id,
-                resource_id
+                resource_id, resource_id
             );
+            std::process::exit(0);
         }
         let environment = Environment::new(
             resource_id.namespace().to_string(),
