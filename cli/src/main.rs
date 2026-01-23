@@ -3,6 +3,7 @@ use crate::command::Command;
 pub mod auth;
 mod command;
 pub mod config;
+pub mod editor;
 pub mod local_store;
 pub mod registry;
 pub mod runtime;

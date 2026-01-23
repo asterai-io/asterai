@@ -8,6 +8,7 @@ use strum_macros::EnumString;
 mod add;
 mod call;
 mod delete;
+mod edit;
 mod init;
 mod inspect;
 mod list;
@@ -28,6 +29,7 @@ pub struct EnvArgs {
     push_args: Option<push::PushArgs>,
     pull_args: Option<pull::PullArgs>,
     delete_args: Option<delete::DeleteArgs>,
+    should_open_editor: bool,
 }
 
 #[derive(Copy, Clone, EnumString)]
@@ -44,6 +46,7 @@ pub enum EnvAction {
     Push,
     Pull,
     Delete,
+    Edit,
 }
 
 impl EnvArgs {
@@ -71,8 +74,32 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                should_open_editor: false,
             },
-            action @ (EnvAction::Inspect | EnvAction::Init) => Self {
+            EnvAction::Init => {
+                let env_resource_or_id = parse_env_name_or_id()?;
+                let mut should_open_editor = false;
+                for arg in args {
+                    match arg.as_str() {
+                        "-e" | "--edit" => should_open_editor = true,
+                        other => bail!("unexpected argument: {}", other),
+                    }
+                }
+                Self {
+                    action,
+                    env_resource_or_id: Some(env_resource_or_id),
+                    component: None,
+                    function: None,
+                    function_args: vec![],
+                    run_args: None,
+                    set_var_args: None,
+                    push_args: None,
+                    pull_args: None,
+                    delete_args: None,
+                    should_open_editor,
+                }
+            }
+            action @ (EnvAction::Inspect | EnvAction::Edit) => Self {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
                 component: None,
@@ -83,6 +110,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                should_open_editor: false,
             },
             EnvAction::Call => Self {
                 action,
@@ -98,6 +126,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                should_open_editor: false,
             },
             EnvAction::AddComponent => {
                 let env_resource_or_id = parse_env_name_or_id()?;
@@ -116,6 +145,7 @@ impl EnvArgs {
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
+                    should_open_editor: false,
                 }
             }
             EnvAction::RemoveComponent => {
@@ -135,6 +165,7 @@ impl EnvArgs {
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
+                    should_open_editor: false,
                 }
             }
             EnvAction::List => Self {
@@ -148,6 +179,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                should_open_editor: false,
             },
             EnvAction::SetVar => Self {
                 action,
@@ -160,6 +192,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                should_open_editor: false,
             },
             EnvAction::Push => Self {
                 action,
@@ -172,6 +205,7 @@ impl EnvArgs {
                 push_args: Some(push::PushArgs::parse(args)?),
                 pull_args: None,
                 delete_args: None,
+                should_open_editor: false,
             },
             EnvAction::Pull => Self {
                 action,
@@ -184,6 +218,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: Some(pull::PullArgs::parse(args)?),
                 delete_args: None,
+                should_open_editor: false,
             },
             EnvAction::Delete => Self {
                 action,
@@ -196,6 +231,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: Some(delete::DeleteArgs::parse(args)?),
+                should_open_editor: false,
             },
         };
         Ok(env_args)
@@ -205,6 +241,9 @@ impl EnvArgs {
         match self.action {
             EnvAction::Init => {
                 self.init()?;
+                if self.should_open_editor {
+                    self.edit()?;
+                }
             }
             EnvAction::Run => {
                 let args = self.run_args.as_ref().ok_or_eyre("no run args")?;
@@ -236,6 +275,9 @@ impl EnvArgs {
             }
             EnvAction::Delete => {
                 self.delete().await?;
+            }
+            EnvAction::Edit => {
+                self.edit()?;
             }
         }
         Ok(())
