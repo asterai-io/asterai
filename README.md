@@ -29,21 +29,22 @@ sync when ready.
 | `auth status`          |   ✓   |   ✓    |            | Checks local file, validates against API |
 | **Environment**        |       |        |            |                                          |
 | `env init`             |   ✓   |        |            | Creates local environment                |
-| `env inspect`          |   ✓   |        |     ✓      | Reads environment config                 |
-| `env add-component`    |   ✓   |        |     ✓      | Adds component to environment            |
-| `env remove-component` |   ✓   |        |     ✓      | Removes component from environment       |
-| `env set-var`          |   ✓   |        |     ✓      | Sets environment variable                |
+| `env inspect`          |   ✓   |        |            | Reads environment config                 |
+| `env add-component`    |   ✓   |        |            | Adds component to environment            |
+| `env remove-component` |   ✓   |        |            | Removes component from environment       |
+| `env set-var`          |   ✓   |        |            | Sets environment variable                |
 | `env list`             |   ✓   |   ✓    |            | Shows local and remote environments      |
 | `env run`              |   ✓   |   ✓    |            | Checks local first, pulls if not found   |
 | `env pull`             |       |   ✓    |            | Fetches from registry to local           |
 | `env push`             |   ✓   |   ✓    |            | Pushes local to registry                 |
-| `env delete`           |   ✓   |        |     ✓      | Deletes environment                      |
+| `env delete`           |   ✓   |   ✓    |     ✓      | Deletes environment (-r for registry)    |
 | **Component**          |       |        |            |                                          |
 | `component init`       |   ✓   |        |            | Creates local component project          |
-| `component list`       |   ✓   |        |     ✓      | Lists components                         |
+| `component list`       |   ✓   |        |            | Lists local components                   |
 | `component pkg`        |   ✓   |        |            | Packages WIT locally                     |
 | `component pull`       |       |   ✓    |            | Fetches from registry to local           |
 | `component push`       |   ✓   |   ✓    |            | Pushes local to registry                 |
+| `component delete`     |   ✓   |        |            | Deletes local component                  |
 
 **Legend:**
 - **Local**: Command reads/writes local files
