@@ -1,5 +1,5 @@
 use crate::cli_ext::resource_metadata::ResourceMetadataCliExt;
-use crate::config::BIN_DIR;
+use crate::config::ARTIFACTS_DIR;
 use asterai_runtime::component::Component;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 
@@ -9,8 +9,7 @@ pub trait ComponentCliExt {
 
 impl ComponentCliExt for Component {
     fn check_does_exist_locally(&self) -> eyre::Result<bool> {
-        let component_dir = BIN_DIR
-            .join("resources")
+        let component_dir = ARTIFACTS_DIR
             .join(self.namespace())
             .join(format!("{}@{}", self.name(), self.version()));
         if !component_dir.exists() {

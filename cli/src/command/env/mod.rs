@@ -15,6 +15,7 @@ mod pull;
 mod push;
 mod remove;
 mod run;
+mod set_var;
 
 pub struct EnvArgs {
     action: EnvAction,
@@ -24,6 +25,7 @@ pub struct EnvArgs {
     function_args: Vec<String>,
     env_var: Option<&'static str>,
     run_args: Option<run::RunArgs>,
+    set_var_args: Option<set_var::SetVarArgs>,
     push_args: Option<push::PushArgs>,
     pull_args: Option<pull::PullArgs>,
     delete_args: Option<delete::DeleteArgs>,
@@ -39,6 +41,7 @@ pub enum EnvAction {
     List,
     Add,
     Remove,
+    SetVar,
     Push,
     Pull,
     Delete,
@@ -66,6 +69,7 @@ impl EnvArgs {
                 function_args: vec![],
                 env_var: None,
                 run_args: Some(run::RunArgs::parse(args)?),
+                set_var_args: None,
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -78,6 +82,7 @@ impl EnvArgs {
                 function_args: vec![],
                 env_var: None,
                 run_args: None,
+                set_var_args: None,
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -93,6 +98,7 @@ impl EnvArgs {
                 function_args: args.collect::<Vec<_>>(),
                 env_var: None,
                 run_args: None,
+                set_var_args: None,
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -108,6 +114,7 @@ impl EnvArgs {
                     function_args: vec![],
                     env_var: None,
                     run_args: None,
+                    set_var_args: None,
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
@@ -124,6 +131,7 @@ impl EnvArgs {
                     function_args: vec![],
                     env_var: None,
                     run_args: None,
+                    set_var_args: None,
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
@@ -137,6 +145,20 @@ impl EnvArgs {
                 function_args: vec![],
                 env_var: None,
                 run_args: None,
+                set_var_args: None,
+                push_args: None,
+                pull_args: None,
+                delete_args: None,
+            },
+            EnvAction::SetVar => Self {
+                action,
+                env_resource_or_id: None,
+                component: None,
+                function: None,
+                function_args: vec![],
+                env_var: None,
+                run_args: None,
+                set_var_args: Some(set_var::SetVarArgs::parse(args)?),
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -149,6 +171,7 @@ impl EnvArgs {
                 function_args: vec![],
                 env_var: None,
                 run_args: None,
+                set_var_args: None,
                 push_args: Some(push::PushArgs::parse(args)?),
                 pull_args: None,
                 delete_args: None,
@@ -161,6 +184,7 @@ impl EnvArgs {
                 function_args: vec![],
                 env_var: None,
                 run_args: None,
+                set_var_args: None,
                 push_args: None,
                 pull_args: Some(pull::PullArgs::parse(args)?),
                 delete_args: None,
@@ -173,6 +197,7 @@ impl EnvArgs {
                 function_args: vec![],
                 env_var: None,
                 run_args: None,
+                set_var_args: None,
                 push_args: None,
                 pull_args: None,
                 delete_args: Some(delete::DeleteArgs::parse(args)?),
@@ -204,6 +229,9 @@ impl EnvArgs {
             }
             EnvAction::Remove => {
                 self.remove()?;
+            }
+            EnvAction::SetVar => {
+                self.set_var()?;
             }
             EnvAction::Push => {
                 self.push().await?;

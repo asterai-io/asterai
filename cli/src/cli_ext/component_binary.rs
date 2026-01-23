@@ -1,7 +1,6 @@
 use crate::cli_ext::resource::ResourceCliExt;
 use crate::cli_ext::resource_from_path;
 use crate::cli_ext::resource_metadata::ResourceMetadataCliExt;
-use crate::config::BIN_DIR;
 use asterai_runtime::component::Component;
 use asterai_runtime::component::interface::ComponentBinary;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};

@@ -1,5 +1,5 @@
 use crate::command::component::ComponentArgs;
-use crate::config::{API_URL, API_URL_STAGING, BIN_DIR, REGISTRY_URL, REGISTRY_URL_STAGING};
+use crate::config::{API_URL, API_URL_STAGING, ARTIFACTS_DIR, REGISTRY_URL, REGISTRY_URL_STAGING};
 use crate::registry::RegistryClient;
 use asterai_runtime::resource::Resource;
 use asterai_runtime::resource::metadata::ResourceKind;
@@ -122,8 +122,7 @@ impl PullArgs {
     ) -> eyre::Result<PathBuf> {
         let output_dir = match &self.output {
             Some(dir) => PathBuf::from(dir),
-            None => BIN_DIR
-                .join("resources")
+            None => ARTIFACTS_DIR
                 .join(namespace)
                 .join(format!("{}@{}", name, version)),
         };

@@ -1,5 +1,5 @@
 use crate::auth::Auth;
-use crate::config::BIN_DIR;
+use crate::config::ARTIFACTS_DIR;
 use asterai_runtime::component::Component;
 use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{Context, bail};
@@ -190,8 +190,7 @@ impl<'a> RegistryClient<'a> {
         let version = component.version().to_string();
         let repo_name = format!("{}/{}", namespace, name);
         // Check if component already exists locally.
-        let output_dir = BIN_DIR
-            .join("resources")
+        let output_dir = ARTIFACTS_DIR
             .join(namespace)
             .join(format!("{}@{}", name, version));
         if output_dir.exists() {

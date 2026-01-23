@@ -1,5 +1,5 @@
 use crate::cli_ext::resource_from_path;
-use crate::config::BIN_DIR;
+use crate::config::ARTIFACTS_DIR;
 use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::bail;
 use std::fs;
@@ -12,12 +12,12 @@ pub trait ResourceCliExt {
 
 impl ResourceCliExt for Resource {
     fn local_list() -> Vec<PathBuf> {
-        let resources_dir = BIN_DIR.join("resources");
-        if !resources_dir.exists() {
+        let artifacts_dir = &*ARTIFACTS_DIR;
+        if !artifacts_dir.exists() {
             return Vec::new();
         }
         let mut paths = Vec::new();
-        let Ok(namespaces) = fs::read_dir(&resources_dir) else {
+        let Ok(namespaces) = fs::read_dir(artifacts_dir) else {
             return Vec::new();
         };
         for namespace in namespaces.flatten() {

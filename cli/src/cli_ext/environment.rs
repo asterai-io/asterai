@@ -1,6 +1,6 @@
 use crate::cli_ext::resource::ResourceCliExt;
 use crate::cli_ext::resource_metadata::ResourceMetadataCliExt;
-use crate::config::BIN_DIR;
+use crate::config::ARTIFACTS_DIR;
 use asterai_runtime::environment::Environment;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};
@@ -21,8 +21,7 @@ pub trait EnvironmentCliExt: Sized {
 
 impl EnvironmentCliExt for Environment {
     fn local_disk_dir(&self) -> PathBuf {
-        BIN_DIR
-            .join("resources")
+        ARTIFACTS_DIR
             .join(self.namespace())
             .join(format!("{}@{}", self.name(), self.version()))
     }

@@ -28,3 +28,6 @@ pub static BIN_DIR: Lazy<PathBuf> = Lazy::new(|| {
     };
     PathBuf::from(bin_dir).join(APP_DIR_NAME)
 });
+
+/// Directory for storing artifacts (environments, components).
+pub static ARTIFACTS_DIR: Lazy<PathBuf> = Lazy::new(|| BIN_DIR.join("artifacts"));
