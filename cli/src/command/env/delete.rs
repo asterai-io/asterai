@@ -1,6 +1,7 @@
 use crate::auth::Auth;
-use crate::config::{API_URL, API_URL_STAGING};
+use crate::config::{API_URL, API_URL_STAGING, ARTIFACTS_DIR};
 use eyre::{Context, OptionExt, bail};
+use std::fs;
 
 #[derive(Debug)]
 pub struct DeleteArgs {
@@ -12,6 +13,8 @@ pub struct DeleteArgs {
     staging: bool,
     /// Skip confirmation prompt.
     force: bool,
+    /// Delete from remote registry instead of local.
+    remote: bool,
 }
 
 impl DeleteArgs {
@@ -20,6 +23,7 @@ impl DeleteArgs {
         let mut endpoint = API_URL.to_string();
         let mut staging = false;
         let mut force = false;
+        let mut remote = false;
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--endpoint" | "-e" => {
@@ -30,6 +34,9 @@ impl DeleteArgs {
                 }
                 "--force" | "-f" | "-y" | "--yes" => {
                     force = true;
+                }
+                "--remote" | "-r" => {
+                    remote = true;
                 }
                 "--help" | "-h" | "help" => {
                     print_help();
@@ -55,33 +62,97 @@ impl DeleteArgs {
             endpoint,
             staging,
             force,
+            remote,
         })
     }
 
     pub async fn execute(&self) -> eyre::Result<()> {
-        let api_key = Auth::read_stored_api_key()
-            .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
-        // Parse environment reference.
         let (namespace, name) = parse_env_reference(&self.env_ref)?;
+        if self.remote {
+            self.execute_remote(&namespace, &name).await
+        } else {
+            self.execute_local(&namespace, &name)
+        }
+    }
+
+    fn execute_local(&self, namespace: &str, name: &str) -> eyre::Result<()> {
+        let namespace_dir = ARTIFACTS_DIR.join(namespace);
+        if !namespace_dir.exists() {
+            bail!("environment '{}:{}' not found locally", namespace, name);
+        }
+        // Find all versions of this environment.
+        let prefix = format!("{}@", name);
+        let mut versions_to_delete: Vec<_> = Vec::new();
+        for entry in fs::read_dir(&namespace_dir)? {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let Some(name_str) = file_name.to_str() else {
+                continue;
+            };
+            if name_str.starts_with(&prefix) {
+                versions_to_delete.push(entry.path());
+            }
+        }
+        if versions_to_delete.is_empty() {
+            bail!("environment '{}:{}' not found locally", namespace, name);
+        }
         // Confirm deletion unless --force.
         if !self.force {
             println!(
-                "WARNING: This will delete environment '{}:{}' and all its versions.",
+                "WARNING: This will delete {} local version(s) of environment '{}:{}'.",
+                versions_to_delete.len(),
+                namespace,
+                name
+            );
+            print!("Type the environment name to confirm: ");
+            std::io::Write::flush(&mut std::io::stdout())?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            let input = input.trim();
+            if input != name {
+                bail!("confirmation failed: expected '{}', got '{}'", name, input);
+            }
+        }
+        // Delete all versions.
+        for path in &versions_to_delete {
+            let version = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+            fs::remove_dir_all(path)
+                .wrap_err_with(|| format!("failed to delete {}", version))?;
+            println!("deleted {}", version);
+        }
+        println!(
+            "deleted {} version(s) of {}:{}",
+            versions_to_delete.len(),
+            namespace,
+            name
+        );
+        Ok(())
+    }
+
+    async fn execute_remote(&self, namespace: &str, name: &str) -> eyre::Result<()> {
+        let api_key = Auth::read_stored_api_key()
+            .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
+        // Confirm deletion unless --force.
+        if !self.force {
+            println!(
+                "WARNING: This will delete environment '{}:{}' and all its versions \
+                 from the registry.",
                 namespace, name
             );
             println!("This action cannot be undone.");
             print!("Type the environment name to confirm: ");
             std::io::Write::flush(&mut std::io::stdout())?;
-
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
             let input = input.trim();
-
             if input != name {
                 bail!("confirmation failed: expected '{}', got '{}'", name, input);
             }
         }
-        println!("deleting environment {}:{}...", namespace, name);
+        println!("deleting environment {}:{} from registry...", namespace, name);
         let base_url = if self.staging {
             API_URL_STAGING
         } else {
@@ -99,7 +170,7 @@ impl DeleteArgs {
             .wrap_err("failed to send delete request")?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
-            bail!("environment '{}:{}' not found", namespace, name);
+            bail!("environment '{}:{}' not found in registry", namespace, name);
         }
         if status == reqwest::StatusCode::FORBIDDEN {
             bail!(
@@ -115,7 +186,7 @@ impl DeleteArgs {
                 .unwrap_or_else(|_| "unknown error".to_string());
             bail!("delete failed ({}): {}", status, error_text);
         }
-        println!("deleted environment {}:{}", namespace, name);
+        println!("deleted environment {}:{} from registry", namespace, name);
         Ok(())
     }
 }
@@ -132,7 +203,9 @@ fn parse_env_reference(s: &str) -> eyre::Result<(String, String)> {
 
 fn print_help() {
     println!(
-        r#"Delete an environment from the registry.
+        r#"Delete an environment.
+
+By default, deletes the environment locally. Use --remote to delete from the registry.
 
 Usage: asterai env delete <namespace:name> [options]
 
@@ -140,13 +213,14 @@ Arguments:
   <namespace:name>      Environment to delete
 
 Options:
+  -r, --remote          Delete from registry instead of locally
   -f, --force, -y       Skip confirmation prompt
   -h, --help            Show this help message
 
 Examples:
-  asterai env delete myteam:my-env
-  asterai env delete myteam:my-env --force
-  asterai env delete myteam:my-env --staging
+  asterai env delete myteam:my-env              # Delete locally
+  asterai env delete myteam:my-env --force      # Delete locally, skip confirmation
+  asterai env delete myteam:my-env --remote     # Delete from registry
 "#
     );
 }

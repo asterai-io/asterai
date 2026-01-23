@@ -19,7 +19,7 @@ Environment commands:
   asterai env add-component <env> <component>      Add a component to an environment
   asterai env remove-component <env> <component>   Remove a component from an environment
   asterai env set-var <name> --var NAME=VALUE      Set an env var (NAME= to clear)
-  asterai env delete <namespace:name>              Delete an environment and all its versions
+  asterai env delete <namespace:name>              Delete local environment (-r for registry)
 
 Component commands:
   asterai component init <name> [language]         Scaffold a new local WASM component project
