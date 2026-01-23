@@ -1,6 +1,6 @@
 use crate::auth::Auth;
-use crate::cli_ext::environment::EnvironmentCliExt;
 use crate::config::{API_URL, API_URL_STAGING, REGISTRY_URL, REGISTRY_URL_STAGING};
+use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
 use asterai_runtime::component::Component;
 use asterai_runtime::environment::{Environment, EnvironmentMetadata};
@@ -148,15 +148,16 @@ impl PullArgs {
             components: components_map,
             vars: env_data.vars,
         };
-        environment.write_to_disk()?;
-        // Write metadata.
-        let metadata_path = environment.local_metadata_file_path();
+        LocalStore::write_environment(&environment)?;
+        // Write additional metadata (pulled_from).
+        let env_dir = LocalStore::environment_dir(&environment);
+        let metadata_path = env_dir.join("metadata.json");
         let metadata = serde_json::json!({
             "kind": ResourceKind::Environment.to_string(),
             "pulled_from": format!("{}:{}@{}", env_data.namespace, env_data.name, env_data.version),
         });
         fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
-        println!("  saved to {}", environment.local_disk_dir().display());
+        println!("  saved to {}", env_dir.display());
         // Pull component WASMs unless manifest-only.
         if !self.manifest_only {
             println!("\npulling components...");

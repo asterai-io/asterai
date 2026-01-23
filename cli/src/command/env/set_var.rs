@@ -1,6 +1,5 @@
-use crate::cli_ext::environment::EnvironmentCliExt;
 use crate::command::env::EnvArgs;
-use asterai_runtime::environment::Environment;
+use crate::local_store::LocalStore;
 use asterai_runtime::resource::ResourceId;
 use eyre::{OptionExt, bail};
 use std::str::FromStr;
@@ -58,7 +57,7 @@ impl SetVarArgs {
 
     pub fn execute(&self) -> eyre::Result<()> {
         let resource_id = parse_env_id(&self.env_ref)?;
-        let mut environment = Environment::local_fetch(&resource_id)?;
+        let mut environment = LocalStore::fetch_environment(&resource_id)?;
         println!(
             "updating environment {}:{}@{}",
             environment.namespace(),
@@ -82,7 +81,7 @@ impl SetVarArgs {
             }
         }
         // Save the environment.
-        environment.write_to_disk()?;
+        LocalStore::write_environment(&environment)?;
         println!("saved");
         println!("\nNote: push the environment to apply changes to the registry:");
         println!(

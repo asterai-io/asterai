@@ -1,10 +1,11 @@
 use crate::command::Command;
 
 pub mod auth;
-pub mod cli_ext;
 mod command;
 pub mod config;
+pub mod local_store;
 pub mod registry;
+pub mod runtime;
 
 #[tokio::main]
 async fn main() {

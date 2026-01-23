@@ -1,12 +1,11 @@
-use crate::cli_ext::component_runtime::ComponentRuntimeCliExt;
-use crate::cli_ext::environment::EnvironmentCliExt;
 use crate::command::env::EnvArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
+use crate::local_store::LocalStore;
+use crate::runtime::build_runtime;
 use asterai_runtime::component::function_name::ComponentFunctionName;
 use asterai_runtime::component::interface::PackageNameRegistry;
 use asterai_runtime::component::{PackageName, Version};
-use asterai_runtime::environment::Environment;
-use asterai_runtime::runtime::{ComponentRuntime, Val};
+use asterai_runtime::runtime::Val;
 use eyre::{OptionExt, bail, eyre};
 use std::str::FromStr;
 
@@ -16,8 +15,8 @@ impl EnvArgs {
         let component = self.component.as_ref().unwrap();
         let function_string = self.function.clone().unwrap();
         println!("calling env {resource}'s {component} component function {function_string}");
-        let environment = Environment::local_fetch(&resource.id())?;
-        let mut runtime = ComponentRuntime::from_environment(environment).await?;
+        let environment = LocalStore::fetch_environment(&resource.id())?;
+        let mut runtime = build_runtime(environment).await?;
         let (function_name, package_name_opt) = parse_function_string_into_parts(function_string)?;
         let function = runtime
             .find_function(&component.id(), &function_name, package_name_opt)

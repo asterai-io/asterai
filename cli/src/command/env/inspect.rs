@@ -1,11 +1,10 @@
-use crate::cli_ext::environment::EnvironmentCliExt;
 use crate::command::env::EnvArgs;
-use asterai_runtime::environment::Environment;
+use crate::local_store::LocalStore;
 
 impl EnvArgs {
     pub fn inspect(&self) -> eyre::Result<()> {
         let resource_id = self.resource_id()?;
-        let Ok(env) = Environment::local_fetch(&resource_id) else {
+        let Ok(env) = LocalStore::fetch_environment(&resource_id) else {
             println!("environment does not exist");
             return Ok(());
         };

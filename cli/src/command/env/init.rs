@@ -1,5 +1,5 @@
-use crate::cli_ext::environment::EnvironmentCliExt;
 use crate::command::env::EnvArgs;
+use crate::local_store::LocalStore;
 use asterai_runtime::environment::Environment;
 
 impl EnvArgs {
@@ -10,7 +10,7 @@ impl EnvArgs {
             resource_id.name().to_string(),
             "0.0.0".to_string(),
         );
-        environment.write_to_disk()?;
+        LocalStore::write_environment(&environment)?;
         Ok(())
     }
 }

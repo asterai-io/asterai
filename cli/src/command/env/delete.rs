@@ -1,7 +1,6 @@
 use crate::auth::Auth;
-use crate::cli_ext::resource::ResourceCliExt;
 use crate::config::{API_URL, API_URL_STAGING};
-use asterai_runtime::resource::Resource;
+use crate::local_store::LocalStore;
 use eyre::{Context, OptionExt, bail};
 use std::fs;
 
@@ -78,7 +77,7 @@ impl DeleteArgs {
     }
 
     fn execute_local(&self, namespace: &str, name: &str) -> eyre::Result<()> {
-        let versions_to_delete = Resource::local_find_all_versions(namespace, name);
+        let versions_to_delete = LocalStore::find_all_versions(namespace, name);
         if versions_to_delete.is_empty() {
             bail!("environment '{}:{}' not found locally", namespace, name);
         }

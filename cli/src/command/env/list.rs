@@ -1,8 +1,7 @@
 use crate::auth::Auth;
-use crate::cli_ext::environment::EnvironmentCliExt;
 use crate::command::env::EnvArgs;
 use crate::config::API_URL;
-use asterai_runtime::environment::Environment;
+use crate::local_store::LocalStore;
 use eyre::Context;
 use serde::Deserialize;
 
@@ -23,7 +22,7 @@ struct EnvironmentSummary {
 impl EnvArgs {
     pub async fn list(&self) -> eyre::Result<()> {
         // Show local environments.
-        let envs = Environment::local_list();
+        let envs = LocalStore::list_environments();
         println!("local environments:");
         if envs.is_empty() {
             println!("  (none)");

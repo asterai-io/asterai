@@ -1,7 +1,6 @@
 use crate::auth::Auth;
-use crate::cli_ext::environment::EnvironmentCliExt;
 use crate::config::{API_URL, API_URL_STAGING};
-use asterai_runtime::environment::Environment;
+use crate::local_store::LocalStore;
 use asterai_runtime::resource::ResourceId;
 use eyre::{Context, OptionExt, bail};
 use reqwest::StatusCode;
@@ -95,7 +94,7 @@ impl PushArgs {
             })
             .wrap_err("invalid environment name")?;
 
-        let environment = Environment::local_fetch(&resource_id)
+        let environment = LocalStore::fetch_environment(&resource_id)
             .wrap_err_with(|| format!("environment '{}' not found locally", self.env_name))?;
 
         let namespace = environment.namespace();
