@@ -4,7 +4,7 @@ use crate::config::ARTIFACTS_DIR;
 use asterai_runtime::environment::Environment;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};
-use eyre::bail;
+use eyre::{bail, Context};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -83,10 +83,17 @@ impl EnvironmentCliExt for Environment {
     }
 
     fn write_to_disk(&self) -> eyre::Result<()> {
-        let serialized = serde_json::to_string(&self)?;
-        let file_path = self.local_disk_file_path();
-        fs::create_dir_all(self.local_disk_dir())?;
-        fs::write(file_path, serialized)?;
+        let dir = self.local_disk_dir();
+        fs::create_dir_all(&dir)?;
+        let env_serialized = serde_json::to_string(&self)?;
+        fs::write(self.local_disk_file_path(), env_serialized)
+            .wrap_err("failed to write env.json")?;
+        let metadata = ResourceMetadata {
+            kind: ResourceKind::Environment,
+        };
+        let metadata_serialized = serde_json::to_string(&metadata)?;
+        fs::write(self.local_metadata_file_path(), metadata_serialized)
+            .wrap_err("failed to write metadata.json")?;
         Ok(())
     }
 }
