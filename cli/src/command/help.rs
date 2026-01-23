@@ -1,4 +1,4 @@
-const HELP_STR: &str = include_str!("../../help.txt");
+const HELP_STR: &str = include_str!("../../help/help.txt");
 
 pub struct Help;
 
