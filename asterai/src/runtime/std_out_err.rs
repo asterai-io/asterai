@@ -57,11 +57,11 @@ impl AsyncWrite for PluginStdOutErrWriter {
         buf: &[u8],
     ) -> Poll<Result<usize, Error>> {
         let output = String::from_utf8_lossy(buf);
-        let std_type = match self.is_stderr {
-            true => "err",
-            false => "out",
-        };
-        trace!("[app {}] [std{std_type}] {output}", self.app_id,);
+        if self.is_stderr {
+            eprint!("{output}");
+        } else {
+            print!("{output}");
+        }
         Poll::Ready(Ok(buf.len()))
     }
 
