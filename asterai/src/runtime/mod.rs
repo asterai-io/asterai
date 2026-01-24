@@ -124,7 +124,8 @@ impl ComponentRuntime {
                 None,
             );
             let Some(run_function) = run_function_opt else {
-                return Ok(());
+                // Skip components that don't implement run.
+                continue;
             };
             let func = run_function.get_func(&mut self.engine.store, &instance.instance)?;
             funcs.push((func, run_function.name, component));
