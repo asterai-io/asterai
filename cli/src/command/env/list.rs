@@ -3,6 +3,7 @@ use crate::command::env::EnvArgs;
 use crate::local_store::LocalStore;
 use eyre::Context;
 use serde::Deserialize;
+use std::collections::HashSet;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,42 +21,65 @@ struct EnvironmentSummary {
 
 impl EnvArgs {
     pub async fn list(&self) -> eyre::Result<()> {
-        // Show local environments.
-        let envs = LocalStore::list_environments();
-        println!("local environments:");
-        if envs.is_empty() {
-            println!("  (none)");
+        // Collect local environments.
+        let local_envs = LocalStore::list_environments();
+        let local_refs: HashSet<String> = local_envs
+            .iter()
+            .map(|e| format!("{}:{}", e.namespace(), e.name()))
+            .collect();
+        // Try to fetch remote environments.
+        let remote_result = if let Some(api_key) = Auth::read_stored_api_key() {
+            fetch_remote_environments(&api_key, &self.api_endpoint).await
         } else {
-            for env in envs {
-                println!(
-                    "  {}  ({} components)",
-                    env.resource_ref(),
-                    env.components.len()
-                );
+            Err(eyre::eyre!("not authenticated"))
+        };
+        let remote_refs: HashSet<String> = match &remote_result {
+            Ok(remote) => remote
+                .iter()
+                .map(|e| format!("{}:{}", e.namespace, e.name))
+                .collect(),
+            Err(_) => HashSet::new(),
+        };
+        // Build unified list.
+        let mut entries: Vec<(String, &str, usize)> = Vec::new();
+        // Add local environments.
+        for env in &local_envs {
+            let ref_str = env.resource_ref();
+            let id = format!("{}:{}", env.namespace(), env.name());
+            let tag = if remote_refs.contains(&id) {
+                "locally cached"
+            } else {
+                "local only"
+            };
+            entries.push((ref_str, tag, env.components.len()));
+        }
+        // Add remote-only environments.
+        if let Ok(remote) = &remote_result {
+            for env in remote {
+                let id = format!("{}:{}", env.namespace, env.name);
+                if !local_refs.contains(&id) {
+                    let ref_str = format!("{}:{}@{}", env.namespace, env.name, env.latest_version);
+                    entries.push((ref_str, "remote", 0));
+                }
             }
         }
-        // Show remote environments if authenticated.
-        println!();
-        if let Some(api_key) = Auth::read_stored_api_key() {
-            match fetch_remote_environments(&api_key, &self.api_endpoint).await {
-                Ok(remote_envs) => {
-                    println!("remote environments:");
-                    if remote_envs.is_empty() {
-                        println!("  (none)");
-                    } else {
-                        for env in remote_envs {
-                            println!("  {}:{}@{}", env.namespace, env.name, env.latest_version);
-                        }
-                    }
-                }
-                Err(e) => {
-                    println!("remote environments:");
-                    println!("  (failed to fetch: {})", e);
+        // Print.
+        println!("environments:");
+        if entries.is_empty() {
+            println!("  (none)");
+        } else {
+            for (ref_str, tag, component_count) in entries {
+                if component_count > 0 {
+                    println!("  {}  ({} components)  [{}]", ref_str, component_count, tag);
+                } else {
+                    println!("  {}  [{}]", ref_str, tag);
                 }
             }
-        } else {
-            println!("remote environments:");
-            println!("  (not authenticated - run 'asterai auth login')");
+        }
+        // Show error if remote fetch failed.
+        if let Err(e) = &remote_result {
+            println!();
+            println!("(remote: {})", e);
         }
         Ok(())
     }
