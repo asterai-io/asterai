@@ -1,3 +1,4 @@
+use crate::artifact::ArtifactSyncTag;
 use crate::auth::Auth;
 use crate::command::env::EnvArgs;
 use crate::local_store::LocalStore;
@@ -41,15 +42,14 @@ impl EnvArgs {
             Err(_) => HashSet::new(),
         };
         // Build unified list.
-        let mut entries: Vec<(String, &str, usize)> = Vec::new();
+        let mut entries: Vec<(String, ArtifactSyncTag, usize)> = Vec::new();
         // Add local environments.
         for env in &local_envs {
             let ref_str = env.resource_ref();
             let id = format!("{}:{}", env.namespace(), env.name());
-            let tag = if remote_refs.contains(&id) {
-                "locally cached"
-            } else {
-                "local only"
+            let tag = match remote_refs.contains(&id) {
+                true => ArtifactSyncTag::Synced,
+                false => ArtifactSyncTag::Unpushed,
             };
             entries.push((ref_str, tag, env.components.len()));
         }
@@ -59,7 +59,7 @@ impl EnvArgs {
                 let id = format!("{}:{}", env.namespace, env.name);
                 if !local_refs.contains(&id) {
                     let ref_str = format!("{}:{}@{}", env.namespace, env.name, env.latest_version);
-                    entries.push((ref_str, "remote", 0));
+                    entries.push((ref_str, ArtifactSyncTag::Remote, 0));
                 }
             }
         }

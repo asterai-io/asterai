@@ -1,5 +1,5 @@
 use crate::command::Command;
-
+pub mod artifact;
 pub mod auth;
 mod command;
 pub mod config;

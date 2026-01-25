@@ -1,3 +1,4 @@
+use crate::artifact::ArtifactSyncTag;
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
 use crate::local_store::LocalStore;
@@ -41,7 +42,7 @@ impl ComponentArgs {
             Err(_) => HashSet::new(),
         };
         // Build unified list.
-        let mut entries: Vec<(String, &str)> = Vec::new();
+        let mut entries: Vec<(String, ArtifactSyncTag)> = Vec::new();
         // Add local components.
         for component in &local_components {
             let ref_str = format!(
@@ -55,10 +56,9 @@ impl ComponentArgs {
                 component.component().namespace(),
                 component.component().name()
             );
-            let tag = if remote_refs.contains(&id) {
-                "locally cached"
-            } else {
-                "local only"
+            let tag = match remote_refs.contains(&id) {
+                true => ArtifactSyncTag::Synced,
+                false => ArtifactSyncTag::Unpushed,
             };
             entries.push((ref_str, tag));
         }
@@ -69,7 +69,7 @@ impl ComponentArgs {
                 if !local_refs.contains(&id) {
                     let ref_str =
                         format!("{}:{}@{}", comp.namespace, comp.name, comp.latest_version);
-                    entries.push((ref_str, "remote"));
+                    entries.push((ref_str, ArtifactSyncTag::Remote));
                 }
             }
         }
