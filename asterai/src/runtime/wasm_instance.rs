@@ -48,17 +48,23 @@ impl ComponentRuntimeEngine {
         mut components: Vec<ComponentBinary>,
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
+        env_vars: &HashMap<String, String>,
     ) -> eyre::Result<Self> {
         let engine = &ENGINE;
         let last_component = Arc::new(Mutex::new(None));
         // Create a WASI context and put it in a Store; all instances in the store
         // share this context. `WasiCtxBuilder` provides a number of ways to
         // configure what the target program will have access to.
-        let wasi_ctx = WasiCtxBuilder::new()
+        let mut wasi_ctx_builder = WasiCtxBuilder::new();
+        wasi_ctx_builder
             .stdout(ComponentStdout { app_id })
             .stderr(ComponentStderr { app_id })
-            .inherit_network()
-            .build();
+            .inherit_network();
+        // Inject environment variables from the environment config.
+        for (key, value) in env_vars {
+            wasi_ctx_builder.env(key, value);
+        }
+        let wasi_ctx = wasi_ctx_builder.build();
         let http_ctx = WasiHttpCtx::new();
         let table = ResourceTable::new();
         let host_env = HostEnv {

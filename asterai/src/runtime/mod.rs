@@ -51,8 +51,10 @@ impl ComponentRuntime {
         // TODO: change app ID for resource ID?
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
+        env_vars: &std::collections::HashMap<String, String>,
     ) -> eyre::Result<Self> {
-        let instance = ComponentRuntimeEngine::new(components, app_id, component_output_tx).await?;
+        let instance =
+            ComponentRuntimeEngine::new(components, app_id, component_output_tx, env_vars).await?;
         Ok(Self {
             app_id,
             engine: instance,

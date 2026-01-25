@@ -35,7 +35,7 @@ pub async fn build_runtime(environment: Environment) -> eyre::Result<ComponentRu
     let (component_output_tx, mut component_output_rx) = mpsc::channel(32);
     // Just drain the messages for now. TODO: add to this fn's arg?
     tokio::spawn(async move { while component_output_rx.recv().await.is_some() {} });
-    ComponentRuntime::new(components, app_id, component_output_tx).await
+    ComponentRuntime::new(components, app_id, component_output_tx, &environment.vars).await
 }
 
 async fn pull_component(id: &ComponentId, version: &str) -> eyre::Result<ComponentBinary> {
