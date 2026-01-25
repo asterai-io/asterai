@@ -1,6 +1,5 @@
 use crate::auth::Auth;
 use crate::command::env::EnvArgs;
-use crate::config::API_URL;
 use crate::local_store::LocalStore;
 use eyre::Context;
 use serde::Deserialize;
@@ -38,7 +37,7 @@ impl EnvArgs {
         // Show remote environments if authenticated.
         println!();
         if let Some(api_key) = Auth::read_stored_api_key() {
-            match fetch_remote_environments(&api_key).await {
+            match fetch_remote_environments(&api_key, &self.api_endpoint).await {
                 Ok(remote_envs) => {
                     println!("remote environments:");
                     if remote_envs.is_empty() {
@@ -58,20 +57,21 @@ impl EnvArgs {
             println!("remote environments:");
             println!("  (not authenticated - run 'asterai auth login')");
         }
-
         Ok(())
     }
 }
 
-async fn fetch_remote_environments(api_key: &str) -> eyre::Result<Vec<EnvironmentSummary>> {
+async fn fetch_remote_environments(
+    api_key: &str,
+    api_url: &str,
+) -> eyre::Result<Vec<EnvironmentSummary>> {
     let client = reqwest::Client::new();
     let response = client
-        .get(format!("{}/v1/environments", API_URL))
+        .get(format!("{}/v1/environments", api_url))
         .header("Authorization", api_key.trim())
         .send()
         .await
         .wrap_err("failed to fetch environments")?;
-
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response
@@ -80,9 +80,7 @@ async fn fetch_remote_environments(api_key: &str) -> eyre::Result<Vec<Environmen
             .unwrap_or_else(|_| "unknown error".to_string());
         eyre::bail!("{}: {}", status, error_text);
     }
-
     let result: ListEnvironmentsResponse =
         response.json().await.wrap_err("failed to parse response")?;
-
     Ok(result.environments)
 }

@@ -1,5 +1,4 @@
 use crate::auth::Auth;
-use crate::config::{API_URL, API_URL_STAGING, REGISTRY_URL, REGISTRY_URL_STAGING};
 use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
 use asterai_runtime::component::Component;
@@ -14,9 +13,6 @@ use std::str::FromStr;
 pub struct PullArgs {
     /// Environment reference (namespace:name or namespace:name@version).
     env_ref: String,
-    api_endpoint: String,
-    registry_endpoint: String,
-    staging: bool,
     /// Whether to skip pulling components.
     manifest_only: bool,
 }
@@ -24,22 +20,9 @@ pub struct PullArgs {
 impl PullArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut env_ref: Option<String> = None;
-        let mut api_endpoint = API_URL.to_string();
-        let mut registry_endpoint = REGISTRY_URL.to_string();
-        let mut staging = false;
         let mut manifest_only = false;
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--endpoint" | "-e" => {
-                    api_endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
-                }
-                "--registry" | "-r" => {
-                    registry_endpoint =
-                        args.next().ok_or_eyre("missing value for registry flag")?;
-                }
-                "--staging" | "-s" => {
-                    staging = true;
-                }
                 "--manifest-only" | "-m" => {
                     manifest_only = true;
                 }
@@ -64,14 +47,11 @@ impl PullArgs {
         )?;
         Ok(Self {
             env_ref,
-            api_endpoint,
-            registry_endpoint,
-            staging,
             manifest_only,
         })
     }
 
-    pub async fn execute(&self) -> eyre::Result<()> {
+    pub async fn execute(&self, api_endpoint: &str, registry_endpoint: &str) -> eyre::Result<()> {
         let api_key = Auth::read_stored_api_key()
             .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
         // Parse environment reference.
@@ -85,17 +65,12 @@ impl PullArgs {
                 .map(|v| format!("@{}", v))
                 .unwrap_or_default()
         );
-        let (api_url, registry_url) = if self.staging {
-            (API_URL_STAGING, REGISTRY_URL_STAGING)
-        } else {
-            (self.api_endpoint.as_str(), self.registry_endpoint.as_str())
-        };
         // Fetch environment from API.
         let client = reqwest::Client::new();
         let url = if let Some(ver) = &version {
-            format!("{}/v1/environment/{}/{}/{}", api_url, namespace, name, ver)
+            format!("{}/v1/environment/{}/{}/{}", api_endpoint, namespace, name, ver)
         } else {
-            format!("{}/v1/environment/{}/{}", api_url, namespace, name)
+            format!("{}/v1/environment/{}/{}", api_endpoint, namespace, name)
         };
         let response = client
             .get(&url)
@@ -161,7 +136,7 @@ impl PullArgs {
         // Pull component WASMs unless manifest-only.
         if !self.manifest_only {
             println!("\npulling components...");
-            let registry = RegistryClient::new(&client, api_url, registry_url);
+            let registry = RegistryClient::new(&client, api_endpoint, registry_endpoint);
             for component in &component_list {
                 registry.pull_component(&api_key, component, false).await?;
             }

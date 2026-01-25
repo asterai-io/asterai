@@ -1,4 +1,5 @@
 use crate::command::resource_or_id::ResourceOrIdArg;
+use crate::config::{API_URL, REGISTRY_URL};
 use asterai_runtime::component::Component;
 use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::{OptionExt, bail, eyre};
@@ -30,6 +31,8 @@ pub struct EnvArgs {
     pull_args: Option<pull::PullArgs>,
     delete_args: Option<delete::DeleteArgs>,
     should_open_editor: bool,
+    pub api_endpoint: String,
+    pub registry_endpoint: String,
 }
 
 #[derive(Copy, Clone, EnumString)]
@@ -56,6 +59,11 @@ impl EnvArgs {
         };
         let action =
             EnvAction::from_str(&action_string).map_err(|_| eyre!("unknown env action"))?;
+        // Collect remaining args and extract common flags.
+        let remaining_args: Vec<String> = args.collect();
+        let (api_endpoint, registry_endpoint, filtered_args) =
+            Self::extract_common_flags(remaining_args)?;
+        let mut args = filtered_args.into_iter();
         let mut parse_env_name_or_id = || -> eyre::Result<ResourceOrIdArg> {
             let Some(env_name_or_id_string) = args.next() else {
                 bail!("missing env name/id");
@@ -75,13 +83,15 @@ impl EnvArgs {
                 pull_args: None,
                 delete_args: None,
                 should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
             },
             EnvAction::Init => {
                 let env_resource_or_id = parse_env_name_or_id()?;
                 let mut should_open_editor = false;
                 for arg in args {
                     match arg.as_str() {
-                        "-e" | "--edit" => should_open_editor = true,
+                        "--edit" => should_open_editor = true,
                         other => bail!("unexpected argument: {}", other),
                     }
                 }
@@ -97,6 +107,8 @@ impl EnvArgs {
                     pull_args: None,
                     delete_args: None,
                     should_open_editor,
+                    api_endpoint,
+                    registry_endpoint,
                 }
             }
             action @ (EnvAction::Inspect | EnvAction::Edit) => Self {
@@ -111,6 +123,8 @@ impl EnvArgs {
                 pull_args: None,
                 delete_args: None,
                 should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
             },
             EnvAction::Call => Self {
                 action,
@@ -127,6 +141,8 @@ impl EnvArgs {
                 pull_args: None,
                 delete_args: None,
                 should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
             },
             EnvAction::AddComponent => {
                 let env_resource_or_id = parse_env_name_or_id()?;
@@ -146,6 +162,8 @@ impl EnvArgs {
                     pull_args: None,
                     delete_args: None,
                     should_open_editor: false,
+                    api_endpoint,
+                    registry_endpoint,
                 }
             }
             EnvAction::RemoveComponent => {
@@ -166,6 +184,8 @@ impl EnvArgs {
                     pull_args: None,
                     delete_args: None,
                     should_open_editor: false,
+                    api_endpoint,
+                    registry_endpoint,
                 }
             }
             EnvAction::List => Self {
@@ -180,6 +200,8 @@ impl EnvArgs {
                 pull_args: None,
                 delete_args: None,
                 should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
             },
             EnvAction::SetVar => Self {
                 action,
@@ -193,6 +215,8 @@ impl EnvArgs {
                 pull_args: None,
                 delete_args: None,
                 should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
             },
             EnvAction::Push => Self {
                 action,
@@ -206,6 +230,8 @@ impl EnvArgs {
                 pull_args: None,
                 delete_args: None,
                 should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
             },
             EnvAction::Pull => Self {
                 action,
@@ -219,6 +245,8 @@ impl EnvArgs {
                 pull_args: Some(pull::PullArgs::parse(args)?),
                 delete_args: None,
                 should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
             },
             EnvAction::Delete => Self {
                 action,
@@ -232,9 +260,47 @@ impl EnvArgs {
                 pull_args: None,
                 delete_args: Some(delete::DeleteArgs::parse(args)?),
                 should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
             },
         };
         Ok(env_args)
+    }
+
+    /// Extract common flags (-e/--endpoint, -r/--registry, -s/--staging) from args.
+    /// Returns (api_endpoint, registry_endpoint, remaining_args).
+    /// If --staging is set, it overrides the endpoints with staging URLs.
+    fn extract_common_flags(args: Vec<String>) -> eyre::Result<(String, String, Vec<String>)> {
+        use crate::config::{API_URL_STAGING, REGISTRY_URL_STAGING};
+        let mut api_endpoint = API_URL.to_string();
+        let mut registry_endpoint = REGISTRY_URL.to_string();
+        let mut staging = false;
+        let mut filtered = Vec::new();
+        let mut iter = args.into_iter().peekable();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--endpoint" | "-e" => {
+                    api_endpoint = iter
+                        .next()
+                        .ok_or_eyre("missing value for --endpoint flag")?;
+                }
+                "--registry" | "-r" => {
+                    registry_endpoint = iter
+                        .next()
+                        .ok_or_eyre("missing value for --registry flag")?;
+                }
+                "--staging" | "-s" => {
+                    staging = true;
+                }
+                _ => filtered.push(arg),
+            }
+        }
+        // Staging flag overrides explicit endpoints.
+        if staging {
+            api_endpoint = API_URL_STAGING.to_string();
+            registry_endpoint = REGISTRY_URL_STAGING.to_string();
+        }
+        Ok((api_endpoint, registry_endpoint, filtered))
     }
 
     pub async fn execute(&self) -> eyre::Result<()> {
@@ -247,7 +313,8 @@ impl EnvArgs {
             }
             EnvAction::Run => {
                 let args = self.run_args.as_ref().ok_or_eyre("no run args")?;
-                args.execute().await?;
+                args.execute(&self.api_endpoint, &self.registry_endpoint)
+                    .await?;
             }
             EnvAction::Inspect => {
                 self.inspect()?;
@@ -305,21 +372,20 @@ impl EnvArgs {
             .with_local_namespace_fallback();
         Resource::from_str(&resource_id_string).map_err(|e| eyre!(e))
     }
-}
 
-impl EnvArgs {
     pub async fn push(&self) -> eyre::Result<()> {
         let args = self.push_args.as_ref().ok_or_eyre("no push args")?;
-        args.execute().await
+        args.execute(&self.api_endpoint).await
     }
 
     pub async fn pull(&self) -> eyre::Result<()> {
         let args = self.pull_args.as_ref().ok_or_eyre("no pull args")?;
-        args.execute().await
+        args.execute(&self.api_endpoint, &self.registry_endpoint)
+            .await
     }
 
     pub async fn delete(&self) -> eyre::Result<()> {
         let args = self.delete_args.as_ref().ok_or_eyre("no delete args")?;
-        args.execute().await
+        args.execute(&self.api_endpoint).await
     }
 }

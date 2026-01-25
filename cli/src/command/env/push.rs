@@ -1,5 +1,4 @@
 use crate::auth::Auth;
-use crate::config::{API_URL, API_URL_STAGING};
 use crate::local_store::LocalStore;
 use asterai_runtime::resource::ResourceId;
 use eyre::{Context, OptionExt, bail};
@@ -11,8 +10,6 @@ use std::str::FromStr;
 #[derive(Debug)]
 pub struct PushArgs {
     env_name: String,
-    endpoint: String,
-    staging: bool,
 }
 
 /// Request body for pushing an environment.
@@ -38,17 +35,8 @@ struct PutEnvironmentResponse {
 impl PushArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut env_name: Option<String> = None;
-        let mut endpoint = API_URL.to_string();
-        let mut staging = false;
-
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--endpoint" | "-e" => {
-                    endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
-                }
-                "--staging" | "-s" => {
-                    staging = true;
-                }
                 "--help" | "-h" | "help" => {
                     print_help();
                     std::process::exit(0);
@@ -64,20 +52,14 @@ impl PushArgs {
                 }
             }
         }
-
         let env_name = env_name.ok_or_eyre(
             "missing environment name\n\nUsage: asterai env push <name>\n\
              Example: asterai env push my-env",
         )?;
-
-        Ok(Self {
-            env_name,
-            endpoint,
-            staging,
-        })
+        Ok(Self { env_name })
     }
 
-    pub async fn execute(&self) -> eyre::Result<()> {
+    pub async fn execute(&self, api_endpoint: &str) -> eyre::Result<()> {
         let api_key = Auth::read_stored_api_key()
             .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
 
@@ -111,12 +93,7 @@ impl PushArgs {
             vars: environment.vars.clone(),
         };
 
-        // Determine base URL.
-        let base_url = if self.staging {
-            API_URL_STAGING
-        } else {
-            &self.endpoint
-        };
+        let base_url = api_endpoint;
 
         let client = reqwest::Client::new();
         let response = client

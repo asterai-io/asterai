@@ -1,5 +1,4 @@
 use crate::auth::Auth;
-use crate::config::{API_URL, API_URL_STAGING};
 use crate::local_store::LocalStore;
 use eyre::{Context, OptionExt, bail};
 use std::fs;
@@ -8,10 +7,6 @@ use std::fs;
 pub struct DeleteArgs {
     /// Environment reference (namespace:name).
     env_ref: String,
-    /// API endpoint.
-    endpoint: String,
-    /// Use staging environment.
-    staging: bool,
     /// Skip confirmation prompt.
     force: bool,
     /// Delete from remote registry instead of local.
@@ -21,22 +16,14 @@ pub struct DeleteArgs {
 impl DeleteArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut env_ref: Option<String> = None;
-        let mut endpoint = API_URL.to_string();
-        let mut staging = false;
         let mut force = false;
         let mut remote = false;
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--endpoint" | "-e" => {
-                    endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
-                }
-                "--staging" | "-s" => {
-                    staging = true;
-                }
                 "--force" | "-f" | "-y" | "--yes" => {
                     force = true;
                 }
-                "--remote" | "-r" => {
+                "--remote" => {
                     remote = true;
                 }
                 "--help" | "-h" | "help" => {
@@ -60,17 +47,15 @@ impl DeleteArgs {
         )?;
         Ok(Self {
             env_ref,
-            endpoint,
-            staging,
             force,
             remote,
         })
     }
 
-    pub async fn execute(&self) -> eyre::Result<()> {
+    pub async fn execute(&self, api_endpoint: &str) -> eyre::Result<()> {
         let (namespace, name) = parse_env_reference(&self.env_ref)?;
         if self.remote {
-            self.execute_remote(&namespace, &name).await
+            self.execute_remote(&namespace, &name, api_endpoint).await
         } else {
             self.execute_local(&namespace, &name)
         }
@@ -116,7 +101,12 @@ impl DeleteArgs {
         Ok(())
     }
 
-    async fn execute_remote(&self, namespace: &str, name: &str) -> eyre::Result<()> {
+    async fn execute_remote(
+        &self,
+        namespace: &str,
+        name: &str,
+        api_endpoint: &str,
+    ) -> eyre::Result<()> {
         let api_key = Auth::read_stored_api_key()
             .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
         // Confirm deletion unless --force.
@@ -140,11 +130,7 @@ impl DeleteArgs {
             "deleting environment {}:{} from registry...",
             namespace, name
         );
-        let base_url = if self.staging {
-            API_URL_STAGING
-        } else {
-            &self.endpoint
-        };
+        let base_url = api_endpoint;
         let client = reqwest::Client::new();
         let response = client
             .delete(format!(
