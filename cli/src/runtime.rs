@@ -2,8 +2,8 @@ use crate::auth::Auth;
 use crate::config::{API_URL, REGISTRY_URL};
 use crate::local_store::LocalStore;
 use crate::registry::RegistryClient;
-use asterai_runtime::component::{Component, ComponentId};
 use asterai_runtime::component::interface::ComponentBinary;
+use asterai_runtime::component::{Component, ComponentId};
 use asterai_runtime::environment::Environment;
 use asterai_runtime::runtime::ComponentRuntime;
 use eyre::{Context, OptionExt};
@@ -48,8 +48,12 @@ async fn pull_component(id: &ComponentId, version: &str) -> eyre::Result<Compone
     let client = reqwest::Client::new();
     let registry = RegistryClient::new(&client, API_URL, REGISTRY_URL);
     let output_dir = registry.pull_component(&api_key, &component, true).await?;
-    LocalStore::parse_component(&output_dir)
-        .wrap_err_with(|| format!("failed to parse pulled component at {}", output_dir.display()))
+    LocalStore::parse_component(&output_dir).wrap_err_with(|| {
+        format!(
+            "failed to parse pulled component at {}",
+            output_dir.display()
+        )
+    })
 }
 
 fn find_component(

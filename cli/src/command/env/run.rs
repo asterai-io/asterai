@@ -142,7 +142,10 @@ impl RunArgs {
         // Fetch environment from API.
         let client = reqwest::Client::new();
         let url = match version {
-            Some(ver) => format!("{}/v1/environment/{}/{}/{}", api_endpoint, namespace, name, ver),
+            Some(ver) => format!(
+                "{}/v1/environment/{}/{}/{}",
+                api_endpoint, namespace, name, ver
+            ),
             None => format!("{}/v1/environment/{}/{}", api_endpoint, namespace, name),
         };
         let response = client
