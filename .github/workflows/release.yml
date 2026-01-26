@@ -90,7 +90,14 @@ jobs:
           sed -i 's/^version = ".*"/version = "${{ steps.version.outputs.version }}"/' cli/Cargo.toml
 
       - name: Publish asterai_runtime
-        run: cargo publish -p asterai_runtime --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Check if already published.
+          if curl -s "https://crates.io/api/v1/crates/asterai_runtime/$VERSION" | grep -q '"version"'; then
+            echo "asterai_runtime@$VERSION already published, skipping"
+          else
+            cargo publish -p asterai_runtime --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          fi
 
       - name: Wait for crates.io index update
         run: sleep 30
@@ -100,7 +107,14 @@ jobs:
           sed -i 's|asterai_runtime = { path = "../asterai" }|asterai_runtime = "${{ steps.version.outputs.version }}"|' cli/Cargo.toml
 
       - name: Publish asterai
-        run: cargo publish -p asterai --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Check if already published.
+          if curl -s "https://crates.io/api/v1/crates/asterai/$VERSION" | grep -q '"version"'; then
+            echo "asterai@$VERSION already published, skipping"
+          else
+            cargo publish -p asterai --allow-dirty --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          fi
 
   # Publish to npm after crates.io succeeds.
   publish-npm:
@@ -161,44 +175,32 @@ jobs:
           chmod +x npm/darwin-x64/bin/asterai
           chmod +x npm/darwin-arm64/bin/asterai
 
-      - name: Publish @asterai-io/cli-linux-x64
-        working-directory: npm/linux-x64
-        run: npm publish --access public
+      - name: Publish npm packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
 
-      - name: Publish @asterai-io/cli-linux-arm64
-        working-directory: npm/linux-arm64
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          publish_if_not_exists() {
+            local pkg=$1
+            local dir=$2
+            if npm view "$pkg@$VERSION" version 2>/dev/null; then
+              echo "$pkg@$VERSION already published, skipping"
+            else
+              cd "$dir" && npm publish --access public && cd -
+            fi
+          }
 
-      - name: Publish @asterai-io/cli-darwin-x64
-        working-directory: npm/darwin-x64
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          publish_if_not_exists "@asterai-io/cli-linux-x64" "npm/linux-x64"
+          publish_if_not_exists "@asterai-io/cli-linux-arm64" "npm/linux-arm64"
+          publish_if_not_exists "@asterai-io/cli-darwin-x64" "npm/darwin-x64"
+          publish_if_not_exists "@asterai-io/cli-darwin-arm64" "npm/darwin-arm64"
+          publish_if_not_exists "@asterai-io/cli-win32-x64" "npm/win32-x64"
 
-      - name: Publish @asterai-io/cli-darwin-arm64
-        working-directory: npm/darwin-arm64
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Wait for registry propagation before publishing main package.
+          sleep 10
 
-      - name: Publish @asterai-io/cli-win32-x64
-        working-directory: npm/win32-x64
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Wait for npm registry propagation
-        run: sleep 10
-
-      - name: Publish @asterai/cli
-        working-directory: npm/asterai
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          publish_if_not_exists "@asterai/cli" "npm/asterai"
 
   # Upload binaries to GitHub Release.
   upload-release-assets:
