@@ -20,7 +20,7 @@ jobs:
             npm-dir: linux-arm64
             cross: true
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             npm-dir: darwin-x64
           - target: aarch64-apple-darwin
             os: macos-latest
@@ -39,7 +39,7 @@ jobs:
 
       - name: Install cross (Linux ARM64)
         if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        uses: taiki-e/install-action@cross
 
       - name: Build (native)
         if: ${{ !matrix.cross }}
