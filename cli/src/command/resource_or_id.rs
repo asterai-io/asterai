@@ -16,7 +16,7 @@ impl ResourceOrIdArg {
         let namespace = self
             .namespace
             .clone()
-            .unwrap_or_else(|| Auth::read_user_or_fallback_namespace());
+            .unwrap_or_else(Auth::read_user_or_fallback_namespace);
         let version = self
             .version
             .as_ref()

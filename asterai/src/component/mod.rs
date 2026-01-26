@@ -25,6 +25,7 @@ pub struct Component {
     /// - component namespace (user or team slug)
     /// - component name (WASM package name).
     /// - version (semver).
+    ///
     /// Although the version in `PackageName` is optional,
     /// it is required in asterai components and is therefore
     /// guaranteed to be present.
@@ -112,7 +113,7 @@ impl FromStr for Component {
         let package_name_registry = PackageNameRegistry::new(component_id_registry)
             .map_err(AsteraiError::BadRequest.map())?;
         let version =
-            Version::from_str(&component_version).map_err(AsteraiError::BadRequest.map())?;
+            Version::from_str(component_version).map_err(AsteraiError::BadRequest.map())?;
         let component = Self {
             package_name: PackageName {
                 namespace: package_name_registry.namespace().to_owned(),

@@ -1,4 +1,3 @@
-use log::trace;
 use std::io::Error;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -6,18 +5,19 @@ use tokio::io::AsyncWrite;
 use uuid::Uuid;
 use wasmtime_wasi::cli::{IsTerminal, StdoutStream};
 
+#[allow(dead_code)]
 pub struct ComponentStdout {
     // TODO rename to env?
     pub app_id: Uuid,
 }
 
+#[allow(dead_code)]
 pub struct ComponentStderr {
     pub app_id: Uuid,
 }
 
 struct PluginStdOutErrWriter {
     is_stderr: bool,
-    app_id: Uuid,
 }
 
 impl IsTerminal for ComponentStdout {
@@ -34,19 +34,13 @@ impl IsTerminal for ComponentStderr {
 
 impl StdoutStream for ComponentStdout {
     fn async_stream(&self) -> Box<dyn AsyncWrite + Send + Sync> {
-        Box::new(PluginStdOutErrWriter {
-            is_stderr: false,
-            app_id: self.app_id,
-        })
+        Box::new(PluginStdOutErrWriter { is_stderr: false })
     }
 }
 
 impl StdoutStream for ComponentStderr {
     fn async_stream(&self) -> Box<dyn AsyncWrite + Send + Sync> {
-        Box::new(PluginStdOutErrWriter {
-            is_stderr: true,
-            app_id: self.app_id,
-        })
+        Box::new(PluginStdOutErrWriter { is_stderr: true })
     }
 }
 

@@ -5,7 +5,7 @@ use asterai_runtime::resource::Resource;
 use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{Context, OptionExt, bail};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 #[derive(Debug)]
@@ -130,7 +130,7 @@ impl PullArgs {
         Ok(output_dir)
     }
 
-    fn write_metadata(&self, output_dir: &PathBuf, repo_name: &str, tag: &str) -> eyre::Result<()> {
+    fn write_metadata(&self, output_dir: &Path, repo_name: &str, tag: &str) -> eyre::Result<()> {
         let metadata = serde_json::json!({
             "kind": ResourceKind::Component.to_string(),
             "pulled_from": format!("{}@{}", repo_name, tag),

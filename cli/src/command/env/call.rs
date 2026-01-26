@@ -51,7 +51,7 @@ fn parse_function_string_into_parts(
             (a, b)
         }
     };
-    let package_name = package_name_from_str(&package_name_str)?;
+    let package_name = package_name_from_str(package_name_str)?;
     let (function_name, interface_opt) = match function.split_once('/') {
         None => (function, None),
         Some((a, b)) => (a, Some(b)),

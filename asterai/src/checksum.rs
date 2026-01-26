@@ -22,7 +22,7 @@ impl Checksum {
     pub fn new_from_vec(vec: Vec<u8>) -> eyre::Result<Self> {
         let parsed = vec
             .try_into()
-            .map_err(|e| eyre!("failed to parse into Checksum"))?;
+            .map_err(|_| eyre!("failed to parse into Checksum"))?;
         Ok(Self::new(parsed))
     }
 
@@ -37,13 +37,13 @@ impl Checksum {
             .expect("sha256 did not result in 256 bytes during checksum generation")
     }
 
-    pub fn from_str(str: &str) -> Self {
+    pub fn hash_str(str: &str) -> Self {
         let bytes = str.as_bytes();
         Self::from_bytes(bytes)
     }
 
     pub fn bytes(&self) -> [u8; 32] {
-        self.0.clone()
+        self.0
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -51,7 +51,7 @@ impl Checksum {
     }
 
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let string = format!("0x{}", hex::encode(&self.0));
+        let string = format!("0x{}", hex::encode(self.0));
         f.write_str(&string)
     }
 }
@@ -101,7 +101,7 @@ impl<'de> Visitor<'de> for PluginIdVisitor {
     {
         let hex_str = v
             .strip_prefix("0x")
-            .ok_or_else(|| E::custom(format!("expected string to start with 0x")))?;
+            .ok_or_else(|| E::custom("expected string to start with 0x".to_string()))?;
         let vec = hex::decode(hex_str).map_err(de::Error::custom)?;
         Checksum::try_from(vec).map_err(de::Error::custom)
     }

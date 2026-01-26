@@ -169,7 +169,7 @@ impl ComponentBinary {
                     .map(|t| type_def_to_string(&t))
                     .unwrap_or_else(|| "function has no output".to_owned()),
             );
-            string.push_str("\n");
+            string.push('\n');
         }
         string
     }
@@ -192,7 +192,7 @@ impl ComponentBinary {
                                 .unwrap_or(component_package_name)
                         }
                     };
-                    let interface_name = interface.name.clone().unwrap_or_else(|| String::new());
+                    let interface_name = interface.name.clone().unwrap_or_default();
                     interface
                         .functions
                         .iter()
@@ -220,12 +220,10 @@ impl ComponentBinary {
     }
 
     fn component_world(&self) -> &World {
-        let world = self
-            .component_wit_resolve
+        self.component_wit_resolve
             .worlds
             .get(self.component_world_id)
-            .unwrap();
-        world
+            .unwrap()
     }
 
     fn map_wit_function_component_function(
@@ -323,7 +321,7 @@ impl ComponentFunctionInterface {
                 self.name.name
             ))?;
         let func = instance
-            .get_func(&mut store, &func_export)
+            .get_func(&mut store, func_export)
             .ok_or_eyre(eyre!("function not found"))?;
         Ok(func)
     }

@@ -19,10 +19,10 @@ pub fn add_asterai_host_to_linker(linker: &mut Linker<HostEnv>) -> eyre::Result<
 
 fn get_runtime_info<'a>(
     store: StoreContextMut<'a, HostEnv>,
-    (key, user_id): (String, Option<String>),
-) -> Box<(dyn Future<Output = eyre::Result<(RuntimeInfo,), wasmtime::Error>> + Send + 'a)> {
+    (_key, _user_id): (String, Option<String>),
+) -> Box<dyn Future<Output = eyre::Result<(RuntimeInfo,), wasmtime::Error>> + Send + 'a> {
     Box::new(async move {
-        let runtime_metadata = store.data().runtime_data.as_ref().unwrap();
+        let _runtime_metadata = store.data().runtime_data.as_ref().unwrap();
         let runtime_info = RuntimeInfo {
             // TODO actually get version from metadata.
             version: "todo-set-version".to_owned(),

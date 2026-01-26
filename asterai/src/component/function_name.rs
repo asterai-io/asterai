@@ -24,7 +24,7 @@ impl Display for ComponentFunctionName {
             .interface
             .as_ref()
             .map(|i| format!("{i}/"))
-            .unwrap_or_else(|| String::new());
+            .unwrap_or_default();
         write!(f, "{interface_string}{}", self.name)
     }
 }

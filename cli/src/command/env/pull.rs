@@ -19,10 +19,10 @@ pub struct PullArgs {
 }
 
 impl PullArgs {
-    pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
+    pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut env_ref: Option<String> = None;
         let mut manifest_only = false;
-        while let Some(arg) = args.next() {
+        for arg in args {
             match arg.as_str() {
                 "--manifest-only" | "-m" => {
                     manifest_only = true;

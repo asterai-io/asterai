@@ -33,9 +33,9 @@ struct PutEnvironmentResponse {
 }
 
 impl PushArgs {
-    pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
+    pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut env_name: Option<String> = None;
-        while let Some(arg) = args.next() {
+        for arg in args {
             match arg.as_str() {
                 "--help" | "-h" | "help" => {
                     print_help();

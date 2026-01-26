@@ -15,12 +15,12 @@ pub(super) struct InitArgs {
 }
 
 impl InitArgs {
-    pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
+    pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut out_dir = None;
         let mut rust = false;
         let mut typescript = false;
 
-        while let Some(arg) = args.next() {
+        for arg in args {
             match arg.as_str() {
                 "--rust" => {
                     rust = true;

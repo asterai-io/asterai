@@ -1,7 +1,6 @@
 use crate::command::env::EnvArgs;
 use crate::local_store::LocalStore;
 use asterai_runtime::environment::Environment;
-use eyre::bail;
 
 impl EnvArgs {
     pub fn init(&self) -> eyre::Result<()> {

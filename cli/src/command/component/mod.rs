@@ -24,6 +24,7 @@ pub struct ComponentArgs {
     init_args: Option<InitArgs>,
     delete_args: Option<DeleteArgs>,
     pub api_endpoint: String,
+    #[allow(dead_code)]
     pub registry_endpoint: String,
 }
 

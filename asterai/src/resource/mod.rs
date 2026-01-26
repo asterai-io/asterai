@@ -20,6 +20,7 @@ pub struct Resource {
     /// - namespace (user or team slug)
     /// - name (WASM package name).
     /// - version (semver).
+    ///
     /// Although the version in `PackageName` is optional,
     /// it is required in `Resource`s and is therefore
     /// guaranteed to be present.
@@ -77,7 +78,7 @@ impl ResourceId {
     }
 
     pub fn with_version(mut self, version: &str) -> eyre::Result<Resource> {
-        self.package_name.version = Some(Version::from_str(&version)?);
+        self.package_name.version = Some(Version::from_str(version)?);
         Ok(Resource {
             package_name: self.package_name,
         })
@@ -110,7 +111,7 @@ impl FromStr for Resource {
         let package_name_registry =
             PackageNameRegistry::new(&normalized_id).map_err(AsteraiError::BadRequest.map())?;
         let version =
-            Version::from_str(&resource_version).map_err(AsteraiError::BadRequest.map())?;
+            Version::from_str(resource_version).map_err(AsteraiError::BadRequest.map())?;
         let resource = Self {
             package_name: PackageName {
                 namespace: package_name_registry.namespace().to_owned(),

@@ -112,16 +112,16 @@ impl PushArgs {
         );
         // Add component if provided and not interface-only.
         let is_interface_only = self.interface_only || self.component.is_none();
-        if let Some(ref component_path) = self.component {
-            if !self.interface_only {
-                let component_bytes = read_file(component_path)?;
-                form = form.part(
-                    "component.wasm",
-                    reqwest::multipart::Part::bytes(component_bytes)
-                        .file_name("component.wasm")
-                        .mime_str("application/octet-stream")?,
-                );
-            }
+        if let Some(ref component_path) = self.component
+            && !self.interface_only
+        {
+            let component_bytes = read_file(component_path)?;
+            form = form.part(
+                "component.wasm",
+                reqwest::multipart::Part::bytes(component_bytes)
+                    .file_name("component.wasm")
+                    .mime_str("application/octet-stream")?,
+            );
         }
         // Add force flag if set.
         if self.force {
@@ -148,15 +148,15 @@ impl PushArgs {
         // Handle version conflict (409 Conflict).
         if status == StatusCode::CONFLICT {
             let body = response.text().await?;
-            if let Ok(err) = serde_json::from_str::<VersionConflictError>(&body) {
-                if err.error == "version_exists" {
-                    if err.can_auto_bump {
-                        // Public immutable version: auto-bump and instruct to rebuild.
-                        return self.handle_version_conflict(&err.version);
-                    } else {
-                        // Mutable version or private: just show the error message.
-                        bail!("{}", err.message);
-                    }
+            if let Ok(err) = serde_json::from_str::<VersionConflictError>(&body)
+                && err.error == "version_exists"
+            {
+                if err.can_auto_bump {
+                    // Public immutable version: auto-bump and instruct to rebuild.
+                    return self.handle_version_conflict(&err.version);
+                } else {
+                    // Mutable version or private: just show the error message.
+                    bail!("{}", err.message);
                 }
             }
             bail!("push failed ({}): {}", status, body);
@@ -211,7 +211,7 @@ impl PushArgs {
         for entry in fs::read_dir(wit_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "wit") {
+            if path.extension().is_some_and(|e| e == "wit") {
                 let content = fs::read_to_string(&path)?;
                 if content.contains(&format!("@{}", old_version)) {
                     let new_content =

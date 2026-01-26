@@ -21,10 +21,10 @@ pub(super) struct RunArgs {
 }
 
 impl RunArgs {
-    pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
+    pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut env_ref: Option<String> = None;
         let mut no_pull = false;
-        while let Some(arg) = args.next() {
+        for arg in args {
             match arg.as_str() {
                 "--no-pull" => {
                     no_pull = true;

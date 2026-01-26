@@ -1,6 +1,6 @@
+use crate::component::ComponentId;
 use crate::component::function_name::ComponentFunctionName;
 use crate::component::interface::{ComponentBinary, ComponentFunctionInterface};
-use crate::component::{Component, ComponentId};
 use crate::runtime::output::{ComponentFunctionOutput, ComponentOutput};
 use crate::runtime::wasm_instance::{
     ComponentRuntimeEngine, call_wasm_component_function_concurrent,
@@ -92,7 +92,7 @@ impl ComponentRuntime {
                 return None;
             }
             let functions = interface.get_functions();
-            let function = functions.into_iter().find(|f| {
+            functions.into_iter().find(|f| {
                 if let Some(package_name) = &package_name_opt {
                     let is_same_package = f.package_name.name == package_name.name
                         && f.package_name.namespace == package_name.namespace;
@@ -107,8 +107,7 @@ impl ComponentRuntime {
                     }
                 }
                 &f.name == function_name
-            });
-            function
+            })
         })
     }
 
@@ -141,7 +140,7 @@ impl ComponentRuntime {
                         &func_name,
                         a,
                         &[],
-                        &mut vec![Val::Bool(false)],
+                        &mut [Val::Bool(false)],
                         component,
                     )
                     .await;
@@ -190,6 +189,7 @@ impl Debug for ComponentRuntime {
     }
 }
 
+#[allow(async_fn_in_trait)]
 pub trait ComponentFunctionInterfaceExt {
     async fn call(
         self,

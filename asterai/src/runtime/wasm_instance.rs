@@ -84,7 +84,7 @@ impl ComponentRuntimeEngine {
         let mut instances = Vec::new();
         // Sort by ascending order of imports count,
         // so that components with no dependencies are added first.
-        components.sort_by(|a, b| b.get_imports_count().cmp(&a.get_imports_count()));
+        components.sort_by_key(|b| std::cmp::Reverse(b.get_imports_count()));
         // TODO fix this up. See if possible to link before instantiation,
         // using Linker::define or Linker::define_instance -- or maybe Grok hallucinated it?
         for interface in components.into_iter() {
@@ -129,7 +129,7 @@ impl ComponentRuntimeEngine {
     ) -> eyre::Result<Option<ComponentOutput>> {
         // This is an uninitialised vec of the results.
         let mut results = function_interface.new_results_vec();
-        self.call_raw(&function_interface, &inputs, &mut results)
+        self.call_raw(&function_interface, inputs, &mut results)
             .await?;
         let output_opt =
             parse_component_output(self.store.as_context(), results, function_interface);
@@ -221,7 +221,7 @@ impl ComponentRuntimeInstance {
                 exported_instance
                     .func_new_async(
                         &func_name_cloned.name,
-                        move |mut store, _, params, mut results| {
+                        move |mut store, _, params, results| {
                             let component_cloned = component.clone();
                             let func_name = func_name.clone();
                             let function_cloned = function.clone();
@@ -231,7 +231,7 @@ impl ComponentRuntimeInstance {
                                     &func_name,
                                     store.as_context_mut(),
                                     params,
-                                    &mut results,
+                                    results,
                                     component_cloned,
                                 )
                                 .await
@@ -260,7 +260,7 @@ impl ComponentRuntimeInstance {
 
 async fn call_wasm_component_function<'a>(
     func: &Func,
-    func_name: &ComponentFunctionName,
+    _func_name: &ComponentFunctionName,
     mut store: StoreContextMut<'a, HostEnv>,
     args: &[Val],
     results: &mut [Val],
@@ -283,9 +283,9 @@ async fn call_wasm_component_function<'a>(
     Ok(())
 }
 
-pub async fn call_wasm_component_function_concurrent<'a>(
+pub async fn call_wasm_component_function_concurrent(
     func: &Func,
-    func_name: &ComponentFunctionName,
+    _func_name: &ComponentFunctionName,
     accessor: &Accessor<HostEnv>,
     args: &[Val],
     results: &mut [Val],
@@ -349,12 +349,14 @@ fn parse_component_output(
 
 impl Debug for ComponentRuntimeEngine {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:#?}")
+        f.debug_struct("ComponentRuntimeEngine").finish()
     }
 }
 
 impl Debug for ComponentRuntimeInstance {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:#?}")
+        f.debug_struct("ComponentRuntimeInstance")
+            .field("app_id", &self.app_id)
+            .finish()
     }
 }

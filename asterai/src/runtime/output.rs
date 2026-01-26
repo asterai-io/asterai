@@ -59,10 +59,10 @@ impl Serialize for SerializableVal {
             Val::Float32(v) => serializer.serialize_f32(*v),
             Val::Float64(v) => serializer.serialize_f64(*v),
             Val::Char(v) => serializer.serialize_char(*v),
-            Val::String(v) => serializer.serialize_str(&v),
+            Val::String(v) => serializer.serialize_str(v),
             Val::List(v) | Val::Tuple(v) => {
                 let mut state = serializer.serialize_seq(Some(v.len()))?;
-                for child in v.to_owned() {
+                for child in v.iter().cloned() {
                     state.serialize_element(&SerializableVal {
                         name: None,
                         val: child,
@@ -78,7 +78,7 @@ impl Serialize for SerializableVal {
                 // TODO fix leak
                 let mut state =
                     serializer.serialize_struct(Box::leak(name.into_boxed_str()), v.len())?;
-                for (key, val) in v.to_owned().into_iter() {
+                for (key, val) in v.iter().cloned() {
                     state.serialize_field(
                         // TODO fix leak
                         Box::leak(key.into_boxed_str()),
@@ -90,7 +90,7 @@ impl Serialize for SerializableVal {
                 }
                 state.end()
             }
-            Val::Enum(v) => serializer.serialize_str(&v),
+            Val::Enum(v) => serializer.serialize_str(v),
             Val::Option(v_opt) => {
                 if let Some(v) = v_opt.clone() {
                     SerializableVal {

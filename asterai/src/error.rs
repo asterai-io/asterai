@@ -21,8 +21,8 @@ impl AsteraiError {
     }
 }
 
-impl<T> Into<Result<T, AsteraiError>> for AsteraiError {
-    fn into(self) -> Result<T, AsteraiError> {
-        Err(self)
+impl<T> From<AsteraiError> for Result<T, AsteraiError> {
+    fn from(val: AsteraiError) -> Self {
+        Err(val)
     }
 }
