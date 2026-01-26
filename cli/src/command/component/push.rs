@@ -128,10 +128,9 @@ impl PushArgs {
             form = form.text("force", "true");
         }
         // Determine base URL.
-        let base_url = if self.staging {
-            API_URL_STAGING
-        } else {
-            &self.endpoint
+        let base_url = match self.staging {
+            true => API_URL_STAGING,
+            false => &self.endpoint,
         };
         if is_interface_only {
             println!("pushing WIT interface (interface-only)...");

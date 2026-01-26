@@ -48,28 +48,20 @@ impl InitArgs {
     fn execute_init(&self) -> eyre::Result<()> {
         // Validate flags
         self.validate_language_flags()?;
-
-        // Get the template
-        let template = if self.rust {
-            &RUST_TEMPLATE
-        } else {
-            // Typescript is default
-            &TYPESCRIPT_TEMPLATE
+        let template = match self.rust {
+            true => &RUST_TEMPLATE,
+            false => &TYPESCRIPT_TEMPLATE,
         };
-
         // Resolve output directory
         let out_dir = fs::canonicalize(".")
             .wrap_err("failed to get current directory")?
             .join(&self.out_dir);
-
         if out_dir.exists() {
             bail!("output directory already exists: {:?}", out_dir);
         }
-
         // Extract template to output directory
         extract_template(template, &out_dir)
             .wrap_err_with(|| format!("failed to extract template to {:?}", out_dir))?;
-
         println!("Initialized component project at {:?}", out_dir);
         Ok(())
     }

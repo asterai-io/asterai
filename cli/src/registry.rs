@@ -221,10 +221,9 @@ impl<'a> RegistryClient<'a> {
             let blob_bytes = self
                 .download_blob(&repo_name, &layer.digest, &token)
                 .await?;
-            let filename = if i == 0 {
-                "component.wasm"
-            } else {
-                "package.wasm"
+            let filename = match i {
+                0 => "component.wasm",
+                _ => "package.wasm",
             };
             let file_path = output_dir.join(filename);
             fs::write(&file_path, &blob_bytes)?;

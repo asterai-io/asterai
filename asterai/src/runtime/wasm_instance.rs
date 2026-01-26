@@ -17,7 +17,7 @@ use wasmtime::component::*;
 use wasmtime::{AsContext, AsContextMut, Config, Engine, Store, StoreContext, StoreContextMut};
 use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::p2::add_to_linker_async;
-use wasmtime_wasi_http::WasiHttpCtx;
+use wasmtime_wasi_http::{WasiHttpCtx, add_only_http_to_linker_async};
 
 static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = Config::new();
@@ -79,7 +79,7 @@ impl ComponentRuntimeEngine {
         // Prevent "defined twice" errors.
         linker.allow_shadowing(true);
         add_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
-        wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
+        add_only_http_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
         add_asterai_host_to_linker(&mut linker)?;
         let mut instances = Vec::new();
         // Sort by ascending order of imports count,

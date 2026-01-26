@@ -117,10 +117,9 @@ fn parse_var_assignment(s: &str) -> eyre::Result<(String, Option<String>)> {
             key
         );
     }
-    let value = if value.is_empty() {
-        None // Unset
-    } else {
-        Some(value.to_string())
+    let value = match value.is_empty() {
+        true => None,
+        false => Some(value.to_string()),
     };
     Ok((key.to_string(), value))
 }
@@ -129,10 +128,10 @@ fn parse_var_assignment(s: &str) -> eyre::Result<(String, Option<String>)> {
 /// TODO remove local namespace? init any, but push will fail if unauthed
 fn parse_env_id(s: &str) -> eyre::Result<ResourceId> {
     // If no namespace separator, assume local namespace.
-    let id_string = if s.contains(':') || s.contains('/') {
-        s.to_string()
-    } else {
-        format!("local:{}", s)
+    let has_namespace = s.contains(':') || s.contains('/');
+    let id_string = match has_namespace {
+        true => s.to_string(),
+        false => format!("local:{}", s),
     };
     ResourceId::from_str(&id_string)
         .map_err(|e| eyre::eyre!("invalid environment reference: {}", e))

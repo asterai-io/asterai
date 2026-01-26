@@ -1,6 +1,7 @@
 use crate::auth::Auth;
 use crate::local_store::LocalStore;
 use eyre::{Context, OptionExt, bail};
+use reqwest::StatusCode;
 use std::fs;
 
 #[derive(Debug)]
@@ -142,10 +143,10 @@ impl DeleteArgs {
             .await
             .wrap_err("failed to send delete request")?;
         let status = response.status();
-        if status == reqwest::StatusCode::NOT_FOUND {
+        if status == StatusCode::NOT_FOUND {
             bail!("environment '{}:{}' not found in registry", namespace, name);
         }
-        if status == reqwest::StatusCode::FORBIDDEN {
+        if status == StatusCode::FORBIDDEN {
             bail!(
                 "forbidden: you don't have permission to delete environment '{}:{}'",
                 namespace,

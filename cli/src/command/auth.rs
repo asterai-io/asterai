@@ -1,6 +1,7 @@
 use crate::auth::Auth;
 use crate::config::{API_URL, API_URL_STAGING};
 use eyre::{Context, OptionExt, bail};
+use reqwest::StatusCode;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -99,7 +100,7 @@ async fn validate_api_key(api_key: &str, api_endpoint: &str) -> eyre::Result<Str
         .send()
         .await
         .wrap_err("failed to connect to API")?;
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+    if response.status() == StatusCode::UNAUTHORIZED {
         bail!(
             "API key is invalid or expired. \
              Run 'asterai auth login' to re-authenticate."

@@ -5,6 +5,7 @@ use asterai_runtime::component::Component;
 use asterai_runtime::environment::{Environment, EnvironmentMetadata};
 use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{Context, OptionExt, bail};
+use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
@@ -67,10 +68,9 @@ impl PullArgs {
         );
         // Fetch environment from API.
         let client = reqwest::Client::new();
-        let url = if let Some(ver) = &version {
-            format!("{}/v1/environment/{}/{}/{}", api_endpoint, namespace, name, ver)
-        } else {
-            format!("{}/v1/environment/{}/{}", api_endpoint, namespace, name)
+        let url = match &version {
+            Some(ver) => format!("{}/v1/environment/{}/{}/{}", api_endpoint, namespace, name, ver),
+            None => format!("{}/v1/environment/{}/{}", api_endpoint, namespace, name),
         };
         let response = client
             .get(&url)
@@ -78,10 +78,10 @@ impl PullArgs {
             .send()
             .await
             .wrap_err("failed to fetch environment")?;
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
+        if response.status() == StatusCode::NOT_FOUND {
             bail!("environment '{}:{}' not found", namespace, name);
         }
-        if response.status() == reqwest::StatusCode::FORBIDDEN {
+        if response.status() == StatusCode::FORBIDDEN {
             bail!(
                 "forbidden: you don't have access to environment '{}:{}'",
                 namespace,
@@ -149,10 +149,9 @@ impl PullArgs {
 /// Parse an environment reference like "namespace:name" or "namespace:name@version".
 fn parse_env_reference(s: &str) -> eyre::Result<(String, String, Option<String>)> {
     // Check for version.
-    let (id_part, version) = if let Some((id, ver)) = s.split_once('@') {
-        (id, Some(ver.to_string()))
-    } else {
-        (s, None)
+    let (id_part, version) = match s.split_once('@') {
+        Some((id, ver)) => (id, Some(ver.to_string())),
+        None => (s, None),
     };
     // Parse namespace:name or namespace/name.
     let (namespace, name) = id_part

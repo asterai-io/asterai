@@ -84,10 +84,9 @@ impl PullArgs {
         let repo_name = format!("{}/{}", namespace, name);
         let tag = &version;
         println!("pulling {}@{}", repo_name, tag);
-        let (api_url, registry_url) = if self.staging {
-            (API_URL_STAGING, REGISTRY_URL_STAGING)
-        } else {
-            (self.api_endpoint.as_str(), self.registry_endpoint.as_str())
+        let (api_url, registry_url) = match self.staging {
+            true => (API_URL_STAGING, REGISTRY_URL_STAGING),
+            false => (self.api_endpoint.as_str(), self.registry_endpoint.as_str()),
         };
         let client = reqwest::Client::new();
         let registry = RegistryClient::new(&client, api_url, registry_url);
@@ -101,10 +100,9 @@ impl PullArgs {
             let blob_bytes = registry
                 .download_blob(&repo_name, &layer.digest, &token)
                 .await?;
-            let filename = if i == 0 {
-                "component.wasm"
-            } else {
-                "package.wasm"
+            let filename = match i {
+                0 => "component.wasm",
+                _ => "package.wasm",
             };
             let file_path = output_dir.join(filename);
             fs::write(&file_path, &blob_bytes)
