@@ -30,3 +30,5 @@ uuid = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "rustls-tls"] }
 include_dir = "0.7"
 semver = "1"
+wit-parser = { workspace = true }
+wit-component = { workspace = true }

@@ -4,6 +4,8 @@ use crate::config::API_URL;
 use eyre::{Context, OptionExt, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
+use wit_component::WitPrinter;
+use wit_parser::decoding::DecodedWasm;
 
 #[derive(Debug)]
 pub(super) struct PkgArgs {
@@ -73,9 +75,9 @@ impl ComponentArgs {
                 .file_name("package.wit")
                 .mime_str("application/octet-stream")?,
         );
-        // Send request to /v1/pkg
+        // Send request to /v1/wit/package
         let response = client
-            .post(format!("{}/v1/pkg", args.endpoint))
+            .post(format!("{}/v1/wit/package", args.endpoint))
             .header("Authorization", api_key.trim())
             .multipart(form)
             .send()
@@ -97,45 +99,38 @@ impl ComponentArgs {
         fs::write(&output_file, package_bytes)
             .wrap_err_with(|| format!("failed to write output file to {:?}", output_file))?;
         println!("Package created at {:?}", output_file);
-        // Convert to WIT if requested
+        // Convert to WIT if requested.
         if let Some(wit_output) = &args.wit {
-            wasm2wit(&args.endpoint, &output_file, &base_dir.join(wit_output)).await?;
+            wasm2wit(&output_file, &base_dir.join(wit_output))?;
         }
         Ok(())
     }
 }
 
-async fn wasm2wit(endpoint: &str, input_file: &Path, output_file: &Path) -> eyre::Result<()> {
-    let wasm_content = fs::read(input_file)
+/// Convert a WASM package to WIT format locally.
+fn wasm2wit(input_file: &Path, output_file: &Path) -> eyre::Result<()> {
+    let wasm_bytes = fs::read(input_file)
         .wrap_err_with(|| format!("failed to read WASM file at {:?}", input_file))?;
-    let api_key = Auth::read_stored_api_key().ok_or_eyre("API key not found")?;
-    let client = reqwest::Client::new();
-    let form = reqwest::multipart::Form::new().part(
-        "package.wasm",
-        reqwest::multipart::Part::bytes(wasm_content)
-            .file_name("package.wasm")
-            .mime_str("application/octet-stream")?,
-    );
-    let response = client
-        .post(format!("{}/v1/wasm2wit", endpoint))
-        .header("Authorization", api_key.trim())
-        .multipart(form)
-        .send()
-        .await
-        .wrap_err("failed to send request to wasm2wit endpoint")?;
-    let status = response.status();
-    if !status.is_success() {
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "unknown error".to_string());
-        bail!("request failed: {}", error_text);
-    }
-    let wit_text = response
-        .text()
-        .await
-        .wrap_err("failed to read response body")?;
-    fs::write(output_file, wit_text)
+    let decoded = wit_parser::decoding::decode(&wasm_bytes)
+        .map_err(|e| eyre::eyre!("failed to decode WASM package: {e}"))?;
+    let (resolve, package_id) = match decoded {
+        DecodedWasm::WitPackage(r, p) => (r, p),
+        DecodedWasm::Component(_, _) => {
+            bail!("input is a component, not a WIT package");
+        }
+    };
+    let mut printer = WitPrinter::default();
+    printer.emit_docs(false);
+    let dependency_ids: Vec<_> = resolve
+        .package_names
+        .values()
+        .copied()
+        .filter(|p| *p != package_id)
+        .collect();
+    printer
+        .print(&resolve, package_id, &dependency_ids)
+        .map_err(|e| eyre::eyre!("failed to print WIT: {e}"))?;
+    fs::write(output_file, printer.output.to_string())
         .wrap_err_with(|| format!("failed to write WIT file to {:?}", output_file))?;
     println!("WIT file created at {:?}", output_file);
     Ok(())

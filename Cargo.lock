@@ -150,6 +150,8 @@ dependencies = [
  "toml 0.8.23",
  "tracing-subscriber",
  "uuid",
+ "wit-component 0.225.0",
+ "wit-parser 0.225.0",
 ]
 
 [[package]]
