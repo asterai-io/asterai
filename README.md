@@ -37,6 +37,20 @@ Asterai is an open-source platform and runtime for creating, sharing, and execut
 - **True Portability**: Deploy anywhere (local, cloud, edge) with no dependency hell — same behavior everywhere
 - **Instant Deployment**: Tools just work without DevOps or container configuration
 
+## 🚀 Installation
+
+**npm** (recommended):
+```bash
+npm install -g @asterai/cli
+```
+
+**Cargo** (Rust users):
+```bash
+cargo install asterai
+```
+
+**Binary releases**: Download from [GitHub Releases](https://github.com/asterai-io/asterai/releases)
+
 ## 📦 Overview
 
 | Directory               | Description                 |
