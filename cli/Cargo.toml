@@ -21,6 +21,6 @@ toml = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 uuid = { workspace = true }
-reqwest = { version = "0.12", features = ["multipart"] }
+reqwest = { version = "0.12", default-features = false, features = ["multipart", "rustls-tls"] }
 include_dir = "0.7"
 semver = "1"
