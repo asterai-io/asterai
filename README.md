@@ -28,7 +28,7 @@
 
 <br />
 
-## ✨ Highlights
+## ✨ Overview
 
 Asterai is an open-source platform and runtime for creating, sharing, and executing portable, sandboxed WebAssembly (WASI) components. Built around wasmtime, it provides a neutral compute substrate for the agentic era.
 
@@ -51,7 +51,7 @@ cargo install asterai
 
 **Binary releases**: Download from [GitHub Releases](https://github.com/asterai-io/asterai/releases)
 
-## 📦 Overview
+## 📦 Structure
 
 | Directory               | Description                 |
 |-------------------------|-----------------------------|
