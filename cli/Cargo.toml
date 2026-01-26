@@ -8,7 +8,12 @@ repository = "https://github.com/asterai-io/asterai"
 homepage = "https://asterai.io"
 keywords = ["wasm", "webassembly", "ai", "agents", "cli"]
 categories = ["command-line-utilities", "wasm"]
-include = ["src/**/*", "init/**/*", "Cargo.toml"]
+exclude = [
+  "init/typescript/node_modules/**",
+  "init/typescript/build/**",
+  "init/typescript/generated/**",
+  "init/rust/target/**",
+]
 
 [dependencies]
 tokio = { workspace = true }
