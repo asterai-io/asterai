@@ -1,9 +1,43 @@
-# asterai
-The asterai WASM environment runtime.
+<br />
+<p align="center">
+  <a href="https://asterai.io">
+    <img src="images/logo.png" alt="Asterai Logo" width="100">
+  </a>
+</p>
 
-This includes the asterai CLI tool and the runtime.
+<h3 align="center"><b>Asterai</b></h3>
+<p align="center">
+    <b>The AI Agent Tool Marketplace.</b><br />
+    Discover and deploy tools for your AI agents, written in any language.
+</p>
 
-# Overview
+<div align="center">
+
+[![License](https://img.shields.io/github/license/asterai-io/asterai?color=blue)](https://github.com/asterai-io/asterai/blob/master/LICENSE)
+[![Discord](https://img.shields.io/discord/1285696350117167226?label=discord&color=7289da)](https://asterai.io/discord)
+[![GitHub stars](https://img.shields.io/github/stars/asterai-io/asterai)](https://github.com/asterai-io/asterai)
+[![Twitter Follow](https://img.shields.io/twitter/follow/asterai_io)](https://twitter.com/asterai_io)
+
+</div>
+
+<h4 align="center">
+  <a href="https://asterai.io" target="_blank">Website</a> ·
+  <a href="https://docs.asterai.io" target="_blank">Documentation</a> ·
+  <a href="https://asterai.io/discord" target="_blank">Discord</a>
+</h4>
+
+<br />
+
+## ✨ Highlights
+
+Asterai is an open-source platform and runtime for creating, sharing, and executing portable, sandboxed WebAssembly (WASI) components. Built around wasmtime, it provides a neutral compute substrate for the agentic era.
+
+- **Language Interoperability**: Write tools in any language (Rust, Go, Python, JS, C/C++) — components written in different languages work together seamlessly via type-safe WIT interfaces
+- **Sandboxed Execution**: AI agents can run untrusted code safely with WASI security guarantees
+- **True Portability**: Deploy anywhere (local, cloud, edge) with no dependency hell — same behavior everywhere
+- **Instant Deployment**: Tools just work without DevOps or container configuration
+
+## 📦 Overview
 
 | Directory               | Description                 |
 |-------------------------|-----------------------------|
@@ -11,7 +45,7 @@ This includes the asterai CLI tool and the runtime.
 | [asterai][2]            | The asterai runtime library |
 | [component-examples][3] | Example components          |
 
-# CLI Command Reference
+## 🔧 CLI Command Reference
 
 The CLI operates in two modes: **local** (offline, working with files in
 `~/.local/bin/asterai/artifacts`) and **remote** (online, interacting with the Asterai
@@ -51,7 +85,7 @@ sync when ready.
 - **Remote**: Command interacts with the Asterai API
 - **`--remote`**: Pass `-r` or `--remote` to operate on the registry instead of locally
 
-# Documentation
+## 📚 Documentation
 
 The asterai documentation is available at [docs.asterai.io](https://docs.asterai.io)
 
