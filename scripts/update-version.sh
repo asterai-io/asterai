@@ -38,11 +38,11 @@ done
 
 # Update optionalDependencies in main package.
 echo "  npm/asterai/package.json (optionalDependencies)"
-sed -i "s/\"@asterai-io\/cli-linux-x64\": \".*\"/\"@asterai-io\/cli-linux-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
-sed -i "s/\"@asterai-io\/cli-linux-arm64\": \".*\"/\"@asterai-io\/cli-linux-arm64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
-sed -i "s/\"@asterai-io\/cli-darwin-x64\": \".*\"/\"@asterai-io\/cli-darwin-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
-sed -i "s/\"@asterai-io\/cli-darwin-arm64\": \".*\"/\"@asterai-io\/cli-darwin-arm64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
-sed -i "s/\"@asterai-io\/cli-win32-x64\": \".*\"/\"@asterai-io\/cli-win32-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sed -i "s/\"@asterai\/cli-linux-x64\": \".*\"/\"@asterai\/cli-linux-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sed -i "s/\"@asterai\/cli-linux-arm64\": \".*\"/\"@asterai\/cli-linux-arm64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sed -i "s/\"@asterai\/cli-darwin-x64\": \".*\"/\"@asterai\/cli-darwin-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sed -i "s/\"@asterai\/cli-darwin-arm64\": \".*\"/\"@asterai\/cli-darwin-arm64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sed -i "s/\"@asterai\/cli-win32-x64\": \".*\"/\"@asterai\/cli-win32-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
 
 echo ""
 echo "Done. Updated to version $VERSION"

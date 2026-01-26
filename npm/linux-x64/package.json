@@ -1,5 +1,5 @@
 {
-  "name": "@asterai-io/cli-linux-x64",
+  "name": "@asterai/cli-linux-x64",
   "version": "1.0.0-alpha.1",
   "description": "Linux x64 binary for asterai CLI",
   "author": "asterai <support@asterai.io>",

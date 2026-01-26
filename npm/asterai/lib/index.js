@@ -3,11 +3,11 @@ const { platform, arch } = process;
 
 // Map Node.js platform/arch to the package names.
 const PLATFORMS = {
-  "darwin-arm64": "@asterai-io/cli-darwin-arm64",
-  "darwin-x64": "@asterai-io/cli-darwin-x64",
-  "linux-arm64": "@asterai-io/cli-linux-arm64",
-  "linux-x64": "@asterai-io/cli-linux-x64",
-  "win32-x64": "@asterai-io/cli-win32-x64",
+  "darwin-arm64": "@asterai/cli-darwin-arm64",
+  "darwin-x64": "@asterai/cli-darwin-x64",
+  "linux-arm64": "@asterai/cli-linux-arm64",
+  "linux-x64": "@asterai/cli-linux-x64",
+  "win32-x64": "@asterai/cli-win32-x64",
 };
 
 function getBinaryPath() {

@@ -151,11 +151,11 @@ jobs:
           done
 
           # Update optionalDependencies versions in main package.
-          sed -i "s/\"@asterai-io\/cli-[^\"]*\": \"[^\"]*\"/\"@asterai-io\/cli-linux-x64\": \"$VERSION\"/g; \
-                  s/\"@asterai-io\/cli-linux-arm64\": \"[^\"]*\"/\"@asterai-io\/cli-linux-arm64\": \"$VERSION\"/g; \
-                  s/\"@asterai-io\/cli-darwin-x64\": \"[^\"]*\"/\"@asterai-io\/cli-darwin-x64\": \"$VERSION\"/g; \
-                  s/\"@asterai-io\/cli-darwin-arm64\": \"[^\"]*\"/\"@asterai-io\/cli-darwin-arm64\": \"$VERSION\"/g; \
-                  s/\"@asterai-io\/cli-win32-x64\": \"[^\"]*\"/\"@asterai-io\/cli-win32-x64\": \"$VERSION\"/g" \
+          sed -i "s/\"@asterai\/cli-linux-x64\": \"[^\"]*\"/\"@asterai\/cli-linux-x64\": \"$VERSION\"/g; \
+                  s/\"@asterai\/cli-linux-arm64\": \"[^\"]*\"/\"@asterai\/cli-linux-arm64\": \"$VERSION\"/g; \
+                  s/\"@asterai\/cli-darwin-x64\": \"[^\"]*\"/\"@asterai\/cli-darwin-x64\": \"$VERSION\"/g; \
+                  s/\"@asterai\/cli-darwin-arm64\": \"[^\"]*\"/\"@asterai\/cli-darwin-arm64\": \"$VERSION\"/g; \
+                  s/\"@asterai\/cli-win32-x64\": \"[^\"]*\"/\"@asterai\/cli-win32-x64\": \"$VERSION\"/g" \
             npm/asterai/package.json
 
           # Copy binaries to npm package directories.
@@ -193,11 +193,11 @@ jobs:
             fi
           }
 
-          publish_if_not_exists "@asterai-io/cli-linux-x64" "npm/linux-x64"
-          publish_if_not_exists "@asterai-io/cli-linux-arm64" "npm/linux-arm64"
-          publish_if_not_exists "@asterai-io/cli-darwin-x64" "npm/darwin-x64"
-          publish_if_not_exists "@asterai-io/cli-darwin-arm64" "npm/darwin-arm64"
-          publish_if_not_exists "@asterai-io/cli-win32-x64" "npm/win32-x64"
+          publish_if_not_exists "@asterai/cli-linux-x64" "npm/linux-x64"
+          publish_if_not_exists "@asterai/cli-linux-arm64" "npm/linux-arm64"
+          publish_if_not_exists "@asterai/cli-darwin-x64" "npm/darwin-x64"
+          publish_if_not_exists "@asterai/cli-darwin-arm64" "npm/darwin-arm64"
+          publish_if_not_exists "@asterai/cli-win32-x64" "npm/win32-x64"
 
           # Wait for registry propagation before publishing main package.
           sleep 10

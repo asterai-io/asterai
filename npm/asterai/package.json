@@ -18,11 +18,11 @@
     "lib/"
   ],
   "optionalDependencies": {
-    "@asterai-io/cli-linux-x64": "1.0.0-alpha.1",
-    "@asterai-io/cli-linux-arm64": "1.0.0-alpha.1",
-    "@asterai-io/cli-darwin-x64": "1.0.0-alpha.1",
-    "@asterai-io/cli-darwin-arm64": "1.0.0-alpha.1",
-    "@asterai-io/cli-win32-x64": "1.0.0-alpha.1"
+    "@asterai/cli-linux-x64": "1.0.0-alpha.1",
+    "@asterai/cli-linux-arm64": "1.0.0-alpha.1",
+    "@asterai/cli-darwin-x64": "1.0.0-alpha.1",
+    "@asterai/cli-darwin-arm64": "1.0.0-alpha.1",
+    "@asterai/cli-win32-x64": "1.0.0-alpha.1"
   },
   "engines": {
     "node": ">=18.0.0"

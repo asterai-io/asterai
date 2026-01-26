@@ -1,5 +1,5 @@
 {
-  "name": "@asterai-io/cli-win32-x64",
+  "name": "@asterai/cli-win32-x64",
   "version": "1.0.0-alpha.1",
   "description": "Windows x64 binary for asterai CLI",
   "author": "asterai <support@asterai.io>",
