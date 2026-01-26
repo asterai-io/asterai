@@ -1,0 +1,38 @@
+{
+  "name": "@asterai/cli",
+  "version": "1.0.0-alpha.1",
+  "description": "CLI for asterai - the portable AI compute platform",
+  "author": "asterai <support@asterai.io>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asterai-io/asterai.git"
+  },
+  "homepage": "https://github.com/asterai-io/asterai",
+  "license": "Apache-2.0",
+  "bin": {
+    "asterai": "bin/asterai"
+  },
+  "main": "lib/index.js",
+  "files": [
+    "bin/",
+    "lib/"
+  ],
+  "optionalDependencies": {
+    "@asterai-io/cli-linux-x64": "1.0.0-alpha.1",
+    "@asterai-io/cli-linux-arm64": "1.0.0-alpha.1",
+    "@asterai-io/cli-darwin-x64": "1.0.0-alpha.1",
+    "@asterai-io/cli-darwin-arm64": "1.0.0-alpha.1",
+    "@asterai-io/cli-win32-x64": "1.0.0-alpha.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "asterai",
+    "cli",
+    "wasm",
+    "webassembly",
+    "ai",
+    "agents"
+  ]
+}

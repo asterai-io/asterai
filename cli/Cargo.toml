@@ -1,7 +1,13 @@
 [package]
 name = "asterai"
-version = "0.1.0"
+version = "1.0.0-alpha.1"
 edition = { workspace = true }
+description = "CLI for asterai - the portable AI compute platform"
+license = "Apache-2.0"
+repository = "https://github.com/asterai-io/asterai"
+homepage = "https://asterai.io"
+keywords = ["wasm", "webassembly", "ai", "agents", "cli"]
+categories = ["command-line-utilities", "wasm"]
 
 [dependencies]
 tokio = { workspace = true }

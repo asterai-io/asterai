@@ -1,0 +1,21 @@
+{
+  "name": "@asterai-io/cli-linux-x64",
+  "version": "1.0.0-alpha.1",
+  "description": "Linux x64 binary for asterai CLI",
+  "author": "asterai <support@asterai.io>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asterai-io/asterai.git"
+  },
+  "license": "Apache-2.0",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "bin/asterai",
+  "files": [
+    "bin/"
+  ]
+}
