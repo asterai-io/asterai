@@ -237,4 +237,56 @@ impl<'a> RegistryClient<'a> {
         fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
         Ok(output_dir)
     }
+
+    /// Pull a component from the registry using optional auth.
+    /// Uses stored API key if available, otherwise attempts anonymous pull.
+    pub async fn pull_component_optional_auth(
+        &self,
+        component: &Component,
+        quiet: bool,
+    ) -> eyre::Result<PathBuf> {
+        let namespace = component.namespace();
+        let name = component.name();
+        let version = component.version().to_string();
+        let repo_name = format!("{}/{}", namespace, name);
+        // Check if component already exists locally.
+        let output_dir = ARTIFACTS_DIR
+            .join(namespace)
+            .join(format!("{}@{}", name, version));
+        if output_dir.exists() {
+            if !quiet {
+                println!("  {}@{} (cached)", repo_name, version);
+            }
+            return Ok(output_dir);
+        }
+        if !quiet {
+            println!("  pulling {}@{}...", repo_name, version);
+        }
+        // Get registry token (with optional auth).
+        let token = self.get_token_optional_auth(&repo_name).await?;
+        // Fetch manifest.
+        let manifest = self.fetch_manifest(&repo_name, &version, &token).await?;
+        // Create output directory.
+        fs::create_dir_all(&output_dir)?;
+        // Download layers.
+        for (i, layer) in manifest.layers.iter().enumerate() {
+            let blob_bytes = self
+                .download_blob(&repo_name, &layer.digest, &token)
+                .await?;
+            let filename = match i {
+                0 => "component.wasm",
+                _ => "package.wasm",
+            };
+            let file_path = output_dir.join(filename);
+            fs::write(&file_path, &blob_bytes)?;
+        }
+        // Write component metadata.
+        let metadata = serde_json::json!({
+            "kind": ResourceKind::Component.to_string(),
+            "pulled_from": format!("{}@{}", repo_name, version),
+        });
+        let metadata_path = output_dir.join("metadata.json");
+        fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
+        Ok(output_dir)
+    }
 }

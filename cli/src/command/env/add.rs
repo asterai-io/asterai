@@ -1,5 +1,6 @@
 use crate::command::env::EnvArgs;
 use crate::local_store::LocalStore;
+use crate::registry::RegistryClient;
 use asterai_runtime::component::Component;
 use eyre::OptionExt;
 use std::str::FromStr;
@@ -15,13 +16,13 @@ impl EnvArgs {
         let resolved = component_ref.resolve(&self.api_endpoint).await?;
         let component = Component::from_str(&resolved)?;
         if !LocalStore::component_exists(&component) {
-            // TODO: pull this once pull is implemented.
-            eyre::bail!(
-                "component {}:{}@{} does not exist locally",
-                component.namespace(),
-                component.name(),
-                component.version()
-            );
+            // Pull the component from the registry.
+            let client = reqwest::Client::new();
+            let registry =
+                RegistryClient::new(&client, &self.api_endpoint, &self.registry_endpoint);
+            registry
+                .pull_component_optional_auth(&component, false)
+                .await?;
         }
         let mut environment = LocalStore::fetch_environment(&resource_id)?;
         environment.add_component(&component);
