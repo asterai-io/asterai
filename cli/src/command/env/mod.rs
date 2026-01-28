@@ -13,7 +13,7 @@ use eyre::{OptionExt, bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
-mod add;
+mod add_component;
 mod call;
 mod cp;
 mod delete;
@@ -23,7 +23,7 @@ mod inspect;
 mod list;
 mod pull;
 mod push;
-mod remove;
+mod remove_component;
 mod run;
 mod set_var;
 
@@ -376,10 +376,10 @@ impl EnvArgs {
                 self.call().await?;
             }
             EnvAction::AddComponent => {
-                self.add().await?;
+                self.add_component().await?;
             }
             EnvAction::RemoveComponent => {
-                self.remove().await?;
+                self.remove_component().await?;
             }
             EnvAction::SetVar => {
                 self.set_var()?;

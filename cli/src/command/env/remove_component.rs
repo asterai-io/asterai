@@ -3,7 +3,7 @@ use crate::local_store::LocalStore;
 use eyre::OptionExt;
 
 impl EnvArgs {
-    pub async fn remove(&self) -> eyre::Result<()> {
+    pub async fn remove_component(&self) -> eyre::Result<()> {
         let resource_id = self.resource_id()?;
         let component_ref = self
             .component_ref
