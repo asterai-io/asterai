@@ -45,9 +45,15 @@ impl EnvArgs {
         let mut entries: Vec<(String, ArtifactSyncTag, usize)> = Vec::new();
         // Add local environments.
         for env in &local_envs {
-            let ref_str = env.resource_ref();
             let id = format!("{}:{}", env.namespace(), env.name());
-            let tag = match remote_refs.contains(&id) {
+            let is_synced = remote_refs.contains(&id);
+            // Don't show version for unpushed envs since it's a meaningless placeholder.
+            // Version is server-managed and only assigned on push.
+            let ref_str = match is_synced {
+                true => env.resource_ref(),
+                false => id.clone(),
+            };
+            let tag = match is_synced {
                 true => ArtifactSyncTag::Synced,
                 false => ArtifactSyncTag::Unpushed,
             };

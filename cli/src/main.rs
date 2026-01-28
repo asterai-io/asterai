@@ -22,7 +22,7 @@ async fn main() {
     match command.run().await {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("error: {e:#?}");
+            eprintln!("error: {e:#}");
             std::process::exit(1);
         }
     }

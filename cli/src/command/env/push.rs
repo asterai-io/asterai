@@ -63,8 +63,8 @@ impl PushArgs {
         let api_key = Auth::read_stored_api_key()
             .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
 
-        // Parse environment name and fetch from local storage.
-        let resource_id = ResourceId::from_str(&self.env_name)
+        // Parse target namespace:name for the registry.
+        let target_id = ResourceId::from_str(&self.env_name)
             .or_else(|_| {
                 // Try with fallback namespace.
                 let with_namespace = format!(
@@ -76,11 +76,19 @@ impl PushArgs {
             })
             .wrap_err("invalid environment name")?;
 
-        let environment = LocalStore::fetch_environment(&resource_id)
+        // Try to find environment locally. First try exact match, then fall back
+        // to the "local" namespace (used for unpushed local environments).
+        let environment = LocalStore::fetch_environment(&target_id).or_else(|_| {
+            let local_id =
+                ResourceId::new_from_parts("local".to_string(), target_id.name().to_string())?;
+            LocalStore::fetch_environment(&local_id)
+        });
+        let environment = environment
             .wrap_err_with(|| format!("environment '{}' not found locally", self.env_name))?;
 
-        let namespace = environment.namespace();
-        let name = environment.name();
+        // Use target namespace from argument, not the local env's namespace.
+        let namespace = target_id.namespace();
+        let name = target_id.name();
 
         println!("pushing environment {}:{}...", namespace, name);
 
@@ -109,24 +117,13 @@ impl PushArgs {
 
         let status = response.status();
 
-        if status == StatusCode::CONFLICT {
-            let body = response.text().await.unwrap_or_default();
-            bail!("conflict: {}", body);
-        }
-
-        if status == StatusCode::FORBIDDEN {
-            bail!(
-                "forbidden: you don't have permission to push to namespace '{}'",
-                namespace
-            );
-        }
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "unknown error".to_string());
-            bail!("push failed ({}): {}", status, error_text);
+            let message = format_error_message(status, &error_text, namespace);
+            bail!("{message}");
         }
 
         let result: PutEnvironmentResponse =
@@ -150,6 +147,45 @@ impl PushArgs {
 
         Ok(())
     }
+}
+
+/// Format server error into a human-friendly message.
+fn format_error_message(status: StatusCode, error_text: &str, namespace: &str) -> String {
+    // Strip common prefixes from server error messages.
+    let text = error_text
+        .trim()
+        .strip_prefix("bad request: ")
+        .or_else(|| error_text.strip_prefix("Bad Request: "))
+        .unwrap_or(error_text);
+    // Handle specific error patterns.
+    if status == StatusCode::FORBIDDEN {
+        return format!(
+            "you don't have permission to push to namespace '{}'",
+            namespace
+        );
+    }
+    if status == StatusCode::CONFLICT {
+        return text.to_string();
+    }
+    // Component not found in registry.
+    if text.contains("not found in registry") {
+        if let Some(component) = extract_component_name(text) {
+            return format!(
+                "component '{}' not found in registry\n\
+                 hint: push the component first with: asterai component push {}",
+                component, component
+            );
+        }
+    }
+    // Fallback to cleaned up message.
+    text.to_string()
+}
+
+/// Extract component name from error message like "Component 'foo:bar' not found".
+fn extract_component_name(text: &str) -> Option<&str> {
+    let start = text.find('\'')?;
+    let end = text[start + 1..].find('\'')?;
+    Some(&text[start + 1..start + 1 + end])
 }
 
 fn print_help() {
