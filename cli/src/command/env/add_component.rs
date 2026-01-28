@@ -3,7 +3,7 @@ use crate::local_store::LocalStore;
 use eyre::OptionExt;
 
 impl EnvArgs {
-    pub fn add(&self) -> eyre::Result<()> {
+    pub fn add_component(&self) -> eyre::Result<()> {
         let resource_id = self.resource_id()?;
         let component = self.component.as_ref().ok_or_eyre("missing component")?;
         if !LocalStore::component_exists(component) {

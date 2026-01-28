@@ -356,10 +356,10 @@ impl EnvArgs {
                 self.call().await?;
             }
             EnvAction::AddComponent => {
-                self.add()?;
+                self.add_component()?;
             }
             EnvAction::RemoveComponent => {
-                self.remove()?;
+                self.remove_component()?;
             }
             EnvAction::SetVar => {
                 self.set_var()?;
