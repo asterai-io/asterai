@@ -30,8 +30,16 @@ impl Language for Rust {
         content.contains("[package.metadata.component]")
     }
 
+    fn get_wit_file_path(&self, dir: &Path) -> PathBuf {
+        dir.join("component.wit")
+    }
+
     fn get_package_wasm_path(&self, dir: &Path) -> PathBuf {
         dir.join("wit").join("package.wasm")
+    }
+
+    fn get_package_wit_path(&self, dir: &Path) -> PathBuf {
+        dir.join("wit").join("package.wit")
     }
 
     fn get_component_wasm_path(&self, dir: &Path) -> eyre::Result<PathBuf> {
@@ -70,11 +78,11 @@ fn get_crate_name(dir: &Path) -> eyre::Result<String> {
     // Simple TOML parsing for the name field.
     for line in content.lines() {
         let line = line.trim();
-        if line.starts_with("name") {
-            if let Some(value) = line.split('=').nth(1) {
-                let name = value.trim().trim_matches('"');
-                return Ok(name.to_string());
-            }
+        if line.starts_with("name")
+            && let Some(value) = line.split('=').nth(1)
+        {
+            let name = value.trim().trim_matches('"');
+            return Ok(name.to_string());
         }
     }
     bail!("could not find crate name in Cargo.toml")

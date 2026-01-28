@@ -19,8 +19,14 @@ pub trait Language {
     /// Checks if the given directory contains a component of this language.
     fn is_dir_a_component(&self, dir: &Path) -> bool;
 
+    /// Returns the path to the source WIT file.
+    fn get_wit_file_path(&self, dir: &Path) -> PathBuf;
+
     /// Returns the expected path to the built package.wasm (WIT interface).
     fn get_package_wasm_path(&self, dir: &Path) -> PathBuf;
+
+    /// Returns the expected path to the generated package.wit.
+    fn get_package_wit_path(&self, dir: &Path) -> PathBuf;
 
     /// Returns the expected path to the built component.wasm (implementation).
     fn get_component_wasm_path(&self, dir: &Path) -> Result<PathBuf>;
@@ -38,10 +44,5 @@ pub fn all() -> Vec<Box<dyn Language>> {
 /// Detects the language of a component in the given directory.
 /// Returns `None` if no supported language is detected.
 pub fn detect(dir: &Path) -> Option<Box<dyn Language>> {
-    for lang in all() {
-        if lang.is_dir_a_component(dir) {
-            return Some(lang);
-        }
-    }
-    None
+    all().into_iter().find(|lang| lang.is_dir_a_component(dir))
 }

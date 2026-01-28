@@ -82,12 +82,12 @@ impl PushArgs {
                     pkg = Some(lang_pkg_path.to_string_lossy().to_string());
                 }
             }
-            if component.is_none() && !interface_only {
-                if let Ok(lang_component_path) = lang.get_component_wasm_path(&cwd) {
-                    if lang_component_path.exists() {
-                        component = Some(lang_component_path.to_string_lossy().to_string());
-                    }
-                }
+            if component.is_none()
+                && !interface_only
+                && let Ok(lang_component_path) = lang.get_component_wasm_path(&cwd)
+                && lang_component_path.exists()
+            {
+                component = Some(lang_component_path.to_string_lossy().to_string());
             }
         }
         // Fall back to default paths if not found via language detection.
@@ -103,10 +103,8 @@ impl PushArgs {
             }
         };
         // If not explicitly interface-only, try to find component.wasm.
-        if !interface_only && component.is_none() {
-            if check_does_file_exist("component.wasm") {
-                component = Some("component.wasm".to_string());
-            }
+        if !interface_only && component.is_none() && check_does_file_exist("component.wasm") {
+            component = Some("component.wasm".to_string());
         }
         Ok(Self {
             component,
