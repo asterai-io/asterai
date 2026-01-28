@@ -46,7 +46,9 @@ impl EnvArgs {
         // Add local environments.
         for env in &local_envs {
             let id = format!("{}:{}", env.namespace(), env.name());
-            let is_synced = remote_refs.contains(&id);
+            // Local envs (version 0.0.0) are never synced - they're unpushed even if
+            // remote has an env with the same name.
+            let is_synced = remote_refs.contains(&id) && !env.is_local();
             // Don't show version for unpushed envs since it's a meaningless placeholder.
             // Version is server-managed and only assigned on push.
             let ref_str = match is_synced {
