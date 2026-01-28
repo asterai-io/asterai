@@ -93,7 +93,7 @@ impl PullArgs {
         println!("pulling {}@{}", repo_name, tag);
         let client = reqwest::Client::new();
         let registry = RegistryClient::new(&client, api_url, registry_url);
-        let token = registry.get_token_optional_auth(&repo_name).await?;
+        let token = registry.get_token(None, &repo_name).await?;
         println!("fetching manifest...");
         let manifest = registry.fetch_manifest(&repo_name, tag, &token).await?;
         let output_dir = self.determine_output_dir(namespace, name, &version)?;

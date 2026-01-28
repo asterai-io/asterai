@@ -47,7 +47,9 @@ async fn pull_component(id: &ComponentId, version: &str) -> eyre::Result<Compone
     println!("pulling component {}...", component_ref);
     let client = reqwest::Client::new();
     let registry = RegistryClient::new(&client, API_URL, REGISTRY_URL);
-    let output_dir = registry.pull_component(&api_key, &component, true).await?;
+    let output_dir = registry
+        .pull_component(Some(&api_key), &component, true)
+        .await?;
     LocalStore::parse_component(&output_dir).wrap_err_with(|| {
         format!(
             "failed to parse pulled component at {}",

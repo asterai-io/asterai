@@ -211,7 +211,9 @@ impl RunArgs {
         println!("\npulling components...");
         let registry = RegistryClient::new(&client, api_endpoint, registry_endpoint);
         for component in &component_list {
-            registry.pull_component(&api_key, component, false).await?;
+            registry
+                .pull_component(Some(&api_key), component, false)
+                .await?;
         }
         Ok(environment)
     }
