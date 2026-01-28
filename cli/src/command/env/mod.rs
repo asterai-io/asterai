@@ -1,3 +1,8 @@
+use crate::command::env::delete::DeleteArgs;
+use crate::command::env::pull::PullArgs;
+use crate::command::env::push::PushArgs;
+use crate::command::env::run::RunArgs;
+use crate::command::env::set_var::SetVarArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::config::{API_URL, REGISTRY_URL};
 use asterai_runtime::component::Component;
@@ -25,11 +30,11 @@ pub struct EnvArgs {
     component: Option<Component>,
     function: Option<String>,
     function_args: Vec<String>,
-    run_args: Option<run::RunArgs>,
-    set_var_args: Option<set_var::SetVarArgs>,
-    push_args: Option<push::PushArgs>,
-    pull_args: Option<pull::PullArgs>,
-    delete_args: Option<delete::DeleteArgs>,
+    run_args: Option<RunArgs>,
+    set_var_args: Option<SetVarArgs>,
+    push_args: Option<PushArgs>,
+    pull_args: Option<PullArgs>,
+    delete_args: Option<DeleteArgs>,
     should_open_editor: bool,
     pub api_endpoint: String,
     pub registry_endpoint: String,
@@ -77,7 +82,7 @@ impl EnvArgs {
                 component: None,
                 function: None,
                 function_args: vec![],
-                run_args: Some(run::RunArgs::parse(args)?),
+                run_args: Some(RunArgs::parse(args)?),
                 set_var_args: None,
                 push_args: None,
                 pull_args: None,
@@ -210,7 +215,7 @@ impl EnvArgs {
                 function: None,
                 function_args: vec![],
                 run_args: None,
-                set_var_args: Some(set_var::SetVarArgs::parse(args)?),
+                set_var_args: Some(SetVarArgs::parse(args)?),
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -226,7 +231,7 @@ impl EnvArgs {
                 function_args: vec![],
                 run_args: None,
                 set_var_args: None,
-                push_args: Some(push::PushArgs::parse(args)?),
+                push_args: Some(PushArgs::parse(args)?),
                 pull_args: None,
                 delete_args: None,
                 should_open_editor: false,
@@ -242,7 +247,7 @@ impl EnvArgs {
                 run_args: None,
                 set_var_args: None,
                 push_args: None,
-                pull_args: Some(pull::PullArgs::parse(args)?),
+                pull_args: Some(PullArgs::parse(args)?),
                 delete_args: None,
                 should_open_editor: false,
                 api_endpoint,
@@ -258,7 +263,7 @@ impl EnvArgs {
                 set_var_args: None,
                 push_args: None,
                 pull_args: None,
-                delete_args: Some(delete::DeleteArgs::parse(args)?),
+                delete_args: Some(DeleteArgs::parse(args)?),
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
