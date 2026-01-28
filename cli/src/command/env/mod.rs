@@ -1,3 +1,9 @@
+use crate::command::env::cp::CpArgs;
+use crate::command::env::delete::DeleteArgs;
+use crate::command::env::pull::PullArgs;
+use crate::command::env::push::PushArgs;
+use crate::command::env::run::RunArgs;
+use crate::command::env::set_var::SetVarArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::config::{API_URL, REGISTRY_URL};
 use crate::version_resolver::ComponentRef;
@@ -7,7 +13,7 @@ use eyre::{OptionExt, bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
-mod add;
+mod add_component;
 mod call;
 mod cp;
 mod delete;
@@ -17,7 +23,7 @@ mod inspect;
 mod list;
 mod pull;
 mod push;
-mod remove;
+mod remove_component;
 mod run;
 mod set_var;
 
@@ -28,12 +34,12 @@ pub struct EnvArgs {
     component_ref: Option<ComponentRef>,
     function: Option<String>,
     function_args: Vec<String>,
-    run_args: Option<run::RunArgs>,
-    set_var_args: Option<set_var::SetVarArgs>,
-    push_args: Option<push::PushArgs>,
-    pull_args: Option<pull::PullArgs>,
-    delete_args: Option<delete::DeleteArgs>,
-    cp_args: Option<cp::CpArgs>,
+    run_args: Option<RunArgs>,
+    set_var_args: Option<SetVarArgs>,
+    push_args: Option<PushArgs>,
+    pull_args: Option<PullArgs>,
+    delete_args: Option<DeleteArgs>,
+    cp_args: Option<CpArgs>,
     should_open_editor: bool,
     pub api_endpoint: String,
     pub registry_endpoint: String,
@@ -83,7 +89,7 @@ impl EnvArgs {
                 component_ref: None,
                 function: None,
                 function_args: vec![],
-                run_args: Some(run::RunArgs::parse(args)?),
+                run_args: Some(RunArgs::parse(args)?),
                 set_var_args: None,
                 push_args: None,
                 pull_args: None,
@@ -230,7 +236,7 @@ impl EnvArgs {
                 function: None,
                 function_args: vec![],
                 run_args: None,
-                set_var_args: Some(set_var::SetVarArgs::parse(args)?),
+                set_var_args: Some(SetVarArgs::parse(args)?),
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
@@ -248,7 +254,7 @@ impl EnvArgs {
                 function_args: vec![],
                 run_args: None,
                 set_var_args: None,
-                push_args: Some(push::PushArgs::parse(args)?),
+                push_args: Some(PushArgs::parse(args)?),
                 pull_args: None,
                 delete_args: None,
                 cp_args: None,
@@ -266,7 +272,7 @@ impl EnvArgs {
                 run_args: None,
                 set_var_args: None,
                 push_args: None,
-                pull_args: Some(pull::PullArgs::parse(args)?),
+                pull_args: Some(PullArgs::parse(args)?),
                 delete_args: None,
                 cp_args: None,
                 should_open_editor: false,
@@ -284,7 +290,7 @@ impl EnvArgs {
                 set_var_args: None,
                 push_args: None,
                 pull_args: None,
-                delete_args: Some(delete::DeleteArgs::parse(args)?),
+                delete_args: Some(DeleteArgs::parse(args)?),
                 cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
@@ -302,7 +308,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
-                cp_args: Some(cp::CpArgs::parse(args)?),
+                cp_args: Some(CpArgs::parse(args)?),
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -370,10 +376,10 @@ impl EnvArgs {
                 self.call().await?;
             }
             EnvAction::AddComponent => {
-                self.add().await?;
+                self.add_component().await?;
             }
             EnvAction::RemoveComponent => {
-                self.remove().await?;
+                self.remove_component().await?;
             }
             EnvAction::SetVar => {
                 self.set_var()?;

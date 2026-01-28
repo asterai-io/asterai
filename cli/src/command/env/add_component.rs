@@ -6,7 +6,7 @@ use eyre::OptionExt;
 use std::str::FromStr;
 
 impl EnvArgs {
-    pub async fn add(&self) -> eyre::Result<()> {
+    pub async fn add_component(&self) -> eyre::Result<()> {
         let resource_id = self.resource_id()?;
         let component_ref = self
             .component_ref
