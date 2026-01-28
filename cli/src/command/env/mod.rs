@@ -8,6 +8,7 @@ use strum_macros::EnumString;
 
 mod add;
 mod call;
+mod cp;
 mod delete;
 mod edit;
 mod init;
@@ -30,6 +31,7 @@ pub struct EnvArgs {
     push_args: Option<push::PushArgs>,
     pull_args: Option<pull::PullArgs>,
     delete_args: Option<delete::DeleteArgs>,
+    cp_args: Option<cp::CpArgs>,
     should_open_editor: bool,
     pub api_endpoint: String,
     pub registry_endpoint: String,
@@ -50,6 +52,7 @@ pub enum EnvAction {
     Pull,
     Delete,
     Edit,
+    Cp,
 }
 
 impl EnvArgs {
@@ -82,6 +85,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -106,6 +110,7 @@ impl EnvArgs {
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
+                    cp_args: None,
                     should_open_editor,
                     api_endpoint,
                     registry_endpoint,
@@ -122,6 +127,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -140,6 +146,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -161,6 +168,7 @@ impl EnvArgs {
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
+                    cp_args: None,
                     should_open_editor: false,
                     api_endpoint,
                     registry_endpoint,
@@ -183,6 +191,7 @@ impl EnvArgs {
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
+                    cp_args: None,
                     should_open_editor: false,
                     api_endpoint,
                     registry_endpoint,
@@ -199,6 +208,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -214,6 +224,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -229,6 +240,7 @@ impl EnvArgs {
                 push_args: Some(push::PushArgs::parse(args)?),
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -244,6 +256,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: Some(pull::PullArgs::parse(args)?),
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -259,6 +272,23 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: Some(delete::DeleteArgs::parse(args)?),
+                cp_args: None,
+                should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
+            },
+            EnvAction::Cp => Self {
+                action,
+                env_resource_or_id: None,
+                component: None,
+                function: None,
+                function_args: vec![],
+                run_args: None,
+                set_var_args: None,
+                push_args: None,
+                pull_args: None,
+                delete_args: None,
+                cp_args: Some(cp::CpArgs::parse(args)?),
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -346,6 +376,9 @@ impl EnvArgs {
             EnvAction::Edit => {
                 self.edit()?;
             }
+            EnvAction::Cp => {
+                self.cp()?;
+            }
         }
         Ok(())
     }
@@ -387,5 +420,10 @@ impl EnvArgs {
     pub async fn delete(&self) -> eyre::Result<()> {
         let args = self.delete_args.as_ref().ok_or_eyre("no delete args")?;
         args.execute(&self.api_endpoint).await
+    }
+
+    pub fn cp(&self) -> eyre::Result<()> {
+        let args = self.cp_args.as_ref().ok_or_eyre("no cp args")?;
+        args.execute()
     }
 }
