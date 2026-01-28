@@ -1,6 +1,6 @@
 use eyre::Result;
 use include_dir::Dir;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod rust;
 mod typescript;
@@ -19,9 +19,15 @@ pub trait Language {
     /// Checks if the given directory contains a component of this language.
     fn is_dir_a_component(&self, dir: &Path) -> bool;
 
+    /// Returns the expected path to the built package.wasm (WIT interface).
+    fn get_package_wasm_path(&self, dir: &Path) -> PathBuf;
+
+    /// Returns the expected path to the built component.wasm (implementation).
+    fn get_component_wasm_path(&self, dir: &Path) -> Result<PathBuf>;
+
     /// Builds the component in the given directory.
     /// Returns the path to the built WASM file.
-    fn build_component(&self, dir: &Path) -> Result<std::path::PathBuf>;
+    fn build_component(&self, dir: &Path) -> Result<PathBuf>;
 }
 
 /// Returns all supported languages.

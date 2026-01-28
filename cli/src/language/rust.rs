@@ -30,6 +30,21 @@ impl Language for Rust {
         content.contains("[package.metadata.component]")
     }
 
+    fn get_package_wasm_path(&self, dir: &Path) -> PathBuf {
+        dir.join("wit").join("package.wasm")
+    }
+
+    fn get_component_wasm_path(&self, dir: &Path) -> eyre::Result<PathBuf> {
+        let crate_name = get_crate_name(dir)?;
+        // Underscores in crate names are converted to hyphens in the output.
+        let wasm_name = crate_name.replace('-', "_");
+        Ok(dir
+            .join("target")
+            .join("wasm32-wasip2")
+            .join("release")
+            .join(format!("{}.wasm", wasm_name)))
+    }
+
     fn build_component(&self, dir: &Path) -> eyre::Result<PathBuf> {
         let status = Command::new("cargo")
             .args(["component", "build", "--release"])
@@ -39,14 +54,7 @@ impl Language for Rust {
         if !status.success() {
             bail!("cargo component build failed");
         }
-        let crate_name = get_crate_name(dir)?;
-        // Underscores in crate names are converted to hyphens in the output.
-        let wasm_name = crate_name.replace('-', "_");
-        let wasm_path = dir
-            .join("target")
-            .join("wasm32-wasip2")
-            .join("release")
-            .join(format!("{}.wasm", wasm_name));
+        let wasm_path = self.get_component_wasm_path(dir)?;
         if !wasm_path.exists() {
             bail!("built WASM file not found at {:?}", wasm_path);
         }

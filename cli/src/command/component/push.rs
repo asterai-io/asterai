@@ -1,6 +1,7 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
 use crate::config::{API_URL, API_URL_STAGING};
+use crate::language;
 use eyre::{Context, OptionExt, bail};
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -37,12 +38,11 @@ pub(super) struct PushArgs {
 impl PushArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut component: Option<String> = None;
-        let mut pkg = "package.wasm".to_string();
+        let mut pkg: Option<String> = None;
         let mut endpoint = API_URL.to_string();
         let mut staging = false;
         let mut interface_only = false;
         let mut force = false;
-        let mut did_specify_pkg = false;
         let print_help_and_exit = || {
             println!("{COMPONENT_PUSH_HELP}");
             std::process::exit(0);
@@ -59,8 +59,7 @@ impl PushArgs {
                     component = Some(args.next().ok_or_eyre("missing value for component flag")?);
                 }
                 "--pkg" => {
-                    pkg = args.next().ok_or_eyre("missing value for pkg flag")?;
-                    did_specify_pkg = true;
+                    pkg = Some(args.next().ok_or_eyre("missing value for pkg flag")?);
                 }
                 "--interface-only" | "-i" => {
                     interface_only = true;
@@ -74,19 +73,39 @@ impl PushArgs {
                 _ => bail!("unknown flag: {}", arg),
             }
         }
-        // Read package (WIT interface) - required.
-        let does_pkg_exist = check_does_file_exist(&pkg);
-        if !does_pkg_exist && !did_specify_pkg {
-            print_help_and_exit();
+        // Try language detection if no explicit paths provided.
+        let cwd = std::env::current_dir().wrap_err("failed to get current directory")?;
+        if let Some(lang) = language::detect(&cwd) {
+            if pkg.is_none() {
+                let lang_pkg_path = lang.get_package_wasm_path(&cwd);
+                if lang_pkg_path.exists() {
+                    pkg = Some(lang_pkg_path.to_string_lossy().to_string());
+                }
+            }
+            if component.is_none() && !interface_only {
+                if let Ok(lang_component_path) = lang.get_component_wasm_path(&cwd) {
+                    if lang_component_path.exists() {
+                        component = Some(lang_component_path.to_string_lossy().to_string());
+                    }
+                }
+            }
         }
+        // Fall back to default paths if not found via language detection.
+        let pkg = match pkg {
+            Some(p) => p,
+            None => {
+                if check_does_file_exist("package.wasm") {
+                    "package.wasm".to_string()
+                } else {
+                    print_help_and_exit();
+                    unreachable!()
+                }
+            }
+        };
         // If not explicitly interface-only, try to find component.wasm.
         if !interface_only && component.is_none() {
-            // Try default paths.
             if check_does_file_exist("component.wasm") {
                 component = Some("component.wasm".to_string());
-            } else {
-                // No component file found and not interface-only.
-                // Proceed without it (treat as interface-only).
             }
         }
         Ok(Self {

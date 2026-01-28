@@ -30,6 +30,14 @@ impl Language for TypeScript {
         content.contains("@bytecodealliance/jco")
     }
 
+    fn get_package_wasm_path(&self, dir: &Path) -> PathBuf {
+        dir.join("build").join("package.wasm")
+    }
+
+    fn get_component_wasm_path(&self, dir: &Path) -> eyre::Result<PathBuf> {
+        Ok(dir.join("build").join("component.wasm"))
+    }
+
     fn build_component(&self, dir: &Path) -> eyre::Result<PathBuf> {
         // Install dependencies if node_modules doesn't exist.
         let node_modules = dir.join("node_modules");
@@ -52,7 +60,7 @@ impl Language for TypeScript {
         if !status.success() {
             bail!("npm run build failed");
         }
-        let wasm_path = dir.join("build").join("component.wasm");
+        let wasm_path = self.get_component_wasm_path(dir)?;
         if !wasm_path.exists() {
             bail!("built WASM file not found at {:?}", wasm_path);
         }
