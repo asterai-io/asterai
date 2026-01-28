@@ -71,38 +71,17 @@ impl<'a> RegistryClient<'a> {
     }
 
     /// Get a registry token for the given repository and scope.
-    pub async fn get_token(&self, api_key: &str, repo_name: &str) -> eyre::Result<String> {
-        let scope = format!("repository:{}:pull", repo_name);
-        let token_url = format!("{}/v1/registry/token?scope={}", self.api_url, scope);
-        let response = self
-            .client
-            .get(&token_url)
-            .header("Authorization", format!("Bearer {}", api_key.trim()))
-            .send()
-            .await
-            .wrap_err("failed to get registry token")?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "unknown error".to_string());
-            bail!("failed to get registry token ({}): {}", status, error_text);
-        }
-        let token_response: TokenResponse = response
-            .json()
-            .await
-            .wrap_err("failed to parse token response")?;
-        Ok(token_response.token)
-    }
-
-    /// Get a registry token, using stored API key if available.
-    pub async fn get_token_optional_auth(&self, repo_name: &str) -> eyre::Result<String> {
+    /// If `api_key` is `None`, uses stored API key if available.
+    pub async fn get_token(&self, api_key: Option<&str>, repo_name: &str) -> eyre::Result<String> {
         let scope = format!("repository:{}:pull", repo_name);
         let token_url = format!("{}/v1/registry/token?scope={}", self.api_url, scope);
         let mut request = self.client.get(&token_url);
-        if let Some(api_key) = Auth::read_stored_api_key() {
-            request = request.header("Authorization", format!("Bearer {}", api_key.trim()));
+        // Use provided API key, or fall back to stored API key.
+        let effective_key = api_key
+            .map(|k| k.to_string())
+            .or_else(Auth::read_stored_api_key);
+        if let Some(key) = effective_key {
+            request = request.header("Authorization", format!("Bearer {}", key.trim()));
         }
         let response = request
             .send()
@@ -186,10 +165,11 @@ impl<'a> RegistryClient<'a> {
     }
 
     /// Pull a component from the registry and save it locally.
+    /// If `api_key` is `None`, uses stored API key if available.
     /// Returns the output directory path.
     pub async fn pull_component(
         &self,
-        api_key: &str,
+        api_key: Option<&str>,
         component: &Component,
         quiet: bool,
     ) -> eyre::Result<PathBuf> {
@@ -212,58 +192,6 @@ impl<'a> RegistryClient<'a> {
         }
         // Get registry token.
         let token = self.get_token(api_key, &repo_name).await?;
-        // Fetch manifest.
-        let manifest = self.fetch_manifest(&repo_name, &version, &token).await?;
-        // Create output directory.
-        fs::create_dir_all(&output_dir)?;
-        // Download layers.
-        for (i, layer) in manifest.layers.iter().enumerate() {
-            let blob_bytes = self
-                .download_blob(&repo_name, &layer.digest, &token)
-                .await?;
-            let filename = match i {
-                0 => "component.wasm",
-                _ => "package.wasm",
-            };
-            let file_path = output_dir.join(filename);
-            fs::write(&file_path, &blob_bytes)?;
-        }
-        // Write component metadata.
-        let metadata = serde_json::json!({
-            "kind": ResourceKind::Component.to_string(),
-            "pulled_from": format!("{}@{}", repo_name, version),
-        });
-        let metadata_path = output_dir.join("metadata.json");
-        fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
-        Ok(output_dir)
-    }
-
-    /// Pull a component from the registry using optional auth.
-    /// Uses stored API key if available, otherwise attempts anonymous pull.
-    pub async fn pull_component_optional_auth(
-        &self,
-        component: &Component,
-        quiet: bool,
-    ) -> eyre::Result<PathBuf> {
-        let namespace = component.namespace();
-        let name = component.name();
-        let version = component.version().to_string();
-        let repo_name = format!("{}/{}", namespace, name);
-        // Check if component already exists locally.
-        let output_dir = ARTIFACTS_DIR
-            .join(namespace)
-            .join(format!("{}@{}", name, version));
-        if output_dir.exists() {
-            if !quiet {
-                println!("  {}@{} (cached)", repo_name, version);
-            }
-            return Ok(output_dir);
-        }
-        if !quiet {
-            println!("  pulling {}@{}...", repo_name, version);
-        }
-        // Get registry token (with optional auth).
-        let token = self.get_token_optional_auth(&repo_name).await?;
         // Fetch manifest.
         let manifest = self.fetch_manifest(&repo_name, &version, &token).await?;
         // Create output directory.

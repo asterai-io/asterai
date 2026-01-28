@@ -20,9 +20,7 @@ impl EnvArgs {
             let client = reqwest::Client::new();
             let registry =
                 RegistryClient::new(&client, &self.api_endpoint, &self.registry_endpoint);
-            registry
-                .pull_component_optional_auth(&component, false)
-                .await?;
+            registry.pull_component(None, &component, false).await?;
         }
         let mut environment = LocalStore::fetch_environment(&resource_id)?;
         environment.add_component(&component);
