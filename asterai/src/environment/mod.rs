@@ -93,6 +93,12 @@ impl Environment {
         &self.metadata.version
     }
 
+    /// Returns true if this is a local unpushed environment.
+    /// Local environments use version "0.0.0" as a placeholder.
+    pub fn is_local(&self) -> bool {
+        self.metadata.version == "0.0.0"
+    }
+
     /// Add a component to this environment.
     pub fn add_component(&mut self, component: &Component) {
         let key = format!("{}:{}", component.namespace(), component.name());
@@ -121,6 +127,19 @@ impl Environment {
             "{}:{}@{}",
             self.metadata.namespace, self.metadata.name, self.metadata.version
         )
+    }
+
+    /// Get the resource ID (namespace:name) without version.
+    pub fn resource_id(&self) -> String {
+        format!("{}:{}", self.metadata.namespace, self.metadata.name)
+    }
+
+    /// Get display-friendly reference. Shows version only for pushed environments.
+    pub fn display_ref(&self) -> String {
+        match self.is_local() {
+            true => self.resource_id(),
+            false => self.resource_ref(),
+        }
     }
 
     /// Get component references as full strings (namespace:name@version).

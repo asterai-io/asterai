@@ -10,7 +10,7 @@ impl EnvArgs {
         };
         println!(
             "environment {} has {} components",
-            env.resource_ref(),
+            env.display_ref(),
             env.components.len()
         );
         if env.components.is_empty() {
