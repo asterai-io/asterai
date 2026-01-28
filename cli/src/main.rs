@@ -4,9 +4,11 @@ pub mod auth;
 mod command;
 pub mod config;
 pub mod editor;
+pub mod language;
 pub mod local_store;
 pub mod registry;
 pub mod runtime;
+pub mod version_resolver;
 
 #[tokio::main]
 async fn main() {

@@ -1,3 +1,4 @@
+use crate::command::component::build::BuildArgs;
 use crate::command::component::delete::DeleteArgs;
 use crate::command::component::init::InitArgs;
 use crate::command::component::pkg::PkgArgs;
@@ -8,6 +9,7 @@ use eyre::{OptionExt, bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
+pub mod build;
 pub mod delete;
 pub mod init;
 pub mod list;
@@ -18,6 +20,8 @@ pub mod push;
 #[derive(Debug)]
 pub struct ComponentArgs {
     action: ComponentAction,
+    #[allow(dead_code)]
+    build_args: Option<BuildArgs>,
     pkg_args: Option<PkgArgs>,
     pull_args: Option<PullArgs>,
     push_args: Option<PushArgs>,
@@ -31,6 +35,7 @@ pub struct ComponentArgs {
 #[derive(Debug, Copy, Clone, EnumString)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ComponentAction {
+    Build,
     Init,
     List,
     Pkg,
@@ -51,66 +56,42 @@ impl ComponentArgs {
         let (api_endpoint, registry_endpoint, filtered_args) =
             Self::extract_common_flags(remaining_args)?;
         let args = filtered_args.into_iter();
+        let none_args = Self {
+            action,
+            build_args: None,
+            pkg_args: None,
+            pull_args: None,
+            push_args: None,
+            init_args: None,
+            delete_args: None,
+            api_endpoint,
+            registry_endpoint,
+        };
         let command_args = match action {
+            ComponentAction::Build => Self {
+                build_args: Some(BuildArgs::parse(args)?),
+                ..none_args
+            },
             ComponentAction::Init => Self {
-                action,
-                pkg_args: None,
-                pull_args: None,
-                push_args: None,
                 init_args: Some(InitArgs::parse(args)?),
-                delete_args: None,
-                api_endpoint,
-                registry_endpoint,
+                ..none_args
             },
-            ComponentAction::List => Self {
-                action,
-                pkg_args: None,
-                pull_args: None,
-                push_args: None,
-                init_args: None,
-                delete_args: None,
-                api_endpoint,
-                registry_endpoint,
-            },
+            ComponentAction::List => none_args,
             ComponentAction::Pkg => Self {
-                action,
                 pkg_args: Some(PkgArgs::parse(args)?),
-                pull_args: None,
-                push_args: None,
-                init_args: None,
-                delete_args: None,
-                api_endpoint,
-                registry_endpoint,
+                ..none_args
             },
             ComponentAction::Pull => Self {
-                action,
-                pkg_args: None,
                 pull_args: Some(PullArgs::parse(args)?),
-                push_args: None,
-                init_args: None,
-                delete_args: None,
-                api_endpoint,
-                registry_endpoint,
+                ..none_args
             },
             ComponentAction::Push => Self {
-                action,
-                pkg_args: None,
-                pull_args: None,
                 push_args: Some(PushArgs::parse(args)?),
-                init_args: None,
-                delete_args: None,
-                api_endpoint,
-                registry_endpoint,
+                ..none_args
             },
             ComponentAction::Delete => Self {
-                action,
-                pkg_args: None,
-                pull_args: None,
-                push_args: None,
-                init_args: None,
                 delete_args: Some(DeleteArgs::parse(args)?),
-                api_endpoint,
-                registry_endpoint,
+                ..none_args
             },
         };
         Ok(command_args)
@@ -151,6 +132,9 @@ impl ComponentArgs {
 
     pub async fn execute(&self) -> eyre::Result<()> {
         match self.action {
+            ComponentAction::Build => {
+                self.build().await?;
+            }
             ComponentAction::Init => {
                 self.init()?;
             }

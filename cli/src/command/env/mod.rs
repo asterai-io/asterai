@@ -1,5 +1,6 @@
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::config::{API_URL, REGISTRY_URL};
+use crate::version_resolver::ComponentRef;
 use asterai_runtime::component::Component;
 use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::{OptionExt, bail, eyre};
@@ -24,6 +25,7 @@ pub struct EnvArgs {
     action: EnvAction,
     env_resource_or_id: Option<ResourceOrIdArg>,
     component: Option<Component>,
+    component_ref: Option<ComponentRef>,
     function: Option<String>,
     function_args: Vec<String>,
     run_args: Option<run::RunArgs>,
@@ -78,6 +80,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: Some(run::RunArgs::parse(args)?),
@@ -103,6 +106,7 @@ impl EnvArgs {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
                     component: None,
+                    component_ref: None,
                     function: None,
                     function_args: vec![],
                     run_args: None,
@@ -120,6 +124,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -139,6 +144,7 @@ impl EnvArgs {
                     Component::from_str(&args.next().expect("missing component name"))
                         .expect("invalid component name"),
                 ),
+                component_ref: None,
                 function: Some(args.next().expect("missing function")),
                 function_args: args.collect::<Vec<_>>(),
                 run_args: None,
@@ -153,14 +159,15 @@ impl EnvArgs {
             },
             EnvAction::AddComponent => {
                 let env_resource_or_id = parse_env_name_or_id()?;
-                let component_string = args
-                    .next()
-                    .ok_or_eyre("missing component (e.g. namespace:component@version)")?;
-                let component = Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                let component_string = args.next().ok_or_eyre(
+                    "missing component (e.g. namespace:component or namespace:component@version)",
+                )?;
+                let component_ref = ComponentRef::parse(&component_string)?;
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
-                    component: Some(component),
+                    component: None,
+                    component_ref: Some(component_ref),
                     function: None,
                     function_args: vec![],
                     run_args: None,
@@ -176,14 +183,15 @@ impl EnvArgs {
             }
             EnvAction::RemoveComponent => {
                 let env_resource_or_id = parse_env_name_or_id()?;
-                let component_string = args
-                    .next()
-                    .ok_or_eyre("missing component (e.g. namespace:component)")?;
-                let component = Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                let component_string = args.next().ok_or_eyre(
+                    "missing component (e.g. namespace:component or namespace:component@version)",
+                )?;
+                let component_ref = ComponentRef::parse(&component_string)?;
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
-                    component: Some(component),
+                    component: None,
+                    component_ref: Some(component_ref),
                     function: None,
                     function_args: vec![],
                     run_args: None,
@@ -201,6 +209,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -217,6 +226,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -233,6 +243,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -249,6 +260,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -265,6 +277,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -281,6 +294,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -356,10 +370,10 @@ impl EnvArgs {
                 self.call().await?;
             }
             EnvAction::AddComponent => {
-                self.add_component()?;
+                self.add_component().await?;
             }
             EnvAction::RemoveComponent => {
-                self.remove_component()?;
+                self.remove_component().await?;
             }
             EnvAction::SetVar => {
                 self.set_var()?;

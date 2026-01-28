@@ -1,11 +1,9 @@
 use crate::command::component::ComponentArgs;
+use crate::language::{Language, Rust, TypeScript};
 use eyre::{Context, OptionExt, bail};
-use include_dir::{Dir, include_dir};
+use include_dir::Dir;
 use std::fs;
 use std::path::Path;
-
-static TYPESCRIPT_TEMPLATE: Dir = include_dir!("$CARGO_MANIFEST_DIR/init/typescript");
-static RUST_TEMPLATE: Dir = include_dir!("$CARGO_MANIFEST_DIR/init/rust");
 
 #[derive(Debug)]
 pub(super) struct InitArgs {
@@ -19,7 +17,6 @@ impl InitArgs {
         let mut out_dir = None;
         let mut rust = false;
         let mut typescript = false;
-
         for arg in args {
             match arg.as_str() {
                 "--rust" => {
@@ -37,7 +34,6 @@ impl InitArgs {
                 }
             }
         }
-
         Ok(Self {
             out_dir: out_dir.unwrap_or_else(|| "component".to_string()),
             rust,
@@ -46,39 +42,39 @@ impl InitArgs {
     }
 
     fn execute_init(&self) -> eyre::Result<()> {
-        // Validate flags
         self.validate_language_flags()?;
-        let template = match self.rust {
-            true => &RUST_TEMPLATE,
-            false => &TYPESCRIPT_TEMPLATE,
+        let language: Box<dyn Language> = match self.rust {
+            true => Box::new(Rust),
+            false => Box::new(TypeScript),
         };
-        // Resolve output directory
+        // Resolve output directory.
         let out_dir = fs::canonicalize(".")
             .wrap_err("failed to get current directory")?
             .join(&self.out_dir);
         if out_dir.exists() {
             bail!("output directory already exists: {:?}", out_dir);
         }
-        // Extract template to output directory
-        extract_template(template, &out_dir)
+        // Extract template to output directory.
+        extract_template(language.template(), &out_dir)
             .wrap_err_with(|| format!("failed to extract template to {:?}", out_dir))?;
-        println!("Initialized component project at {:?}", out_dir);
+        println!(
+            "Initialized {} component project at {:?}",
+            language.name(),
+            out_dir
+        );
         Ok(())
     }
 
     fn validate_language_flags(&self) -> eyre::Result<()> {
         let flags = [self.rust, self.typescript];
         let true_count = flags.iter().filter(|&&f| f).count();
-
         if true_count == 0 && !self.typescript {
-            // No flags set, typescript is default
+            // No flags set, typescript is default.
             return Ok(());
         }
-
         if true_count > 1 {
             bail!("only one language flag can be set");
         }
-
         Ok(())
     }
 }

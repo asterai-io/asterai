@@ -56,58 +56,76 @@ impl ComponentArgs {
         let wit_path = PathBuf::from(&args.wit_input_path);
         let wit_path = fs::canonicalize(&wit_path)
             .wrap_err_with(|| format!("WIT file not found at {:?}", wit_path))?;
-        if !wit_path.exists() {
-            bail!("WIT file not found at {:?}", wit_path);
-        }
         let base_dir = wit_path
             .parent()
             .ok_or_eyre("failed to get parent directory")?;
-        let output_file = base_dir.join(&args.output);
-        // Read the WIT file
-        let wit_content = fs::read(&wit_path)
-            .wrap_err_with(|| format!("failed to read WIT file at {:?}", wit_path))?;
-        // Create multipart form
-        let api_key = Auth::read_stored_api_key().ok_or_eyre("API key not found")?;
-        let client = reqwest::Client::new();
-        let form = reqwest::multipart::Form::new().part(
-            "package.wit",
-            reqwest::multipart::Part::bytes(wit_content)
-                .file_name("package.wit")
-                .mime_str("application/octet-stream")?,
-        );
-        // Send request to /v1/wit/package
-        let response = client
-            .post(format!("{}/v1/wit/package", args.endpoint))
-            .header("Authorization", api_key.trim())
-            .multipart(form)
-            .send()
-            .await
-            .wrap_err("failed to send request to pkg endpoint")?;
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "unknown error".to_string());
-            bail!("request failed: {}", error_text.replace("\\n", "\n"));
-        }
-        let package_bytes = response
-            .bytes()
-            .await
-            .wrap_err("failed to read response body")?;
-        // Write output file
-        fs::write(&output_file, package_bytes)
-            .wrap_err_with(|| format!("failed to write output file to {:?}", output_file))?;
-        println!("Package created at {:?}", output_file);
-        // Convert to WIT if requested.
-        if let Some(wit_output) = &args.wit {
-            wasm2wit(&output_file, &base_dir.join(wit_output))?;
-        }
-        Ok(())
+        let output_wasm = base_dir.join(&args.output);
+        let output_wit = args.wit.as_ref().map(|w| base_dir.join(w));
+        run_pkg(
+            &wit_path,
+            &output_wasm,
+            output_wit.as_deref(),
+            &args.endpoint,
+        )
+        .await
     }
 }
 
-/// Convert a WASM package to WIT format locally.
+/// Generates a package.wasm from a WIT file via the API.
+/// Optionally also converts the result to WIT text format.
+pub async fn run_pkg(
+    wit_input_path: &Path,
+    output_wasm: &Path,
+    output_wit: Option<&Path>,
+    endpoint: &str,
+) -> eyre::Result<()> {
+    if !wit_input_path.exists() {
+        bail!("WIT file not found at {:?}", wit_input_path);
+    }
+    // Ensure output directory exists.
+    if let Some(parent) = output_wasm.parent() {
+        fs::create_dir_all(parent)
+            .wrap_err_with(|| format!("failed to create directory {:?}", parent))?;
+    }
+    let wit_content = fs::read(wit_input_path)
+        .wrap_err_with(|| format!("failed to read WIT file at {:?}", wit_input_path))?;
+    let api_key = Auth::read_stored_api_key().ok_or_eyre("API key not found")?;
+    let client = reqwest::Client::new();
+    let form = reqwest::multipart::Form::new().part(
+        "package.wit",
+        reqwest::multipart::Part::bytes(wit_content)
+            .file_name("package.wit")
+            .mime_str("application/octet-stream")?,
+    );
+    let response = client
+        .post(format!("{}/v1/wit/package", endpoint))
+        .header("Authorization", api_key.trim())
+        .multipart(form)
+        .send()
+        .await
+        .wrap_err("failed to send request to pkg endpoint")?;
+    let status = response.status();
+    if !status.is_success() {
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown error".to_string());
+        bail!("request failed: {}", error_text.replace("\\n", "\n"));
+    }
+    let package_bytes = response
+        .bytes()
+        .await
+        .wrap_err("failed to read response body")?;
+    fs::write(output_wasm, &package_bytes)
+        .wrap_err_with(|| format!("failed to write output file to {:?}", output_wasm))?;
+    println!("Package created at {:?}", output_wasm);
+    if let Some(wit_output) = output_wit {
+        wasm2wit(output_wasm, wit_output)?;
+    }
+    Ok(())
+}
+
+/// Converts a WASM package to WIT text format.
 fn wasm2wit(input_file: &Path, output_file: &Path) -> eyre::Result<()> {
     let wasm_bytes = fs::read(input_file)
         .wrap_err_with(|| format!("failed to read WASM file at {:?}", input_file))?;
