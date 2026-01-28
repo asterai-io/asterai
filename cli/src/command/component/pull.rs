@@ -1,6 +1,7 @@
 use crate::command::component::ComponentArgs;
 use crate::config::{API_URL, API_URL_STAGING, ARTIFACTS_DIR, REGISTRY_URL, REGISTRY_URL_STAGING};
 use crate::registry::RegistryClient;
+use crate::version_resolver::ComponentRef;
 use asterai_runtime::resource::Resource;
 use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{Context, OptionExt, bail};
@@ -10,9 +11,8 @@ use std::str::FromStr;
 
 #[derive(Debug)]
 pub(super) struct PullArgs {
-    /// Component resource reference.
-    /// Accepts both WIT-style (namespace:name@version) and OCI-style (namespace/name@version).
-    component: Resource,
+    /// Component reference (version optional, will resolve to latest if omitted).
+    component_ref: ComponentRef,
     /// Custom API endpoint for token retrieval.
     api_endpoint: String,
     /// Custom registry endpoint.
@@ -25,7 +25,7 @@ pub(super) struct PullArgs {
 
 impl PullArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
-        let mut component: Option<Resource> = None;
+        let mut component_ref: Option<ComponentRef> = None;
         let mut api_endpoint = API_URL.to_string();
         let mut registry_endpoint = REGISTRY_URL.to_string();
         let mut did_specify_registry = false;
@@ -54,22 +54,22 @@ impl PullArgs {
                     if other.starts_with('-') {
                         bail!("unknown flag: {}", other);
                     }
-                    if component.is_some() {
+                    if component_ref.is_some() {
                         bail!("unexpected argument: {}", other);
                     }
-                    component = Some(Resource::from_str(other).wrap_err(
+                    component_ref = Some(ComponentRef::parse(other).wrap_err(
                         "invalid component reference \
-                         (expected namespace:name@version or namespace/name@version)",
+                         (expected namespace:name or namespace:name@version)",
                     )?);
                 }
             }
         }
-        let component = component.ok_or_eyre(
+        let component_ref = component_ref.ok_or_eyre(
             "missing component reference \
-            (e.g., namespace:component@version or namespace/component@version)",
+            (e.g., namespace:component or namespace:component@version)",
         )?;
         Ok(Self {
-            component,
+            component_ref,
             api_endpoint,
             registry_endpoint,
             staging,
@@ -78,16 +78,19 @@ impl PullArgs {
     }
 
     async fn execute(&self) -> eyre::Result<()> {
-        let namespace = self.component.namespace();
-        let name = self.component.name();
-        let version = self.component.version().to_string();
-        let repo_name = format!("{}/{}", namespace, name);
-        let tag = &version;
-        println!("pulling {}@{}", repo_name, tag);
         let (api_url, registry_url) = match self.staging {
             true => (API_URL_STAGING, REGISTRY_URL_STAGING),
             false => (self.api_endpoint.as_str(), self.registry_endpoint.as_str()),
         };
+        // Resolve version if not specified.
+        let resolved = self.component_ref.resolve(api_url).await?;
+        let component = Resource::from_str(&resolved)?;
+        let namespace = component.namespace();
+        let name = component.name();
+        let version = component.version().to_string();
+        let repo_name = format!("{}/{}", namespace, name);
+        let tag = &version;
+        println!("pulling {}@{}", repo_name, tag);
         let client = reqwest::Client::new();
         let registry = RegistryClient::new(&client, api_url, registry_url);
         let token = registry.get_token_optional_auth(&repo_name).await?;

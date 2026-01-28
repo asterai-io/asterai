@@ -7,6 +7,7 @@ pub mod editor;
 pub mod local_store;
 pub mod registry;
 pub mod runtime;
+pub mod version_resolver;
 
 #[tokio::main]
 async fn main() {

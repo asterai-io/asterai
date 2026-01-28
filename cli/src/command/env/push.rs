@@ -168,14 +168,14 @@ fn format_error_message(status: StatusCode, error_text: &str, namespace: &str) -
         return text.to_string();
     }
     // Component not found in registry.
-    if text.contains("not found in registry") {
-        if let Some(component) = extract_component_name(text) {
-            return format!(
-                "component '{}' not found in registry\n\
-                 hint: push the component first with: asterai component push {}",
-                component, component
-            );
-        }
+    if text.contains("not found in registry")
+        && let Some(component) = extract_component_name(text)
+    {
+        return format!(
+            "component '{}' not found in registry\n\
+             hint: push the component first with: asterai component push {}",
+            component, component
+        );
     }
     // Fallback to cleaned up message.
     text.to_string()
