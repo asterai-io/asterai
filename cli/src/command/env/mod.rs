@@ -1,3 +1,4 @@
+use crate::command::env::cp::CpArgs;
 use crate::command::env::delete::DeleteArgs;
 use crate::command::env::pull::PullArgs;
 use crate::command::env::push::PushArgs;
@@ -5,6 +6,7 @@ use crate::command::env::run::RunArgs;
 use crate::command::env::set_var::SetVarArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::config::{API_URL, REGISTRY_URL};
+use crate::version_resolver::ComponentRef;
 use asterai_runtime::component::Component;
 use asterai_runtime::resource::{Resource, ResourceId};
 use eyre::{OptionExt, bail, eyre};
@@ -13,6 +15,7 @@ use strum_macros::EnumString;
 
 mod add;
 mod call;
+mod cp;
 mod delete;
 mod edit;
 mod init;
@@ -28,6 +31,7 @@ pub struct EnvArgs {
     action: EnvAction,
     env_resource_or_id: Option<ResourceOrIdArg>,
     component: Option<Component>,
+    component_ref: Option<ComponentRef>,
     function: Option<String>,
     function_args: Vec<String>,
     run_args: Option<RunArgs>,
@@ -35,6 +39,7 @@ pub struct EnvArgs {
     push_args: Option<PushArgs>,
     pull_args: Option<PullArgs>,
     delete_args: Option<DeleteArgs>,
+    cp_args: Option<CpArgs>,
     should_open_editor: bool,
     pub api_endpoint: String,
     pub registry_endpoint: String,
@@ -55,6 +60,7 @@ pub enum EnvAction {
     Pull,
     Delete,
     Edit,
+    Cp,
 }
 
 impl EnvArgs {
@@ -80,6 +86,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: Some(RunArgs::parse(args)?),
@@ -87,6 +94,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -104,6 +112,7 @@ impl EnvArgs {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
                     component: None,
+                    component_ref: None,
                     function: None,
                     function_args: vec![],
                     run_args: None,
@@ -111,6 +120,7 @@ impl EnvArgs {
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
+                    cp_args: None,
                     should_open_editor,
                     api_endpoint,
                     registry_endpoint,
@@ -120,6 +130,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -127,6 +138,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -138,6 +150,7 @@ impl EnvArgs {
                     Component::from_str(&args.next().expect("missing component name"))
                         .expect("invalid component name"),
                 ),
+                component_ref: None,
                 function: Some(args.next().expect("missing function")),
                 function_args: args.collect::<Vec<_>>(),
                 run_args: None,
@@ -145,20 +158,22 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
             },
             EnvAction::AddComponent => {
                 let env_resource_or_id = parse_env_name_or_id()?;
-                let component_string = args
-                    .next()
-                    .ok_or_eyre("missing component (e.g. namespace:component@version)")?;
-                let component = Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                let component_string = args.next().ok_or_eyre(
+                    "missing component (e.g. namespace:component or namespace:component@version)",
+                )?;
+                let component_ref = ComponentRef::parse(&component_string)?;
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
-                    component: Some(component),
+                    component: None,
+                    component_ref: Some(component_ref),
                     function: None,
                     function_args: vec![],
                     run_args: None,
@@ -166,6 +181,7 @@ impl EnvArgs {
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
+                    cp_args: None,
                     should_open_editor: false,
                     api_endpoint,
                     registry_endpoint,
@@ -173,14 +189,15 @@ impl EnvArgs {
             }
             EnvAction::RemoveComponent => {
                 let env_resource_or_id = parse_env_name_or_id()?;
-                let component_string = args
-                    .next()
-                    .ok_or_eyre("missing component (e.g. namespace:component)")?;
-                let component = Component::from_str(&component_string).map_err(|e| eyre!(e))?;
+                let component_string = args.next().ok_or_eyre(
+                    "missing component (e.g. namespace:component or namespace:component@version)",
+                )?;
+                let component_ref = ComponentRef::parse(&component_string)?;
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
-                    component: Some(component),
+                    component: None,
+                    component_ref: Some(component_ref),
                     function: None,
                     function_args: vec![],
                     run_args: None,
@@ -188,6 +205,7 @@ impl EnvArgs {
                     push_args: None,
                     pull_args: None,
                     delete_args: None,
+                    cp_args: None,
                     should_open_editor: false,
                     api_endpoint,
                     registry_endpoint,
@@ -197,6 +215,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -204,6 +223,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -212,6 +232,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -219,6 +240,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -227,6 +249,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -234,6 +257,7 @@ impl EnvArgs {
                 push_args: Some(PushArgs::parse(args)?),
                 pull_args: None,
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -242,6 +266,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -249,6 +274,7 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: Some(PullArgs::parse(args)?),
                 delete_args: None,
+                cp_args: None,
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -257,6 +283,7 @@ impl EnvArgs {
                 action,
                 env_resource_or_id: None,
                 component: None,
+                component_ref: None,
                 function: None,
                 function_args: vec![],
                 run_args: None,
@@ -264,6 +291,24 @@ impl EnvArgs {
                 push_args: None,
                 pull_args: None,
                 delete_args: Some(DeleteArgs::parse(args)?),
+                cp_args: None,
+                should_open_editor: false,
+                api_endpoint,
+                registry_endpoint,
+            },
+            EnvAction::Cp => Self {
+                action,
+                env_resource_or_id: None,
+                component: None,
+                component_ref: None,
+                function: None,
+                function_args: vec![],
+                run_args: None,
+                set_var_args: None,
+                push_args: None,
+                pull_args: None,
+                delete_args: None,
+                cp_args: Some(CpArgs::parse(args)?),
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
@@ -331,10 +376,10 @@ impl EnvArgs {
                 self.call().await?;
             }
             EnvAction::AddComponent => {
-                self.add()?;
+                self.add().await?;
             }
             EnvAction::RemoveComponent => {
-                self.remove()?;
+                self.remove().await?;
             }
             EnvAction::SetVar => {
                 self.set_var()?;
@@ -350,6 +395,9 @@ impl EnvArgs {
             }
             EnvAction::Edit => {
                 self.edit()?;
+            }
+            EnvAction::Cp => {
+                self.cp()?;
             }
         }
         Ok(())
@@ -392,5 +440,10 @@ impl EnvArgs {
     pub async fn delete(&self) -> eyre::Result<()> {
         let args = self.delete_args.as_ref().ok_or_eyre("no delete args")?;
         args.execute(&self.api_endpoint).await
+    }
+
+    pub fn cp(&self) -> eyre::Result<()> {
+        let args = self.cp_args.as_ref().ok_or_eyre("no cp args")?;
+        args.execute()
     }
 }
