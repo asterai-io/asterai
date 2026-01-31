@@ -27,6 +27,10 @@ impl Language for TypeScript {
         "typescript"
     }
 
+    fn aliases(&self) -> &'static [&'static str] {
+        &["ts"]
+    }
+
     fn template(&self) -> &'static Dir<'static> {
         &TEMPLATE
     }

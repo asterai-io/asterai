@@ -13,6 +13,11 @@ pub trait Language {
     /// Returns the language name.
     fn name(&self) -> &'static str;
 
+    /// Returns alternative names for this language (e.g. "rs" for "rust").
+    fn aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// Returns the embedded template directory for this language.
     fn template(&self) -> &'static Dir<'static>;
 
@@ -47,9 +52,11 @@ pub fn detect(dir: &Path) -> Option<Box<dyn Language>> {
     all().into_iter().find(|lang| lang.is_dir_a_component(dir))
 }
 
-/// Returns a language by name, or `None` if not found.
+/// Returns a language by name or alias, or `None` if not found.
 pub fn from_name(name: &str) -> Option<Box<dyn Language>> {
-    all().into_iter().find(|lang| lang.name() == name)
+    all()
+        .into_iter()
+        .find(|lang| lang.name() == name || lang.aliases().contains(&name))
 }
 
 /// Returns a comma-separated list of supported language names.
