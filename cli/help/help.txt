@@ -23,8 +23,10 @@ Environment commands:
   asterai env delete <namespace:name>              Delete local environment (-r for registry)
 
 Component commands:
-  asterai component init [name]                    Scaffold a new local WASM component project
-                                [--rust|--typescript]
+  asterai component init [name] [-l <language>]    Scaffold a new local WASM component project
+                                                   Supported languages:
+                                                     - rust
+                                                     - typescript (default)
   asterai component pkg                            Package the component's WIT into a WASM package.
   asterai component pull <name>                    Pull the component <name> from the registry
   asterai component push                           Push the current component (from project dir) to the registry

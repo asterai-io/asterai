@@ -46,3 +46,17 @@ pub fn all() -> Vec<Box<dyn Language>> {
 pub fn detect(dir: &Path) -> Option<Box<dyn Language>> {
     all().into_iter().find(|lang| lang.is_dir_a_component(dir))
 }
+
+/// Returns a language by name, or `None` if not found.
+pub fn from_name(name: &str) -> Option<Box<dyn Language>> {
+    all().into_iter().find(|lang| lang.name() == name)
+}
+
+/// Returns a comma-separated list of supported language names.
+pub fn supported_names() -> String {
+    all()
+        .iter()
+        .map(|lang| lang.name())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
