@@ -1,6 +1,5 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
-use crate::config::API_URL;
 use eyre::{Context, OptionExt, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,16 +8,16 @@ use wit_parser::decoding::DecodedWasm;
 
 #[derive(Debug)]
 pub(super) struct PkgArgs {
-    wit_input_path: String,
-    endpoint: String,
-    output: String,
-    wit: Option<String>,
+    pub wit_input_path: String,
+    // .wasm output file (-o)
+    pub output: String,
+    // .wit output file (-w)
+    pub wit: Option<String>,
 }
 
 impl PkgArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut wit_input_path = None;
-        let mut endpoint = API_URL.to_string();
         let mut output = "package.wasm".to_string();
         let mut wit = None;
         while let Some(arg) = args.next() {
@@ -28,9 +27,6 @@ impl PkgArgs {
                 }
                 "-w" | "--wit" => {
                     wit = Some(args.next().ok_or_eyre("missing value for wit flag")?);
-                }
-                "-e" | "--endpoint" => {
-                    endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
                 }
                 _ => {
                     if wit_input_path.is_none() {
@@ -43,7 +39,6 @@ impl PkgArgs {
         }
         Ok(Self {
             wit_input_path: wit_input_path.unwrap_or_else(|| "component.wit".to_string()),
-            endpoint,
             output,
             wit,
         })
@@ -65,7 +60,7 @@ impl ComponentArgs {
             &wit_path,
             &output_wasm,
             output_wit.as_deref(),
-            &args.endpoint,
+            &self.api_endpoint,
         )
         .await
     }

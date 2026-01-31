@@ -1,5 +1,5 @@
 use crate::command::component::ComponentArgs;
-use crate::config::{API_URL, API_URL_STAGING, ARTIFACTS_DIR, REGISTRY_URL, REGISTRY_URL_STAGING};
+use crate::config::ARTIFACTS_DIR;
 use crate::registry::RegistryClient;
 use crate::version_resolver::ComponentRef;
 use asterai_runtime::resource::Resource;
@@ -13,12 +13,6 @@ use std::str::FromStr;
 pub(super) struct PullArgs {
     /// Component reference (version optional, will resolve to latest if omitted).
     component_ref: ComponentRef,
-    /// Custom API endpoint for token retrieval.
-    api_endpoint: String,
-    /// Custom registry endpoint.
-    registry_endpoint: String,
-    /// Use staging environment.
-    staging: bool,
     /// Output directory (defaults to local resource storage).
     output: Option<String>,
 }
@@ -26,27 +20,9 @@ pub(super) struct PullArgs {
 impl PullArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut component_ref: Option<ComponentRef> = None;
-        let mut api_endpoint = API_URL.to_string();
-        let mut registry_endpoint = REGISTRY_URL.to_string();
-        let mut did_specify_registry = false;
-        let mut staging = false;
         let mut output: Option<String> = None;
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "-r" | "--registry" => {
-                    registry_endpoint =
-                        args.next().ok_or_eyre("missing value for registry flag")?;
-                    did_specify_registry = true;
-                }
-                "-e" | "--endpoint" => {
-                    api_endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
-                    if !did_specify_registry {
-                        registry_endpoint = REGISTRY_URL_STAGING.to_string();
-                    }
-                }
-                "-s" | "--staging" => {
-                    staging = true;
-                }
                 "-o" | "--output" => {
                     output = Some(args.next().ok_or_eyre("missing value for output flag")?);
                 }
@@ -70,18 +46,11 @@ impl PullArgs {
         )?;
         Ok(Self {
             component_ref,
-            api_endpoint,
-            registry_endpoint,
-            staging,
             output,
         })
     }
 
-    async fn execute(&self) -> eyre::Result<()> {
-        let (api_url, registry_url) = match self.staging {
-            true => (API_URL_STAGING, REGISTRY_URL_STAGING),
-            false => (self.api_endpoint.as_str(), self.registry_endpoint.as_str()),
-        };
+    async fn execute(&self, api_url: &str, registry_url: &str) -> eyre::Result<()> {
         // Resolve version if not specified.
         let resolved = self.component_ref.resolve(api_url).await?;
         let component = Resource::from_str(&resolved)?;
@@ -148,6 +117,7 @@ impl PullArgs {
 impl ComponentArgs {
     pub async fn pull(&self) -> eyre::Result<()> {
         let args = self.pull_args.as_ref().ok_or_eyre("no pull args")?;
-        args.execute().await
+        args.execute(&self.api_endpoint, &self.registry_endpoint)
+            .await
     }
 }

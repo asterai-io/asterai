@@ -1,29 +1,34 @@
 use crate::command::component::ComponentArgs;
-use crate::language::{Language, Rust, TypeScript};
+use crate::language;
 use eyre::{Context, OptionExt, bail};
 use include_dir::Dir;
 use std::fs;
 use std::path::Path;
 
+const DEFAULT_LANGUAGE: &str = "typescript";
+
 #[derive(Debug)]
 pub(super) struct InitArgs {
     out_dir: String,
-    rust: bool,
-    typescript: bool,
+    language: String,
 }
 
 impl InitArgs {
     pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut out_dir = None;
-        let mut rust = false;
-        let mut typescript = false;
-        for arg in args {
+        let mut language = None;
+        let mut args = args.peekable();
+        while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--rust" => {
-                    rust = true;
-                }
-                "--typescript" => {
-                    typescript = true;
+                "-l" | "--language" => {
+                    let value = args.next().ok_or_else(|| {
+                        eyre::eyre!(
+                            "--language requires a value. \
+                             Supported: {}",
+                            language::supported_names()
+                        )
+                    })?;
+                    language = Some(value);
                 }
                 _ => {
                     if out_dir.is_none() {
@@ -36,17 +41,18 @@ impl InitArgs {
         }
         Ok(Self {
             out_dir: out_dir.unwrap_or_else(|| "component".to_string()),
-            rust,
-            typescript,
+            language: language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string()),
         })
     }
 
     fn execute_init(&self) -> eyre::Result<()> {
-        self.validate_language_flags()?;
-        let language: Box<dyn Language> = match self.rust {
-            true => Box::new(Rust),
-            false => Box::new(TypeScript),
-        };
+        let language = language::from_name(&self.language).ok_or_else(|| {
+            eyre::eyre!(
+                "unsupported language: '{}'. Supported: {}",
+                self.language,
+                language::supported_names()
+            )
+        })?;
         // Resolve output directory.
         let out_dir = fs::canonicalize(".")
             .wrap_err("failed to get current directory")?
@@ -64,19 +70,6 @@ impl InitArgs {
         );
         Ok(())
     }
-
-    fn validate_language_flags(&self) -> eyre::Result<()> {
-        let flags = [self.rust, self.typescript];
-        let true_count = flags.iter().filter(|&&f| f).count();
-        if true_count == 0 && !self.typescript {
-            // No flags set, typescript is default.
-            return Ok(());
-        }
-        if true_count > 1 {
-            bail!("only one language flag can be set");
-        }
-        Ok(())
-    }
 }
 
 impl ComponentArgs {
@@ -88,7 +81,6 @@ impl ComponentArgs {
 
 fn extract_template(template: &Dir, dst: &Path) -> eyre::Result<()> {
     fs::create_dir_all(dst).wrap_err_with(|| format!("failed to create directory: {:?}", dst))?;
-    // Extract all files from the embedded directory.
     for file in template.files() {
         let mut file_path = dst.join(file.path());
         // Rename .template files back to their original names.
@@ -96,18 +88,14 @@ fn extract_template(template: &Dir, dst: &Path) -> eyre::Result<()> {
         if file_path.extension().is_some_and(|ext| ext == "template") {
             file_path.set_extension("");
         }
-        if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)
-                .wrap_err_with(|| format!("failed to create parent directory: {:?}", parent))?;
-        }
         fs::write(&file_path, file.contents())
             .wrap_err_with(|| format!("failed to write file: {:?}", file_path))?;
     }
-    // Extract all directories.
     for dir in template.dirs() {
         let dir_path = dst.join(dir.path());
         fs::create_dir_all(&dir_path)
             .wrap_err_with(|| format!("failed to create directory: {:?}", dir_path))?;
+        extract_template(dir, dst)?;
     }
     Ok(())
 }

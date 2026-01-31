@@ -14,6 +14,10 @@ impl Language for Rust {
         "rust"
     }
 
+    fn aliases(&self) -> &'static [&'static str] {
+        &["rs"]
+    }
+
     fn template(&self) -> &'static Dir<'static> {
         &TEMPLATE
     }
