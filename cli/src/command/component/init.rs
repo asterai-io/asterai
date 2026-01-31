@@ -81,7 +81,6 @@ impl ComponentArgs {
 
 fn extract_template(template: &Dir, dst: &Path) -> eyre::Result<()> {
     fs::create_dir_all(dst).wrap_err_with(|| format!("failed to create directory: {:?}", dst))?;
-    // Extract all files from the embedded directory.
     for file in template.files() {
         let mut file_path = dst.join(file.path());
         // Rename .template files back to their original names.
@@ -89,18 +88,14 @@ fn extract_template(template: &Dir, dst: &Path) -> eyre::Result<()> {
         if file_path.extension().is_some_and(|ext| ext == "template") {
             file_path.set_extension("");
         }
-        if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)
-                .wrap_err_with(|| format!("failed to create parent directory: {:?}", parent))?;
-        }
         fs::write(&file_path, file.contents())
             .wrap_err_with(|| format!("failed to write file: {:?}", file_path))?;
     }
-    // Extract all directories.
     for dir in template.dirs() {
         let dir_path = dst.join(dir.path());
         fs::create_dir_all(&dir_path)
             .wrap_err_with(|| format!("failed to create directory: {:?}", dir_path))?;
+        extract_template(dir, dst)?;
     }
     Ok(())
 }
