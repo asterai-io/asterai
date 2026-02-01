@@ -14,11 +14,11 @@ pub mod interface;
 pub mod log;
 pub mod pkg;
 pub mod set;
+pub mod wit;
 
 pub type ComponentModuleId = Checksum;
 
 // TODO: rely on `Resource` to reduce duplication.
-// TODO: rename to Component
 #[derive(Debug, Clone, Getters, Eq, PartialEq, Hash)]
 pub struct Component {
     /// This is the component ID and includes:

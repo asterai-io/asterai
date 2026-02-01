@@ -1,5 +1,8 @@
 use crate::component::Component;
 use crate::component::function_name::ComponentFunctionName;
+use crate::component::wit::{
+    ComponentInterface, ComponentWit, ExportedInterface, ImportedInterface,
+};
 use derive_getters::Getters;
 use eyre::WrapErr;
 use eyre::{OptionExt, eyre};
@@ -18,8 +21,7 @@ use wasmtime::{AsContextMut, Engine};
 use wit_bindgen::rt::async_support::futures::StreamExt;
 use wit_parser::decoding::DecodedWasm;
 use wit_parser::{
-    Function, PackageName, Resolve, Results, Type, TypeDef, TypeDefKind, TypeOwner, World, WorldId,
-    WorldItem,
+    Function, PackageName, Results, Type, TypeDef, TypeDefKind, TypeOwner, World, WorldItem,
 };
 
 /// A component with its fully resolved interface
@@ -27,15 +29,12 @@ use wit_parser::{
 #[derive(Clone)]
 pub struct ComponentBinary {
     component: Component,
-    /// The Resolve for the component WIT
-    /// (not the package/interface WIT).
-    /// An important note is that the component/implementation WIT
-    /// has its package and world renamed to package root:component
-    /// and world name root, therefore the component package name
-    /// cannot be fetched from this, hence why the `id` field.
+    /// The component/implementation WIT has its package and world
+    /// renamed to package root:component and world name root,
+    /// therefore the component package name cannot be fetched from
+    /// this, hence why the `component` field exists separately.
     /// The renaming phenomenon happens due to the way WASM tooling works.
-    component_wit_resolve: Resolve,
-    component_world_id: WorldId,
+    wit: ComponentWit,
     wasmtime_component: Arc<Mutex<WasmtimeComponentBinary>>,
 }
 
@@ -105,16 +104,15 @@ impl ComponentBinary {
         component_bytes: Vec<u8>,
     ) -> eyre::Result<Self> {
         let decoded_wasm = wit_parser::decoding::decode(&component_bytes).map_err(|e| eyre!(e))?;
-        let (wit_resolve, world_id) = match decoded_wasm {
+        let (resolve, world_id) = match decoded_wasm {
             DecodedWasm::WitPackage(_, _) => {
                 return Err(eyre!("received WIT package instead of component"));
             }
-            DecodedWasm::Component(wit_resolve, world_id) => (wit_resolve, world_id),
+            DecodedWasm::Component(resolve, world_id) => (resolve, world_id),
         };
         Ok(Self {
             component,
-            component_wit_resolve: wit_resolve,
-            component_world_id: world_id,
+            wit: ComponentWit::new(resolve, world_id),
             wasmtime_component: Arc::new(Mutex::new(WasmtimeComponentBinary::Raw(component_bytes))),
         })
     }
@@ -174,19 +172,24 @@ impl ComponentBinary {
         string
     }
 
+    pub fn wit(&self) -> &ComponentWit {
+        &self.wit
+    }
+
     pub fn get_functions(&self) -> Vec<ComponentFunctionInterface> {
-        let world = self.component_world();
+        let resolve = self.wit.resolve();
+        let world = self.wit.world();
         let component_package_name = self.component.package_name();
         world
             .exports
             .iter()
             .flat_map(|(_, item)| match item {
                 WorldItem::Interface { id, .. } => {
-                    let interface = self.component_wit_resolve.interfaces.get(*id).unwrap();
+                    let interface = resolve.interfaces.get(*id).unwrap();
                     let package_name = match interface.package {
                         None => component_package_name,
                         Some(package_id) => {
-                            let package_opt = self.component_wit_resolve.packages.get(package_id);
+                            let package_opt = resolve.packages.get(package_id);
                             package_opt
                                 .map(|p| &p.name)
                                 .unwrap_or(component_package_name)
@@ -215,15 +218,7 @@ impl ComponentBinary {
     }
 
     pub fn get_imports_count(&self) -> usize {
-        let world = self.component_world();
-        world.imports.len()
-    }
-
-    fn component_world(&self) -> &World {
-        self.component_wit_resolve
-            .worlds
-            .get(self.component_world_id)
-            .unwrap()
+        self.wit.world().imports.len()
     }
 
     fn map_wit_function_component_function(
@@ -232,6 +227,7 @@ impl ComponentBinary {
         interface_name: Option<String>,
         package_name: PackageName,
     ) -> ComponentFunctionInterface {
+        let resolve = self.wit.resolve();
         let output_type = {
             if function.results.len() == 0 {
                 None
@@ -242,14 +238,14 @@ impl ComponentBinary {
                     }
                     Results::Anon(result_type) => result_type,
                 };
-                Some(self.map_type_to_type_def(result_type))
+                Some(map_type_to_type_def(resolve, result_type))
             }
         };
         let input_types = function
             .params
             .clone()
             .into_iter()
-            .map(|(name, wit_type)| (name, self.map_type_to_type_def(wit_type)))
+            .map(|(name, wit_type)| (name, map_type_to_type_def(resolve, wit_type)))
             .collect();
         ComponentFunctionInterface {
             package_name,
@@ -257,24 +253,6 @@ impl ComponentBinary {
             inputs: input_types,
             output_type,
             component: self.component.clone(),
-        }
-    }
-
-    fn map_type_to_type_def(&self, wit_type: Type) -> TypeDef {
-        match wit_type {
-            Type::Id(type_id) => self
-                .component_wit_resolve
-                .types
-                .get(type_id)
-                .unwrap()
-                .to_owned(),
-            _ => TypeDef {
-                name: None,
-                kind: TypeDefKind::Type(wit_type),
-                owner: TypeOwner::None,
-                docs: Default::default(),
-                stability: Default::default(),
-            },
         }
     }
 }
@@ -385,13 +363,34 @@ impl ComponentFunctionInterface {
     }
 }
 
+impl ComponentInterface for ComponentBinary {
+    fn imported_interfaces(&self) -> Vec<ImportedInterface> {
+        self.wit.imported_interfaces()
+    }
+
+    fn exported_interfaces(&self) -> Vec<ExportedInterface> {
+        self.wit.exported_interfaces()
+    }
+}
+
 impl Debug for ComponentBinary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ComponentInterface")
+        f.debug_struct("ComponentBinary")
             .field("component", &self.component)
-            .field("component_wit_resolve", &self.component_wit_resolve)
-            .field("component_world_id", &self.component_world_id)
             .finish()
+    }
+}
+
+fn map_type_to_type_def(resolve: &wit_parser::Resolve, wit_type: Type) -> TypeDef {
+    match wit_type {
+        Type::Id(type_id) => resolve.types.get(type_id).unwrap().to_owned(),
+        _ => TypeDef {
+            name: None,
+            kind: TypeDefKind::Type(wit_type),
+            owner: TypeOwner::None,
+            docs: Default::default(),
+            stability: Default::default(),
+        },
     }
 }
 
