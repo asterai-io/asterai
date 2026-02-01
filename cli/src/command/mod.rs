@@ -11,6 +11,7 @@ mod help;
 mod resource_or_id;
 mod version;
 
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     Auth(AuthArgs),
     Env(EnvArgs),

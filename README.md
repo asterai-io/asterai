@@ -56,7 +56,7 @@ cargo install asterai
 | Directory               | Description                 |
 |-------------------------|-----------------------------|
 | [cli][1]                | The asterai CLI utility     |
-| [asterai][2]            | The asterai runtime library |
+| [runtime][2]            | The asterai runtime library |
 | [component-examples][3] | Example components          |
 
 ## 🔧 CLI Command Reference
