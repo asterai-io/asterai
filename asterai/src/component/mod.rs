@@ -1,5 +1,5 @@
 use crate::checksum::Checksum;
-use crate::component::interface::{ComponentBinary, PackageNameRegistry};
+use crate::component::binary::{ComponentBinary, PackageNameRegistry};
 use crate::error::AsteraiError;
 use derive_getters::Getters;
 use eyre::{bail, eyre};
@@ -9,8 +9,8 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 pub use wit_parser::PackageName;
 
+pub mod binary;
 pub mod function_name;
-pub mod interface;
 pub mod log;
 pub mod pkg;
 pub mod set;

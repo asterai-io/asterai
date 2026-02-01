@@ -13,7 +13,7 @@
 
 use crate::config::ARTIFACTS_DIR;
 use asterai_runtime::component::Component;
-use asterai_runtime::component::interface::ComponentBinary;
+use asterai_runtime::component::binary::ComponentBinary;
 use asterai_runtime::environment::Environment;
 use asterai_runtime::resource::metadata::{ResourceKind, ResourceMetadata};
 use asterai_runtime::resource::{Resource, ResourceId};

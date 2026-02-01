@@ -1,4 +1,4 @@
-use crate::component::interface::ComponentFunctionInterface;
+use crate::component::binary::ComponentFunctionInterface;
 use crate::runtime::SerializableVal;
 use derive_getters::Getters;
 use serde::ser::{SerializeSeq, SerializeStruct};

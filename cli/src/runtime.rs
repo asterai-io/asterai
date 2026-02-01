@@ -2,7 +2,7 @@ use crate::auth::Auth;
 use crate::config::{API_URL, REGISTRY_URL};
 use crate::local_store::LocalStore;
 use crate::registry::RegistryClient;
-use asterai_runtime::component::interface::ComponentBinary;
+use asterai_runtime::component::binary::ComponentBinary;
 use asterai_runtime::component::{Component, ComponentId};
 use asterai_runtime::environment::Environment;
 use asterai_runtime::runtime::ComponentRuntime;

@@ -2,7 +2,7 @@
 //! Resources include components, environments, and blueprints.
 //! All resources are published to the same registry, and each resource
 //! must have a unique name and version.
-use crate::component::interface::PackageNameRegistry;
+use crate::component::binary::PackageNameRegistry;
 use crate::error::AsteraiError;
 use derive_getters::Getters;
 use eyre::{bail, eyre};
