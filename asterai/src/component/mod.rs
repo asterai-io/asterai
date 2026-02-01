@@ -10,6 +10,7 @@ use std::str::FromStr;
 pub use wit_parser::PackageName;
 
 pub mod binary;
+pub mod function_interface;
 pub mod function_name;
 pub mod log;
 pub mod pkg;

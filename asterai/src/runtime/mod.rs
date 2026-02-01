@@ -1,5 +1,6 @@
 use crate::component::ComponentId;
-use crate::component::binary::{ComponentBinary, ComponentFunctionInterface};
+use crate::component::binary::ComponentBinary;
+use crate::component::function_interface::ComponentFunctionInterface;
 use crate::component::function_name::ComponentFunctionName;
 use crate::runtime::output::{ComponentFunctionOutput, ComponentOutput};
 use crate::runtime::wasm_instance::{
