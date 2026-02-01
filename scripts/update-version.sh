@@ -26,8 +26,8 @@ echo "Updating version to $VERSION..."
 echo "  cli/Cargo.toml"
 sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/cli/Cargo.toml"
 
-echo "  asterai/Cargo.toml"
-sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/asterai/Cargo.toml"
+echo "  runtime/Cargo.toml"
+sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/runtime/Cargo.toml"
 
 # Update npm package.json files.
 for pkg in "$ROOT_DIR"/npm/*/package.json; do
