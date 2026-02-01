@@ -18,7 +18,6 @@ pub mod wit;
 
 pub type ComponentModuleId = Checksum;
 
-// TODO: rely on `Resource` to reduce duplication.
 #[derive(Debug, Clone, Getters, Eq, PartialEq, Hash)]
 pub struct Component {
     /// This is the component ID and includes:
@@ -69,7 +68,6 @@ impl Component {
     }
 }
 
-// TODO: rely on `Resource` to reduce duplication.
 /// The component ID is similar to `Component` except it does not
 /// contain a version string.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
