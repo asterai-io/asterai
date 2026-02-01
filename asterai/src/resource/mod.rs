@@ -25,8 +25,9 @@ pub struct Resource {
     /// it is required in `Resource`s and is therefore
     /// guaranteed to be present.
     ///
-    /// This accepts either `:` or `/` as a separator between namespace and name,
-    /// but is stored in WIT style (namespace:name).
+    /// When constructing a `Resource`, this accepts either `:` or `/` as
+    /// a separator between namespace and name, but is stored in WIT style
+    /// (namespace:name).
     package_name: PackageName,
 }
 

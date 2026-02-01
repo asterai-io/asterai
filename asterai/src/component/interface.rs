@@ -1,7 +1,7 @@
 use crate::component::Component;
 use crate::component::function_name::ComponentFunctionName;
 use crate::component::wit::{
-    ComponentInterface, ComponentWit, ExportedInterface, ImportedInterface,
+    ComponentFunction, ComponentInterface, ComponentWit, ExportedInterface, ImportedInterface,
 };
 use derive_getters::Getters;
 use eyre::WrapErr;
@@ -21,7 +21,7 @@ use wasmtime::{AsContextMut, Engine};
 use wit_bindgen::rt::async_support::futures::StreamExt;
 use wit_parser::decoding::DecodedWasm;
 use wit_parser::{
-    Function, PackageName, Results, Type, TypeDef, TypeDefKind, TypeOwner, World, WorldItem,
+    Function, PackageName, Results, Type, TypeDef, TypeDefKind, TypeOwner, WorldItem,
 };
 
 /// A component with its fully resolved interface
@@ -146,30 +146,30 @@ impl ComponentBinary {
         &self.component
     }
 
-    // TODO: rely on `ComponentInterface` to implement parts of this?
+    /// Human-readable summary of the component's exported interfaces
+    /// and world-level functions.
+    // TODO: interface names here use `root:component` instead of the
+    // real package name due to WASM tooling renaming (see `wit` field docs).
     pub fn stringified_interface(&self) -> String {
-        // TODO: implement fully
-        let mut string = String::new();
-        let functions = self.get_functions();
-        for function in functions {
-            string.push_str(&format!(
-                "function name {} of manifest '{}' inputs: (",
-                function.name.name,
-                self.component.id()
-            ));
-            for (name, type_def) in function.inputs {
-                string.push_str(&format!("{}: {:#?},", name, type_def_to_string(&type_def)));
+        let mut out = String::new();
+        let interfaces = self.exported_interfaces();
+        if !interfaces.is_empty() {
+            out.push_str("Exports:\n");
+            for interface in &interfaces {
+                out.push_str(&format!("  {}\n", interface.name));
+                for f in &interface.functions {
+                    out.push_str(&format!("    {}\n", format_function_signature(f)));
+                }
             }
-            string.push_str(") output type: ");
-            string.push_str(
-                &function
-                    .output_type
-                    .map(|t| type_def_to_string(&t))
-                    .unwrap_or_else(|| "function has no output".to_owned()),
-            );
-            string.push('\n');
         }
-        string
+        let world_fns = self.world_functions();
+        if !world_fns.is_empty() {
+            out.push_str("Non-composable entry functions:\n");
+            for f in &world_fns {
+                out.push_str(&format!("  {}\n", format_function_signature(f)));
+            }
+        }
+        out
     }
 
     pub fn wit(&self) -> &ComponentWit {
@@ -371,6 +371,10 @@ impl ComponentInterface for ComponentBinary {
     fn exported_interfaces(&self) -> Vec<ExportedInterface> {
         self.wit.exported_interfaces()
     }
+
+    fn world_functions(&self) -> Vec<ComponentFunction> {
+        self.wit.world_functions()
+    }
 }
 
 impl Debug for ComponentBinary {
@@ -414,14 +418,15 @@ async fn download_component_package_from_registry(
     Ok(bytes)
 }
 
-fn type_def_to_string(type_def: &TypeDef) -> String {
-    match &type_def.kind {
-        TypeDefKind::Record(r) => {
-            format!("struct: {:#?}", r)
-        }
-        _ => {
-            format!("{:#?}", type_def.kind)
-        }
+fn format_function_signature(f: &ComponentFunction) -> String {
+    let params: Vec<String> = f
+        .params
+        .iter()
+        .map(|p| format!("{}: {}", p.name, p.type_name))
+        .collect();
+    match &f.return_type {
+        Some(ret) => format!("{}({}) -> {}", f.name, params.join(", "), ret),
+        None => format!("{}({})", f.name, params.join(", ")),
     }
 }
 

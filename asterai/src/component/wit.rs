@@ -45,6 +45,7 @@ impl ComponentWit {
 pub trait ComponentInterface {
     fn imported_interfaces(&self) -> Vec<ImportedInterface>;
     fn exported_interfaces(&self) -> Vec<ExportedInterface>;
+    fn world_functions(&self) -> Vec<ComponentFunction>;
 }
 
 pub struct ImportedInterface {
@@ -54,12 +55,11 @@ pub struct ImportedInterface {
 
 pub struct ExportedInterface {
     /// Fully qualified name, e.g. "asterai:host/api@0.1.0".
-    /// Empty string for root-level exports not inside an interface.
     pub name: String,
-    pub functions: Vec<ExportedFunction>,
+    pub functions: Vec<ComponentFunction>,
 }
 
-pub struct ExportedFunction {
+pub struct ComponentFunction {
     pub name: String,
     pub params: Vec<FunctionParam>,
     /// Display string for return type. None if no return.
@@ -105,20 +105,28 @@ impl ComponentInterface for ComponentWit {
                         functions,
                     })
                 }
-                WorldItem::Function(func) => {
-                    let f = build_exported_function(&self.resolve, func);
-                    Some(ExportedInterface {
-                        name: String::new(),
-                        functions: vec![f],
-                    })
-                }
-                WorldItem::Type(_) => None,
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Functions exported at the world level and therefore not composable
+    /// with other components (only callable by the host).
+    /// See <https://component-model.bytecodealliance.org/composing-and-distributing/composing.html#what-is-composition>.
+    fn world_functions(&self) -> Vec<ComponentFunction> {
+        let world = self.world();
+        world
+            .exports
+            .iter()
+            .filter_map(|(_, item)| match item {
+                WorldItem::Function(func) => Some(build_exported_function(&self.resolve, func)),
+                _ => None,
             })
             .collect()
     }
 }
 
-fn build_exported_function(resolve: &Resolve, func: &wit_parser::Function) -> ExportedFunction {
+fn build_exported_function(resolve: &Resolve, func: &wit_parser::Function) -> ComponentFunction {
     let params = func
         .params
         .iter()
@@ -138,7 +146,7 @@ fn build_exported_function(resolve: &Resolve, func: &wit_parser::Function) -> Ex
             Some(format!("({})", parts.join(", ")))
         }
     };
-    ExportedFunction {
+    ComponentFunction {
         name: func.name.clone(),
         params,
         return_type,
