@@ -146,7 +146,7 @@ impl ComponentBinary {
         &self.component
     }
 
-    /// A stringified version of the interface, optional including only agentic functions.
+    // TODO: rely on `ComponentInterface` to implement parts of this?
     pub fn stringified_interface(&self) -> String {
         // TODO: implement fully
         let mut string = String::new();
