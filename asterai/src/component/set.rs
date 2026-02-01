@@ -3,9 +3,9 @@ use crate::error::AsteraiError;
 use std::collections::HashSet;
 use std::str::FromStr;
 
-pub struct PluginSet(HashSet<Component>);
+pub struct ComponentSet(HashSet<Component>);
 
-impl PluginSet {
+impl ComponentSet {
     pub fn inner(&self) -> &HashSet<Component> {
         &self.0
     }
@@ -15,7 +15,7 @@ impl PluginSet {
     }
 }
 
-impl FromStr for PluginSet {
+impl FromStr for ComponentSet {
     type Err = AsteraiError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

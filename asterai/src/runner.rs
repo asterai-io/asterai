@@ -1,4 +1,4 @@
-use crate::component::set::PluginSet;
+use crate::component::set::ComponentSet;
 use crate::error::AsteraiResult;
 use std::collections::HashMap;
 
@@ -7,7 +7,7 @@ pub struct Runner {}
 #[allow(dead_code)]
 pub struct RunArgs {
     env_vars: HashMap<String, String>,
-    components: PluginSet,
+    components: ComponentSet,
 }
 
 impl Runner {
