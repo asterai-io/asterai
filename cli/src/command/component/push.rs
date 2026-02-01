@@ -30,6 +30,8 @@ pub(super) struct PushArgs {
     interface_only: bool,
     /// Force overwrite existing version (for private mutable versions).
     force: bool,
+    /// Push (and create) the component as public.
+    public: bool,
 }
 
 impl PushArgs {
@@ -38,6 +40,7 @@ impl PushArgs {
         let mut pkg: Option<String> = None;
         let mut interface_only = false;
         let mut force = false;
+        let mut public = false;
         let print_help_and_exit = || {
             println!("{COMPONENT_PUSH_HELP}");
             std::process::exit(0);
@@ -55,6 +58,9 @@ impl PushArgs {
                 }
                 "--force" | "-f" => {
                     force = true;
+                }
+                "--public" | "-p" => {
+                    public = true;
                 }
                 "--help" | "-h" | "help" => {
                     print_help_and_exit();
@@ -100,6 +106,7 @@ impl PushArgs {
             pkg,
             interface_only,
             force,
+            public,
         })
     }
 
@@ -127,9 +134,11 @@ impl PushArgs {
                     .mime_str("application/octet-stream")?,
             );
         }
-        // Add force flag if set.
         if self.force {
             form = form.text("force", "true");
+        }
+        if self.public {
+            form = form.text("public", "true");
         }
         if is_interface_only {
             println!("pushing WIT interface (interface-only)...");

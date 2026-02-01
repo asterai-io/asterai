@@ -8,6 +8,7 @@ OPTIONS:
     --component <PATH>    Path to component.wasm (implementation) [default: component.wasm]
     -i, --interface-only  Push only the WIT interface (no implementation)
     -f, --force           Force overwrite existing version
+    -p, --public          Push and create the component as public
     -h, --help            Show this help message
 
 VERSION BEHAVIOR:
@@ -42,3 +43,5 @@ NOTES:
     - package.wasm (WIT interface) is always required
     - component.wasm is optional; if not found, pushes as interface-only
     - Files are searched in current directory, then in ./build/
+    - --public only works for new components; existing private components
+      must change visibility via the web UI
