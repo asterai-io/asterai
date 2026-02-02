@@ -48,13 +48,28 @@ impl Language for Rust {
 
     fn get_component_wasm_path(&self, dir: &Path) -> eyre::Result<PathBuf> {
         let crate_name = get_crate_name(dir)?;
-        // Underscores in crate names are converted to hyphens in the output.
         let wasm_name = crate_name.replace('-', "_");
+        let filename = format!("{}.wasm", wasm_name);
+        // cargo-component may target wasip1 or wasip2 depending on version.
+        // Older versions target wasip1 and wrap to a wasip2 component.
+        let candidates = ["wasm32-wasip2", "wasm32-wasip1"];
+        for target in candidates {
+            let path = dir
+                .join("target")
+                .join(target)
+                .join("release")
+                .join(&filename);
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+        // Default to wasm32-wasip2, though this will error later if
+        // used as it does not exist according to the checks above.
         Ok(dir
             .join("target")
             .join("wasm32-wasip2")
             .join("release")
-            .join(format!("{}.wasm", wasm_name)))
+            .join(filename))
     }
 
     fn build_component(&self, dir: &Path) -> eyre::Result<PathBuf> {
