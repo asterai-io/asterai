@@ -47,6 +47,7 @@ impl InitArgs {
     }
 
     fn execute_init(&self) -> eyre::Result<()> {
+        validate_wit_identifier(&self.out_dir)?;
         let language = language::from_name(&self.language).ok_or_else(|| {
             eyre::eyre!(
                 "unsupported language: '{}'. Supported: {}",
@@ -113,6 +114,28 @@ fn extract_template(
         fs::create_dir_all(&dir_path)
             .wrap_err_with(|| format!("failed to create directory: {:?}", dir_path))?;
         extract_template(dir, dst, namespace, component_name)?;
+    }
+    Ok(())
+}
+
+/// Validates that a name is a valid WIT identifier (kebab-case).
+fn validate_wit_identifier(name: &str) -> eyre::Result<()> {
+    if name.is_empty() {
+        bail!("component name cannot be empty");
+    }
+    if name.starts_with('-') || name.ends_with('-') {
+        bail!("component name cannot start or end with a hyphen: \"{name}\"");
+    }
+    if name.contains("--") {
+        bail!("component name cannot contain consecutive hyphens: \"{name}\"");
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        bail!(
+            "component name must be lowercase alphanumeric with hyphens (kebab-case): \"{name}\""
+        );
     }
     Ok(())
 }
