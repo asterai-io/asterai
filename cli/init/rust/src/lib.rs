@@ -9,7 +9,7 @@ struct Component;
 impl Guest for Component {
     fn greet(name: String) {
         let greeting = format!("hello {name}");
-        api::send_response_to_agent(&greeting);
+        println!("{greeting}");
     }
 }
 
