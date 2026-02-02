@@ -24,6 +24,7 @@ Environment commands:
 Component commands:
   asterai component init [name] [-l <language>]    Scaffold a new local WASM component project.
                                                    Supported languages: typescript (default), rust
+  asterai component build                          Build the component (from project dir)
   asterai component pkg                            Package the component's WIT into a WASM package
   asterai component pull <name>                    Pull the component <name> from the registry
   asterai component push                           Push the current component (from project dir) to the registry
