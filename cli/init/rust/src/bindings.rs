@@ -101,7 +101,7 @@ pub mod asterai {
                     let ptr1 = vec1.as_ptr().cast::<u8>();
                     let len1 = vec1.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "asterai:host/api@0.1.0")]
+                    #[link(wasm_import_module = "asterai:host/api@1.0.0")]
                     extern "C" {
                         #[link_name = "embedding-store"]
                         fn wit_import(_: *mut u8, _: usize, _: *mut u8, _: usize);
@@ -130,7 +130,7 @@ pub mod asterai {
                     let len1 = vec1.len();
                     let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "asterai:host/api@0.1.0")]
+                    #[link(wasm_import_module = "asterai:host/api@1.0.0")]
                     extern "C" {
                         #[link_name = "embedding-search"]
                         fn wit_import(
@@ -221,7 +221,7 @@ pub mod asterai {
                     };
                     let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "asterai:host/api@0.1.0")]
+                    #[link(wasm_import_module = "asterai:host/api@1.0.0")]
                     extern "C" {
                         #[link_name = "kv-get"]
                         fn wit_import(
@@ -298,7 +298,7 @@ pub mod asterai {
                         None => (0i32, ::core::ptr::null_mut(), 0usize),
                     };
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "asterai:host/api@0.1.0")]
+                    #[link(wasm_import_module = "asterai:host/api@1.0.0")]
                     extern "C" {
                         #[link_name = "kv-set"]
                         fn wit_import(
@@ -348,7 +348,7 @@ pub mod asterai {
                     let len0 = vec0.len();
                     let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "asterai:host/api@0.1.0")]
+                    #[link(wasm_import_module = "asterai:host/api@1.0.0")]
                     extern "C" {
                         #[link_name = "get-env"]
                         fn wit_import(_: *mut u8, _: usize, _: *mut u8);
@@ -387,7 +387,7 @@ pub mod asterai {
                     let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 28]);
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "asterai:host/api@0.1.0")]
+                    #[link(wasm_import_module = "asterai:host/api@1.0.0")]
                     extern "C" {
                         #[link_name = "get-context"]
                         fn wit_import(_: *mut u8);
@@ -439,7 +439,7 @@ pub mod asterai {
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "asterai:host/api@0.1.0")]
+                    #[link(wasm_import_module = "asterai:host/api@1.0.0")]
                     extern "C" {
                         #[link_name = "send-response-to-agent"]
                         fn wit_import(_: *mut u8, _: usize);
@@ -481,7 +481,7 @@ pub mod asterai {
                     };
                     let ptr5 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "asterai:host/api@0.1.0")]
+                    #[link(wasm_import_module = "asterai:host/api@1.0.0")]
                     extern "C" {
                         #[link_name = "query-agent"]
                         fn wit_import(
@@ -673,7 +673,7 @@ s\x03\0\x09\x01r\x01\x07contents\x04\0\x14query-agent-response\x03\0\x0b\x01@\x0
 alue\x04\x07user-id\x04\x01\0\x04\0\x06kv-set\x01\x11\x01@\x01\x03keys\0\x04\x04\
 \0\x07get-env\x01\x12\x01@\0\0\x08\x04\0\x0bget-context\x01\x13\x01@\x01\x08resp\
 onses\x01\0\x04\0\x16send-response-to-agent\x01\x14\x01j\x01\x0c\x01s\x01@\x01\x04\
-args\x0a\0\x15\x04\0\x0bquery-agent\x01\x16\x03\0\x16asterai:host/api@0.1.0\x05\0\
+args\x0a\0\x15\x04\0\x0bquery-agent\x01\x16\x03\0\x16asterai:host/api@1.0.0\x05\0\
 \x01B\x02\x01@\x01\x04names\x01\0\x04\0\x05greet\x01\0\x04\0#your-username:greet\
 er/greeter@0.1.0\x05\x01\x04\0\"your-username:greeter/component@0.1.0\x04\0\x0b\x0c\
 \x01\0\x06component\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-componen\
