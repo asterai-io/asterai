@@ -64,7 +64,7 @@ impl InitArgs {
         let namespace =
             Auth::read_stored_user_namespace().unwrap_or_else(|| "your-username".to_string());
         // Extract template to output directory.
-        extract_template(language.template(), &out_dir, &namespace)
+        extract_template(language.template(), &out_dir, &namespace, &self.out_dir)
             .wrap_err_with(|| format!("failed to extract template to {:?}", out_dir))?;
         println!(
             "Initialized {} component project at {:?}",
@@ -82,7 +82,12 @@ impl ComponentArgs {
     }
 }
 
-fn extract_template(template: &Dir, dst: &Path, namespace: &str) -> eyre::Result<()> {
+fn extract_template(
+    template: &Dir,
+    dst: &Path,
+    namespace: &str,
+    component_name: &str,
+) -> eyre::Result<()> {
     let namespace_snake = namespace.replace('-', "_");
     fs::create_dir_all(dst).wrap_err_with(|| format!("failed to create directory: {:?}", dst))?;
     for file in template.files() {
@@ -96,6 +101,7 @@ fn extract_template(template: &Dir, dst: &Path, namespace: &str) -> eyre::Result
             Ok(text) => text
                 .replace("___USERNAME___", namespace)
                 .replace("___USERNAME_SNAKE___", &namespace_snake)
+                .replace("___COMPONENT___", component_name)
                 .into_bytes(),
             Err(_) => file.contents().to_vec(),
         };
@@ -106,7 +112,7 @@ fn extract_template(template: &Dir, dst: &Path, namespace: &str) -> eyre::Result
         let dir_path = dst.join(dir.path());
         fs::create_dir_all(&dir_path)
             .wrap_err_with(|| format!("failed to create directory: {:?}", dir_path))?;
-        extract_template(dir, dst, namespace)?;
+        extract_template(dir, dst, namespace, component_name)?;
     }
     Ok(())
 }

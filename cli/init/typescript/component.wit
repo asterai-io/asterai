@@ -1,4 +1,4 @@
-package ___USERNAME___:math@0.1.0;
+package ___USERNAME___:___COMPONENT___@0.1.0;
 
 world component {
   import asterai:host/api@1.0.0;
