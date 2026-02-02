@@ -1,3 +1,4 @@
+use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
 use crate::language;
 use eyre::{Context, OptionExt, bail};
@@ -60,8 +61,10 @@ impl InitArgs {
         if out_dir.exists() {
             bail!("output directory already exists: {:?}", out_dir);
         }
+        let namespace =
+            Auth::read_stored_user_namespace().unwrap_or_else(|| "your-username".to_string());
         // Extract template to output directory.
-        extract_template(language.template(), &out_dir)
+        extract_template(language.template(), &out_dir, &namespace)
             .wrap_err_with(|| format!("failed to extract template to {:?}", out_dir))?;
         println!(
             "Initialized {} component project at {:?}",
@@ -79,7 +82,8 @@ impl ComponentArgs {
     }
 }
 
-fn extract_template(template: &Dir, dst: &Path) -> eyre::Result<()> {
+fn extract_template(template: &Dir, dst: &Path, namespace: &str) -> eyre::Result<()> {
+    let namespace_snake = namespace.replace('-', "_");
     fs::create_dir_all(dst).wrap_err_with(|| format!("failed to create directory: {:?}", dst))?;
     for file in template.files() {
         let mut file_path = dst.join(file.path());
@@ -88,14 +92,21 @@ fn extract_template(template: &Dir, dst: &Path) -> eyre::Result<()> {
         if file_path.extension().is_some_and(|ext| ext == "template") {
             file_path.set_extension("");
         }
-        fs::write(&file_path, file.contents())
+        let contents = match std::str::from_utf8(file.contents()) {
+            Ok(text) => text
+                .replace("___USERNAME___", namespace)
+                .replace("___USERNAME_SNAKE___", &namespace_snake)
+                .into_bytes(),
+            Err(_) => file.contents().to_vec(),
+        };
+        fs::write(&file_path, contents)
             .wrap_err_with(|| format!("failed to write file: {:?}", file_path))?;
     }
     for dir in template.dirs() {
         let dir_path = dst.join(dir.path());
         fs::create_dir_all(&dir_path)
             .wrap_err_with(|| format!("failed to create directory: {:?}", dir_path))?;
-        extract_template(dir, dst)?;
+        extract_template(dir, dst, namespace)?;
     }
     Ok(())
 }

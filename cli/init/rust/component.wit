@@ -1,4 +1,4 @@
-package your-username:greeter@0.1.0;
+package ___USERNAME___:greeter@0.1.0;
 
 interface greeter {
   greet: func(name: string);

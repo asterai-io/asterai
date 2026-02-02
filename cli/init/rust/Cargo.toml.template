@@ -20,6 +20,6 @@ strip = true
 lto = true
 
 [package.metadata.component]
-package = "your-username:component"
+package = "___USERNAME___:component"
 
 [package.metadata.component.dependencies]

@@ -1,5 +1,5 @@
 use crate::bindings::asterai::host::api;
-use crate::bindings::exports::your_username::greeter::greeter::Guest;
+use crate::bindings::exports::___USERNAME_SNAKE___::greeter::greeter::Guest;
 
 #[allow(warnings)]
 mod bindings;
