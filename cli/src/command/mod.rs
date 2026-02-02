@@ -5,6 +5,7 @@ use crate::command::help::Help;
 use crate::command::version::Version;
 
 mod auth;
+mod common_flags;
 mod component;
 mod env;
 mod help;

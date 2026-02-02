@@ -1,3 +1,4 @@
+use crate::command::common_flags::extract_common_flags;
 use crate::command::env::cp::CpArgs;
 use crate::command::env::delete::DeleteArgs;
 use crate::command::env::pull::PullArgs;
@@ -5,7 +6,6 @@ use crate::command::env::push::PushArgs;
 use crate::command::env::run::RunArgs;
 use crate::command::env::set_var::SetVarArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
-use crate::config::{API_URL, REGISTRY_URL};
 use crate::version_resolver::ComponentRef;
 use asterai_runtime::component::Component;
 use asterai_runtime::resource::{Resource, ResourceId};
@@ -73,7 +73,7 @@ impl EnvArgs {
         // Collect remaining args and extract common flags.
         let remaining_args: Vec<String> = args.collect();
         let (api_endpoint, registry_endpoint, filtered_args) =
-            Self::extract_common_flags(remaining_args)?;
+            extract_common_flags(remaining_args)?;
         let mut args = filtered_args.into_iter();
         let mut parse_env_name_or_id = || -> eyre::Result<ResourceOrIdArg> {
             let Some(env_name_or_id_string) = args.next() else {
@@ -315,42 +315,6 @@ impl EnvArgs {
             },
         };
         Ok(env_args)
-    }
-
-    /// Extract common flags (-e/--endpoint, -r/--registry, -s/--staging) from args.
-    /// Returns (api_endpoint, registry_endpoint, remaining_args).
-    /// If --staging is set, it overrides the endpoints with staging URLs.
-    fn extract_common_flags(args: Vec<String>) -> eyre::Result<(String, String, Vec<String>)> {
-        use crate::config::{API_URL_STAGING, REGISTRY_URL_STAGING};
-        let mut api_endpoint = API_URL.to_string();
-        let mut registry_endpoint = REGISTRY_URL.to_string();
-        let mut staging = false;
-        let mut filtered = Vec::new();
-        let mut iter = args.into_iter().peekable();
-        while let Some(arg) = iter.next() {
-            match arg.as_str() {
-                "--endpoint" | "-e" => {
-                    api_endpoint = iter
-                        .next()
-                        .ok_or_eyre("missing value for --endpoint flag")?;
-                }
-                "--registry" | "-r" => {
-                    registry_endpoint = iter
-                        .next()
-                        .ok_or_eyre("missing value for --registry flag")?;
-                }
-                "--staging" | "-s" => {
-                    staging = true;
-                }
-                _ => filtered.push(arg),
-            }
-        }
-        // Staging flag overrides explicit endpoints.
-        if staging {
-            api_endpoint = API_URL_STAGING.to_string();
-            registry_endpoint = REGISTRY_URL_STAGING.to_string();
-        }
-        Ok((api_endpoint, registry_endpoint, filtered))
     }
 
     pub async fn execute(&self) -> eyre::Result<()> {
