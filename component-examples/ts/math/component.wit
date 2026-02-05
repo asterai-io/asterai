@@ -1,0 +1,11 @@
+package your-username:math@0.1.2;
+
+interface math {
+  multiply: func(a: f64, b: f64) -> f64;
+}
+
+world component {
+  import asterai:host/api@1.0.0;
+
+  export math;
+}
