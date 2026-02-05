@@ -86,7 +86,7 @@ jobs:
 
       - name: Update versions in Cargo.toml
         run: |
-          sed -i 's/^version = ".*"/version = "${{ steps.version.outputs.version }}"/' asterai/Cargo.toml
+          sed -i 's/^version = ".*"/version = "${{ steps.version.outputs.version }}"/' runtime/Cargo.toml
           sed -i 's/^version = ".*"/version = "${{ steps.version.outputs.version }}"/' cli/Cargo.toml
 
       - name: Publish asterai_runtime
@@ -105,7 +105,7 @@ jobs:
 
       - name: Update dependency version
         run: |
-          sed -i 's|asterai_runtime = { path = "../asterai" }|asterai_runtime = "${{ steps.version.outputs.version }}"|' cli/Cargo.toml
+          sed -i 's|asterai_runtime = { path = "../runtime" }|asterai_runtime = "${{ steps.version.outputs.version }}"|' cli/Cargo.toml
 
       - name: Publish asterai
         run: |
