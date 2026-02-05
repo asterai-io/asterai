@@ -4,6 +4,6 @@ const greet = (name: string) => {
   console.log(`hello ${name}!`);
 };
 
-export const greeter = {
+export const ___COMPONENT___ = {
   greet
 };
