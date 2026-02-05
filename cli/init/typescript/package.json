@@ -7,12 +7,12 @@
   "type": "module",
   "scripts": {
     "auth": "asterai auth",
+    "push": "asterai component push",
     "gen:pkg": "mkdirp build && asterai pkg -o build/package.wasm -w build/package.wit",
     "gen:types": "jco guest-types build/package.wit -n component -o generated/",
     "compile": "tsc",
     "componentize": "jco componentize build/component.js -w build/package.wit -n component -o build/component.wasm",
-    "build": "run-s gen:pkg gen:types compile componentize",
-    "deploy": "asterai component push"
+    "build": "run-s gen:pkg gen:types compile componentize"
   },
   "devDependencies": {
     "@asterai/cli": "latest",
