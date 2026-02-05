@@ -8,7 +8,7 @@
   "scripts": {
     "auth": "asterai auth",
     "push": "asterai component push",
-    "gen:pkg": "mkdirp build && asterai pkg -o build/package.wasm -w build/package.wit",
+    "gen:pkg": "mkdirp build && asterai component pkg -o build/package.wasm -w build/package.wit",
     "gen:types": "jco guest-types build/package.wit -n component -o generated/",
     "compile": "tsc",
     "componentize": "jco componentize build/component.js -w build/package.wit -n component -o build/component.wasm",
