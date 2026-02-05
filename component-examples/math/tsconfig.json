@@ -1,7 +1,0 @@
-{
-  "include": ["./**/*.ts"],
-  "compilerOptions": {
-    "outDir": "build",
-    "module": "ESNext"
-  }
-}

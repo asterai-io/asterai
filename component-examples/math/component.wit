@@ -1,9 +1,0 @@
-package example-two:math@0.3.0;
-
-world component {
-  export add: func(a: f64, b: f64) -> output;
-
-  record output {
-    value: f64,
-  }
-}
