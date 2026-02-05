@@ -1,27 +1,16 @@
+use super::run_command;
 use crate::language::Language;
-use eyre::{Context, bail};
+use async_trait::async_trait;
+use eyre::bail;
 use include_dir::{Dir, include_dir};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-
-/// Runs a command in the given directory, failing if it exits non-zero.
-fn run_command(dir: &Path, program: &str, args: &[&str]) -> eyre::Result<()> {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(dir)
-        .status()
-        .wrap_err_with(|| format!("failed to run {}", program))?;
-    if !status.success() {
-        bail!("{} {} failed", program, args.join(" "));
-    }
-    Ok(())
-}
 
 static TEMPLATE: Dir = include_dir!("$CARGO_MANIFEST_DIR/init/typescript");
 
 /// TypeScript language support.
 pub struct TypeScript;
 
+#[async_trait]
 impl Language for TypeScript {
     fn name(&self) -> &'static str {
         "typescript"
@@ -63,45 +52,11 @@ impl Language for TypeScript {
         Ok(dir.join("build").join("component.wasm"))
     }
 
-    fn build_component(&self, dir: &Path) -> eyre::Result<PathBuf> {
-        // Install dependencies if node_modules doesn't exist.
+    async fn build_component(&self, dir: &Path, _api_endpoint: &str) -> eyre::Result<PathBuf> {
         if !dir.join("node_modules").exists() {
             run_command(dir, "npm", &["install"])?;
         }
-        let package_wit = self.get_package_wit_path(dir);
-        let package_wit = package_wit.to_string_lossy();
-        // Generate TypeScript types from WIT.
-        run_command(
-            dir,
-            "npx",
-            &[
-                "jco",
-                "guest-types",
-                &package_wit,
-                "-n",
-                "component",
-                "-o",
-                "generated/",
-            ],
-        )?;
-        // Compile TypeScript.
-        run_command(dir, "npx", &["tsc"])?;
-        // Componentize JS into WASM.
-        run_command(
-            dir,
-            "npx",
-            &[
-                "jco",
-                "componentize",
-                "build/component.js",
-                "-w",
-                &package_wit,
-                "-n",
-                "component",
-                "-o",
-                "build/component.wasm",
-            ],
-        )?;
+        run_command(dir, "npm", &["run", "build"])?;
         let wasm_path = self.get_component_wasm_path(dir)?;
         if !wasm_path.exists() {
             bail!("built WASM file not found at {:?}", wasm_path);

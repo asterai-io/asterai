@@ -6,5 +6,6 @@ interface ___COMPONENT___ {
 
 world component {
   import asterai:host/api@1.0.0;
+
   export ___COMPONENT___;
 }

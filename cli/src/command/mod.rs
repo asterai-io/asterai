@@ -6,7 +6,7 @@ use crate::command::version::Version;
 
 mod auth;
 mod common_flags;
-mod component;
+pub(crate) mod component;
 mod env;
 mod help;
 mod resource_or_id;

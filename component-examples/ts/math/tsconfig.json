@@ -2,6 +2,7 @@
   "include": ["./**/*.ts"],
   "compilerOptions": {
     "outDir": "build",
-    "module": "ESNext"
+    "module": "ESNext",
+    "moduleResolution": "node"
   }
 }
