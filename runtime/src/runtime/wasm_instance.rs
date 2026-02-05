@@ -1,6 +1,7 @@
 use crate::component::Component;
+use crate::component::binary::ComponentBinary;
+use crate::component::function_interface::ComponentFunctionInterface;
 use crate::component::function_name::ComponentFunctionName;
-use crate::component::interface::{ComponentBinary, ComponentFunctionInterface};
 use crate::runtime::entry::add_asterai_host_to_linker;
 use crate::runtime::env::{HostEnv, HostEnvRuntimeData};
 use crate::runtime::output::ComponentOutput;

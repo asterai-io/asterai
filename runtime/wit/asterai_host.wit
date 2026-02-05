@@ -1,0 +1,49 @@
+package asterai:host@1.0.0;
+
+interface api {
+  get-runtime-info: func() -> runtime-info;
+
+  record runtime-info {
+    version: string,
+  }
+
+  list-components: func() -> list<component-info>;
+
+  list-other-components: func() -> list<component-info>;
+
+  get-component: func(name: string) -> option<component-info>;
+
+  record component-info {
+    name: string,
+    version: string,
+    interfaces: list<string>,
+  }
+
+  component-implements: func(
+    component-name: string,
+    interface-name: string
+  ) -> bool;
+
+  call-component-function: func(
+    component-name: string,
+    function-name: string,
+    args-json: string
+  ) -> result<string, call-error>;
+
+  record call-error {
+    kind: call-error-kind,
+    message: string,
+  }
+
+  enum call-error-kind {
+    component-not-found,
+    function-not-found,
+    invalid-args,
+    invocation-failed,
+    serialization-failed,
+  }
+}
+
+world host {
+  export api;
+}

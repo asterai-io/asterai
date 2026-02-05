@@ -114,11 +114,7 @@ impl<'a> RegistryClient<'a> {
             .client
             .get(&manifest_url)
             .header("Authorization", format!("Bearer {}", token))
-            .header(
-                "Accept",
-                "application/vnd.oci.image.manifest.v1+json, \
-                application/vnd.docker.distribution.manifest.v2+json",
-            )
+            .header("Accept", "application/vnd.oci.image.manifest.v1+json")
             .send()
             .await
             .wrap_err("failed to fetch manifest")?;

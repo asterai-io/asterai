@@ -1,4 +1,5 @@
 use crate::auth::Auth;
+use crate::command::common_flags::DEFAULT_SPECIFIC_ENDPOINT;
 use crate::config::{API_URL, API_URL_STAGING};
 use eyre::{Context, OptionExt, bail};
 use reqwest::StatusCode;
@@ -37,8 +38,9 @@ impl AuthArgs {
                 while let Some(arg) = args.next() {
                     match arg.as_str() {
                         "--endpoint" | "-e" => {
-                            api_endpoint =
-                                args.next().ok_or_eyre("missing value for endpoint flag")?;
+                            api_endpoint = args
+                                .next()
+                                .unwrap_or_else(|| DEFAULT_SPECIFIC_ENDPOINT.to_owned());
                         }
                         "--staging" | "-s" => {
                             staging = true;
@@ -77,8 +79,9 @@ impl AuthArgs {
                 while let Some(arg) = args.next() {
                     match arg.as_str() {
                         "--endpoint" | "-e" => {
-                            api_endpoint =
-                                args.next().ok_or_eyre("missing value for endpoint flag")?;
+                            api_endpoint = args
+                                .next()
+                                .unwrap_or_else(|| DEFAULT_SPECIFIC_ENDPOINT.to_owned());
                         }
                         "--staging" | "-s" => {
                             staging = true;

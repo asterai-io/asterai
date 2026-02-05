@@ -1,4 +1,4 @@
-import * as asterai from "asterai:host/api@0.1.0";
+import * as asterai from "asterai:host/api@1.0.0";
 import { BinaryOperationResult } from "example:math/component@0.1.0";
 
 export const mul = (a: number, b: number): BinaryOperationResult => {

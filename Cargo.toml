@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "cli", "asterai",
+    "cli", "runtime",
 ]
 resolver = "3"
 

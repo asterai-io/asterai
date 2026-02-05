@@ -1,6 +1,5 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
-use crate::config::{API_URL, API_URL_STAGING};
 use crate::language;
 use eyre::{Context, OptionExt, bail};
 use reqwest::StatusCode;
@@ -27,34 +26,27 @@ pub(super) struct PushArgs {
     component: Option<String>,
     /// Path to package.wasm (WIT interface, required).
     pkg: String,
-    endpoint: String,
-    staging: bool,
     /// If true, only push the WIT interface (no component implementation).
     interface_only: bool,
     /// Force overwrite existing version (for private mutable versions).
     force: bool,
+    /// Push (and create) the component as public.
+    public: bool,
 }
 
 impl PushArgs {
     pub fn parse(mut args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut component: Option<String> = None;
         let mut pkg: Option<String> = None;
-        let mut endpoint = API_URL.to_string();
-        let mut staging = false;
         let mut interface_only = false;
         let mut force = false;
+        let mut public = false;
         let print_help_and_exit = || {
             println!("{COMPONENT_PUSH_HELP}");
             std::process::exit(0);
         };
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--endpoint" | "-e" => {
-                    endpoint = args.next().ok_or_eyre("missing value for endpoint flag")?;
-                }
-                "--staging" | "-s" => {
-                    staging = true;
-                }
                 "--component" | "-c" => {
                     component = Some(args.next().ok_or_eyre("missing value for component flag")?);
                 }
@@ -66,6 +58,9 @@ impl PushArgs {
                 }
                 "--force" | "-f" => {
                     force = true;
+                }
+                "--public" | "-p" => {
+                    public = true;
                 }
                 "--help" | "-h" | "help" => {
                     print_help_and_exit();
@@ -109,14 +104,13 @@ impl PushArgs {
         Ok(Self {
             component,
             pkg,
-            endpoint,
-            staging,
             interface_only,
             force,
+            public,
         })
     }
 
-    async fn execute_push(&self) -> eyre::Result<()> {
+    async fn execute_push(&self, api_endpoint: &str) -> eyre::Result<()> {
         let api_key = Auth::read_stored_api_key().ok_or_eyre("API key not found")?;
         let client = reqwest::Client::new();
         let pkg_bytes = read_file(&self.pkg)?;
@@ -140,22 +134,19 @@ impl PushArgs {
                     .mime_str("application/octet-stream")?,
             );
         }
-        // Add force flag if set.
         if self.force {
             form = form.text("force", "true");
         }
-        // Determine base URL.
-        let base_url = match self.staging {
-            true => API_URL_STAGING,
-            false => &self.endpoint,
-        };
+        if self.public {
+            form = form.text("public", "true");
+        }
         if is_interface_only {
             println!("pushing WIT interface (interface-only)...");
         } else {
             println!("pushing component with WIT interface...");
         }
         let response = client
-            .put(format!("{}/v1/component", base_url))
+            .put(format!("{}/v1/component", api_endpoint))
             .header("Authorization", api_key.trim())
             .multipart(form)
             .send()
@@ -286,6 +277,6 @@ fn read_file(relative_path: &str) -> eyre::Result<Vec<u8>> {
 impl ComponentArgs {
     pub async fn push(&self) -> eyre::Result<()> {
         let args = self.push_args.as_ref().ok_or_eyre("no push args")?;
-        args.execute_push().await
+        args.execute_push(&self.api_endpoint).await
     }
 }
