@@ -1,27 +1,16 @@
+use super::run_command;
 use crate::language::Language;
-use eyre::{Context, bail};
+use async_trait::async_trait;
+use eyre::bail;
 use include_dir::{Dir, include_dir};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-
-/// Runs a command in the given directory, failing if it exits non-zero.
-fn run_command(dir: &Path, program: &str, args: &[&str]) -> eyre::Result<()> {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(dir)
-        .status()
-        .wrap_err_with(|| format!("failed to run {}", program))?;
-    if !status.success() {
-        bail!("{} {} failed", program, args.join(" "));
-    }
-    Ok(())
-}
 
 static TEMPLATE: Dir = include_dir!("$CARGO_MANIFEST_DIR/init/typescript");
 
 /// TypeScript language support.
 pub struct TypeScript;
 
+#[async_trait]
 impl Language for TypeScript {
     fn name(&self) -> &'static str {
         "typescript"
@@ -63,7 +52,7 @@ impl Language for TypeScript {
         Ok(dir.join("build").join("component.wasm"))
     }
 
-    fn build_component(&self, dir: &Path) -> eyre::Result<PathBuf> {
+    async fn build_component(&self, dir: &Path, _api_endpoint: &str) -> eyre::Result<PathBuf> {
         if !dir.join("node_modules").exists() {
             run_command(dir, "npm", &["install"])?;
         }

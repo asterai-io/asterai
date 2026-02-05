@@ -137,6 +137,7 @@ name = "asterai"
 version = "1.0.0-alpha.2"
 dependencies = [
  "asterai_runtime",
+ "async-trait",
  "eyre",
  "include_dir",
  "once_cell",

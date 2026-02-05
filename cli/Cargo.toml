@@ -32,3 +32,4 @@ include_dir = "0.7"
 semver = "1"
 wit-parser = { workspace = true }
 wit-component = { workspace = true }
+async-trait = { workspace = true }

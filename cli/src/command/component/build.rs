@@ -20,7 +20,7 @@ impl ComponentArgs {
         let lang = language::detect(&cwd)
             .ok_or_eyre("could not detect component language in current directory")?;
         println!("Detected {} component", lang.name());
-        let wasm_path = lang.build_component(&cwd)?;
+        let wasm_path = lang.build_component(&cwd, &self.api_endpoint).await?;
         println!("Component built at {:?}", wasm_path);
         Ok(())
     }
