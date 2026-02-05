@@ -64,44 +64,10 @@ impl Language for TypeScript {
     }
 
     fn build_component(&self, dir: &Path) -> eyre::Result<PathBuf> {
-        // Install dependencies if node_modules doesn't exist.
         if !dir.join("node_modules").exists() {
             run_command(dir, "npm", &["install"])?;
         }
-        let package_wit = self.get_package_wit_path(dir);
-        let package_wit = package_wit.to_string_lossy();
-        // Generate TypeScript types from WIT.
-        run_command(
-            dir,
-            "npx",
-            &[
-                "jco",
-                "guest-types",
-                &package_wit,
-                "-n",
-                "component",
-                "-o",
-                "generated/",
-            ],
-        )?;
-        // Compile TypeScript.
-        run_command(dir, "npx", &["tsc"])?;
-        // Componentize JS into WASM.
-        run_command(
-            dir,
-            "npx",
-            &[
-                "jco",
-                "componentize",
-                "build/component.js",
-                "-w",
-                &package_wit,
-                "-n",
-                "component",
-                "-o",
-                "build/component.wasm",
-            ],
-        )?;
+        run_command(dir, "npm", &["run", "build"])?;
         let wasm_path = self.get_component_wasm_path(dir)?;
         if !wasm_path.exists() {
             bail!("built WASM file not found at {:?}", wasm_path);
