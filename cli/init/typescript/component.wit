@@ -1,11 +1,11 @@
 package ___USERNAME___:___COMPONENT___@0.1.0;
 
+interface ___COMPONENT___ {
+  greet: func(name: string);
+}
+
 world component {
   import asterai:host/api@1.0.0;
 
-  export mul: func(a: f32, b: f32) -> binary-operation-result;
-
-  record binary-operation-result {
-    value: f64,
-  }
+  export ___COMPONENT___;
 }
