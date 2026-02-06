@@ -91,8 +91,9 @@ impl ComponentRuntimeEngine {
         for interface in components.into_iter() {
             trace!("@ interface {}", interface.component().id());
             trace!("imports count: {}", interface.get_imports_count());
+            print!("compiling {}...", interface.component());
             let component = interface.fetch_compiled_component(engine).await?;
-            trace!("fetched compiled component");
+            println!(" done.");
             let instance = linker
                 .instantiate_async(&mut store, &component)
                 .await
