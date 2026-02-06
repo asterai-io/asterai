@@ -16,7 +16,9 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use wasmtime::component::*;
-use wasmtime::{AsContext, AsContextMut, Config, Engine, Store, StoreContext, StoreContextMut};
+use wasmtime::{
+    AsContext, AsContextMut, Cache, Config, Engine, Store, StoreContext, StoreContextMut,
+};
 use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::p2::add_to_linker_async;
 use wasmtime_wasi_http::{WasiHttpCtx, add_only_http_to_linker_async};
@@ -24,6 +26,8 @@ use wasmtime_wasi_http::{WasiHttpCtx, add_only_http_to_linker_async};
 static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = Config::new();
     config.async_support(true);
+    let cache = Cache::from_file(None).unwrap();
+    config.cache(Some(cache));
     Engine::new(&config).unwrap()
 });
 
