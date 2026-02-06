@@ -90,6 +90,9 @@ fn extract_template(
     component_name: &str,
 ) -> eyre::Result<()> {
     let namespace_snake = namespace.replace('-', "_");
+    let namespace_camel = kebab_to_camel(namespace);
+    let component_snake = component_name.replace('-', "_");
+    let component_camel = kebab_to_camel(component_name);
     fs::create_dir_all(dst).wrap_err_with(|| format!("failed to create directory: {:?}", dst))?;
     for file in template.files() {
         let mut file_path = dst.join(file.path());
@@ -102,7 +105,10 @@ fn extract_template(
             Ok(text) => text
                 .replace("___USERNAME___", namespace)
                 .replace("___USERNAME_SNAKE___", &namespace_snake)
+                .replace("___USERNAME_CAMEL___", &namespace_camel)
                 .replace("___COMPONENT___", component_name)
+                .replace("___COMPONENT_SNAKE___", &component_snake)
+                .replace("___COMPONENT_CAMEL___", &component_camel)
                 .into_bytes(),
             Err(_) => file.contents().to_vec(),
         };
@@ -116,6 +122,25 @@ fn extract_template(
         extract_template(dir, dst, namespace, component_name)?;
     }
     Ok(())
+}
+
+/// Converts a kebab-case string to camelCase.
+fn kebab_to_camel(s: &str) -> String {
+    let mut result = String::new();
+    let mut capitalize_next = false;
+    for c in s.chars() {
+        if c == '-' {
+            capitalize_next = true;
+            continue;
+        }
+        if capitalize_next {
+            result.extend(c.to_uppercase());
+            capitalize_next = false;
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// Validates that a name is a valid WIT identifier (kebab-case).
