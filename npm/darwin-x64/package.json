@@ -1,6 +1,6 @@
 {
   "name": "@asterai/cli-darwin-x64",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "description": "macOS x64 (Intel) binary for asterai CLI",
   "author": "asterai <support@asterai.io>",
   "repository": {
