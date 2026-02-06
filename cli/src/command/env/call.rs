@@ -4,8 +4,10 @@ use crate::runtime::build_runtime;
 use asterai_runtime::component::function_name::ComponentFunctionName;
 use asterai_runtime::component::{PackageName, Version};
 use asterai_runtime::runtime::Val;
+use asterai_runtime::runtime::parsing::{json_value_to_val, parse_primitive};
 use eyre::{OptionExt, bail};
 use std::str::FromStr;
+use wit_parser::{TypeDef, TypeDefKind};
 
 impl EnvArgs {
     pub async fn call(&self) -> eyre::Result<()> {
@@ -19,7 +21,7 @@ impl EnvArgs {
         let function = runtime
             .find_function(&component.id(), &function_name, package_name_opt)
             .ok_or_eyre("function not found")?;
-        let inputs = parse_inputs_from_string_args(&self.function_args)?;
+        let inputs = parse_inputs_from_string_args(&self.function_args, &function.inputs)?;
         runtime.call_function(function, &inputs).await?;
         Ok(())
     }
@@ -65,9 +67,129 @@ fn parse_function_string_into_parts(
     ))
 }
 
-fn parse_inputs_from_string_args(_args: &[String]) -> eyre::Result<Vec<Val>> {
-    // TODO
-    Ok(Vec::new())
+fn parse_inputs_from_string_args(
+    args: &[String],
+    expected_inputs: &[(String, TypeDef)],
+) -> eyre::Result<Vec<Val>> {
+    if args.len() != expected_inputs.len() {
+        bail!(
+            "expected {} argument(s), got {}",
+            expected_inputs.len(),
+            args.len()
+        );
+    }
+    args.iter()
+        .zip(expected_inputs.iter())
+        .map(|(arg, (name, type_def))| {
+            parse_arg(arg, type_def)
+                .map_err(|e| eyre::eyre!("failed to parse argument '{name}': {e}"))
+        })
+        .collect()
+}
+
+fn parse_arg(arg: &str, type_def: &TypeDef) -> eyre::Result<Val> {
+    match &type_def.kind {
+        TypeDefKind::Type(ty) => parse_primitive(strip_quotes(arg), ty),
+        TypeDefKind::Record(record) => {
+            let json: serde_json::Value = serde_json::from_str(arg)
+                .map_err(|e| eyre::eyre!("expected JSON for record: {e}"))?;
+            let serde_json::Value::Object(map) = json else {
+                bail!("expected JSON object for record");
+            };
+            let fields = record
+                .fields
+                .iter()
+                .map(|field| {
+                    let value = map
+                        .get(&field.name)
+                        .ok_or_else(|| eyre::eyre!("missing field '{}'", field.name))?;
+                    let val = json_value_to_val(value, &field.ty)?;
+                    Ok((field.name.clone(), val))
+                })
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(Val::Record(fields))
+        }
+        TypeDefKind::List(ty) => {
+            let json: serde_json::Value = serde_json::from_str(arg)
+                .map_err(|e| eyre::eyre!("expected JSON for list: {e}"))?;
+            let serde_json::Value::Array(arr) = json else {
+                bail!("expected JSON array for list");
+            };
+            let vals = arr
+                .iter()
+                .map(|v| json_value_to_val(v, ty))
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(Val::List(vals))
+        }
+        TypeDefKind::Tuple(tuple) => {
+            let json: serde_json::Value = serde_json::from_str(arg)
+                .map_err(|e| eyre::eyre!("expected JSON for tuple: {e}"))?;
+            let serde_json::Value::Array(arr) = json else {
+                bail!("expected JSON array for tuple");
+            };
+            if arr.len() != tuple.types.len() {
+                bail!(
+                    "tuple has {} elements, got {}",
+                    tuple.types.len(),
+                    arr.len()
+                );
+            }
+            let vals = arr
+                .iter()
+                .zip(tuple.types.iter())
+                .map(|(v, ty)| json_value_to_val(v, ty))
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(Val::Tuple(vals))
+        }
+        TypeDefKind::Enum(e) => {
+            let arg = strip_quotes(arg);
+            let is_valid = e.cases.iter().any(|c| c.name == arg);
+            if !is_valid {
+                let cases: Vec<&str> = e.cases.iter().map(|c| c.name.as_str()).collect();
+                bail!("invalid enum value '{arg}', expected one of: {cases:?}");
+            }
+            Ok(Val::Enum(arg.to_owned()))
+        }
+        TypeDefKind::Option(ty) => {
+            let arg_stripped = strip_quotes(arg);
+            if arg_stripped == "null" || arg_stripped == "none" {
+                return Ok(Val::Option(None));
+            }
+            let inner = json_value_to_val(&serde_json::from_str(arg)?, ty)?;
+            Ok(Val::Option(Some(Box::new(inner))))
+        }
+        TypeDefKind::Flags(flags) => {
+            let json: serde_json::Value = serde_json::from_str(arg)
+                .map_err(|e| eyre::eyre!("expected JSON for flags: {e}"))?;
+            let serde_json::Value::Array(arr) = json else {
+                bail!("expected JSON array for flags");
+            };
+            let names = arr
+                .iter()
+                .map(|v| match v {
+                    serde_json::Value::String(s) => {
+                        let is_valid = flags.flags.iter().any(|f| f.name == *s);
+                        if !is_valid {
+                            bail!("invalid flag '{s}'");
+                        }
+                        Ok(s.clone())
+                    }
+                    _ => bail!("expected string for flag name"),
+                })
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(Val::Flags(names))
+        }
+        _ => {
+            bail!("unsupported type: {:#?}", type_def.kind);
+        }
+    }
+}
+
+/// Strips surrounding double quotes from a string if present.
+fn strip_quotes(s: &str) -> &str {
+    s.strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(s)
 }
 
 fn package_name_from_str(package_name_str: &str) -> eyre::Result<PackageName> {

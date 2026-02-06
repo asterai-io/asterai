@@ -11,6 +11,7 @@ use log::trace;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -92,6 +93,7 @@ impl ComponentRuntimeEngine {
             trace!("@ interface {}", interface.component().id());
             trace!("imports count: {}", interface.get_imports_count());
             print!("compiling {}...", interface.component());
+            std::io::stdout().flush().ok();
             let component = interface.fetch_compiled_component(engine).await?;
             println!(" done.");
             let instance = linker
