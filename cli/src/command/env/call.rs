@@ -23,10 +23,10 @@ impl EnvArgs {
             .ok_or_eyre("function not found")?;
         let inputs = parse_inputs_from_string_args(&self.function_args, &function.inputs)?;
         let output_opt = runtime.call_function(function, &inputs).await?;
-        if let Some(output) = output_opt {
-            if let Some(function_output) = output.function_output_opt {
-                print_val(function_output.value.val);
-            }
+        if let Some(output) = output_opt
+            && let Some(function_output) = output.function_output_opt
+        {
+            print_val(function_output.value.val);
         }
         Ok(())
     }
