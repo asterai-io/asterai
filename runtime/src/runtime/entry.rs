@@ -9,6 +9,8 @@ use std::future::Future;
 use wasmtime::StoreContextMut;
 use wasmtime::component::Linker;
 
+type HostFuture<'a, T> = Box<dyn Future<Output = Result<T, wasmtime::Error>> + Send + 'a>;
+
 pub fn add_asterai_host_to_linker(linker: &mut Linker<HostEnv>) -> eyre::Result<()> {
     let mut instance = linker
         .instance("asterai:host/api@1.0.0")
@@ -37,7 +39,7 @@ pub fn add_asterai_host_to_linker(linker: &mut Linker<HostEnv>) -> eyre::Result<
 fn get_runtime_info<'a>(
     _store: StoreContextMut<'a, HostEnv>,
     _params: (),
-) -> Box<dyn Future<Output = Result<(RuntimeInfo,), wasmtime::Error>> + Send + 'a> {
+) -> HostFuture<'a, (RuntimeInfo,)> {
     Box::new(async move {
         let runtime_info = RuntimeInfo {
             version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -49,7 +51,7 @@ fn get_runtime_info<'a>(
 fn list_components<'a>(
     store: StoreContextMut<'a, HostEnv>,
     _params: (),
-) -> Box<dyn Future<Output = Result<(Vec<ComponentInfo>,), wasmtime::Error>> + Send + 'a> {
+) -> HostFuture<'a, (Vec<ComponentInfo>,)> {
     Box::new(async move {
         let infos = build_all_component_infos(&store);
         Ok((infos,))
@@ -59,7 +61,7 @@ fn list_components<'a>(
 fn list_other_components<'a>(
     store: StoreContextMut<'a, HostEnv>,
     _params: (),
-) -> Box<dyn Future<Output = Result<(Vec<ComponentInfo>,), wasmtime::Error>> + Send + 'a> {
+) -> HostFuture<'a, (Vec<ComponentInfo>,)> {
     Box::new(async move {
         let caller_id = get_last_component_id(&store);
         let infos = build_all_component_infos(&store)
@@ -73,7 +75,7 @@ fn list_other_components<'a>(
 fn get_component<'a>(
     store: StoreContextMut<'a, HostEnv>,
     (name,): (String,),
-) -> Box<dyn Future<Output = Result<(Option<ComponentInfo>,), wasmtime::Error>> + Send + 'a> {
+) -> HostFuture<'a, (Option<ComponentInfo>,)> {
     Box::new(async move {
         let info = build_all_component_infos(&store)
             .into_iter()
@@ -85,7 +87,7 @@ fn get_component<'a>(
 fn component_implements<'a>(
     store: StoreContextMut<'a, HostEnv>,
     (component_name, interface_name): (String, String),
-) -> Box<dyn Future<Output = Result<(bool,), wasmtime::Error>> + Send + 'a> {
+) -> HostFuture<'a, (bool,)> {
     Box::new(async move {
         let found = build_all_component_infos(&store)
             .into_iter()
@@ -98,7 +100,7 @@ fn component_implements<'a>(
 fn call_component_function<'a>(
     _store: StoreContextMut<'a, HostEnv>,
     (_component_name, _function_name, _args_json): (String, String, String),
-) -> Box<dyn Future<Output = Result<(Result<String, CallError>,), wasmtime::Error>> + Send + 'a> {
+) -> HostFuture<'a, (Result<String, CallError>,)> {
     Box::new(async move {
         Ok((Err(CallError {
             kind: CallErrorKind::InvocationFailed,
