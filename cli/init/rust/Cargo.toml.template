@@ -1,5 +1,5 @@
 [package]
-name = "___COMPONENT___"
+name = "___COMPONENT_SNAKE___"
 # Note that this version does not matter for the component,
 # only the one in component.wit is used.
 version = "0.0.0"
