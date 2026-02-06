@@ -4,7 +4,7 @@ use crate::runtime::build_runtime;
 use asterai_runtime::component::function_name::ComponentFunctionName;
 use asterai_runtime::component::{PackageName, Version};
 use asterai_runtime::runtime::Val;
-use asterai_runtime::runtime::parsing::{json_value_to_val, parse_primitive};
+use asterai_runtime::runtime::parsing::{ValExt, json_value_to_val, parse_primitive};
 use eyre::{OptionExt, bail};
 use std::str::FromStr;
 use wit_parser::{TypeDef, TypeDefKind};
@@ -22,7 +22,12 @@ impl EnvArgs {
             .find_function(&component.id(), &function_name, package_name_opt)
             .ok_or_eyre("function not found")?;
         let inputs = parse_inputs_from_string_args(&self.function_args, &function.inputs)?;
-        runtime.call_function(function, &inputs).await?;
+        let output_opt = runtime.call_function(function, &inputs).await?;
+        if let Some(output) = output_opt {
+            if let Some(function_output) = output.function_output_opt {
+                print_val(function_output.value.val);
+            }
+        }
         Ok(())
     }
 }
@@ -190,6 +195,16 @@ fn strip_quotes(s: &str) -> &str {
     s.strip_prefix('"')
         .and_then(|s| s.strip_suffix('"'))
         .unwrap_or(s)
+}
+
+fn print_val(val: Val) {
+    let Some(json) = val.try_into_json_value() else {
+        return;
+    };
+    match json {
+        serde_json::Value::String(s) => println!("{s}"),
+        other => println!("{other}"),
+    }
 }
 
 fn package_name_from_str(package_name_str: &str) -> eyre::Result<PackageName> {
