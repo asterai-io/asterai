@@ -2,7 +2,7 @@ use crate::command::env::EnvArgs;
 use crate::local_store::LocalStore;
 use crate::runtime::build_runtime;
 use asterai_runtime::component::function_name::ComponentFunctionName;
-use asterai_runtime::component::{PackageName, Version};
+use asterai_runtime::component::{ComponentId, PackageName, Version};
 use asterai_runtime::runtime::Val;
 use asterai_runtime::runtime::parsing::{ValExt, json_value_to_val, parse_primitive};
 use eyre::{OptionExt, bail};
@@ -11,15 +11,21 @@ use wit_parser::{TypeDef, TypeDefKind};
 
 impl EnvArgs {
     pub async fn call(&self) -> eyre::Result<()> {
-        let resource = self.resource()?;
-        let component = self.component.as_ref().unwrap();
+        let resource_id = self.resource_id()?;
+        let comp_arg = self.component_arg.as_ref().unwrap();
+        let comp_ns = comp_arg.resolved_namespace();
+        let comp_name = comp_arg.name();
+        let comp_id = ComponentId::from_str(&format!("{comp_ns}:{comp_name}"))?;
         let function_string = self.function.clone().unwrap();
-        println!("calling env {resource}'s {component} component function {function_string}");
-        let environment = LocalStore::fetch_environment(&resource.id())?;
+        println!(
+            "calling env {resource_id}'s {comp_ns}:{comp_name} \
+             component function {function_string}"
+        );
+        let environment = LocalStore::fetch_environment(&resource_id)?;
         let mut runtime = build_runtime(environment).await?;
         let (function_name, package_name_opt) = parse_function_string_into_parts(function_string)?;
         let function = runtime
-            .find_function(&component.id(), &function_name, package_name_opt)
+            .find_function(&comp_id, &function_name, package_name_opt)
             .ok_or_eyre("function not found")?;
         let inputs = parse_inputs_from_string_args(&self.function_args, &function.inputs)?;
         let output_opt = runtime.call_function(function, &inputs).await?;

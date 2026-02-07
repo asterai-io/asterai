@@ -1,4 +1,5 @@
 use crate::auth::Auth;
+use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
 use crate::runtime::build_runtime;
@@ -20,9 +21,8 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub(super) struct RunArgs {
-    /// Environment reference (namespace:name or namespace:name@version).
-    // TODO also support just `name` and default to user's personal namespace
-    env_ref: String,
+    /// Environment reference (name, namespace:name, or namespace:name@version).
+    env_ref: ResourceOrIdArg,
     /// If true, don't pull from registry - use cached version only.
     no_pull: bool,
     port: u16,
@@ -31,7 +31,7 @@ pub(super) struct RunArgs {
 
 impl RunArgs {
     pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
-        let mut env_ref: Option<String> = None;
+        let mut env_ref: Option<ResourceOrIdArg> = None;
         let mut no_pull = false;
         let mut port: u16 = 8080;
         let mut host = "127.0.0.1".to_string();
@@ -65,13 +65,14 @@ impl RunArgs {
                     if env_ref.is_some() {
                         bail!("unexpected argument: {}", other);
                     }
-                    env_ref = Some(other.to_string());
+                    env_ref = Some(ResourceOrIdArg::from_str(other).unwrap());
                 }
             }
         }
         let env_ref = env_ref.ok_or_eyre(
-            "missing environment reference\n\nUsage: asterai env run <namespace:name[@version]>\n\
-             Example: asterai env run myteam:my-env",
+            "missing environment reference\n\n\
+             Usage: asterai env run <name[@version]>\n\
+             Example: asterai env run my-env",
         )?;
         Ok(Self {
             env_ref,
@@ -82,9 +83,11 @@ impl RunArgs {
     }
 
     pub async fn execute(&self, api_endpoint: &str, registry_endpoint: &str) -> eyre::Result<()> {
-        let (namespace, name, version) = parse_env_reference(&self.env_ref)?;
+        let namespace = self.env_ref.resolved_namespace();
+        let name = self.env_ref.name();
+        let version = self.env_ref.version().map(|v| v.to_string());
         // Try to find environment locally first.
-        let local_env = self.find_local_environment(&namespace, &name, version.as_deref());
+        let local_env = self.find_local_environment(&namespace, name, version.as_deref());
         let environment = match local_env {
             Some(env) => {
                 println!(
@@ -111,7 +114,7 @@ impl RunArgs {
                 // Pull from registry.
                 self.pull_environment(
                     &namespace,
-                    &name,
+                    name,
                     version.as_deref(),
                     api_endpoint,
                     registry_endpoint,
@@ -270,24 +273,6 @@ impl RunArgs {
     }
 }
 
-/// Parse an environment reference like "namespace:name" or "namespace:name@version".
-fn parse_env_reference(s: &str) -> eyre::Result<(String, String, Option<String>)> {
-    let (id_part, version) = match s.split_once('@') {
-        Some((id, ver)) => (id, Some(ver.to_string())),
-        None => (s, None),
-    };
-    let (namespace, name) = id_part
-        .split_once(':')
-        .or_else(|| id_part.split_once('/'))
-        .ok_or_else(|| {
-            eyre::eyre!(
-                "invalid environment reference '{}': use namespace:name or namespace:name@version",
-                s
-            )
-        })?;
-    Ok((namespace.to_string(), name.to_string(), version))
-}
-
 async fn handle_request(
     State(route_table): State<Arc<HttpRouteTable>>,
     req: axum::extract::Request,
@@ -357,10 +342,13 @@ fn print_help() {
     println!(
         r#"Run an environment locally.
 
-Usage: asterai env run <namespace:name[@version]> [options]
+Usage: asterai env run <name[@version]> [options]
+       asterai env run <namespace:name[@version]> [options]
 
 Arguments:
-  <namespace:name[@version]>  Environment reference (runs latest if no version specified)
+  <[namespace:]name[@version]>  Environment reference
+                                Namespace defaults to your account namespace
+                                Version defaults to latest available
 
 Options:
   --no-pull             Don't pull from registry, use cached version only
@@ -369,10 +357,11 @@ Options:
   -h, --help            Show this help message
 
 Examples:
+  asterai env run my-env                    # Run latest, default namespace
   asterai env run myteam:my-env             # Pull (if needed) and run latest
   asterai env run myteam:my-env@1.2.0       # Pull (if needed) and run specific version
-  asterai env run myteam:my-env --no-pull   # Run cached version only
-  asterai env run myteam:my-env -p 3000     # Run with HTTP server on port 3000
+  asterai env run my-env --no-pull          # Run cached version only
+  asterai env run my-env -p 3000            # Run with HTTP server on port 3000
 "#
     );
 }
