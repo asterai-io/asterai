@@ -157,6 +157,7 @@ mod test {
                 name: ComponentFunctionName::from_str("important_function").unwrap(),
                 inputs: vec![],
                 output_type: None,
+                docs: None,
                 component: Component::from_str("namespace:component@0.1.0").unwrap(),
                 package_name: wit_parser::PackageName {
                     namespace: "namespace".to_owned(),
@@ -188,6 +189,7 @@ mod test {
                 name: ComponentFunctionName::from_str("important_function").unwrap(),
                 inputs: vec![],
                 output_type: None,
+                docs: None,
                 component: Component::from_str("namespace:component@0.1.0").unwrap(),
                 package_name: wit_parser::PackageName {
                     namespace: "namespace".to_owned(),
