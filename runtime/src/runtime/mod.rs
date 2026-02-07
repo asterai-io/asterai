@@ -2,25 +2,31 @@ use crate::component::ComponentId;
 use crate::component::binary::ComponentBinary;
 use crate::component::function_interface::ComponentFunctionInterface;
 use crate::component::function_name::ComponentFunctionName;
+use crate::component::wit::ComponentInterface;
+use crate::runtime::http::{HttpRoute, HttpRouteTable};
 use crate::runtime::output::{ComponentFunctionOutput, ComponentOutput};
 use crate::runtime::wasm_instance::{
     ComponentRuntimeEngine, call_wasm_component_function_concurrent,
 };
 use derive_getters::Getters;
 use eyre::eyre;
-use log::error;
+use log::{error, trace};
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 pub use wasmtime::component::Val;
+use wasmtime_wasi_http::bindings::ProxyPre;
 use wit_parser::PackageName;
 
 mod entry;
 pub mod env;
+pub mod http;
 pub mod output;
 pub mod parsing;
-mod std_out_err;
+pub(crate) mod std_out_err;
 mod wasm_instance;
 mod wit_bindings;
 
@@ -44,6 +50,8 @@ pub struct ComponentRuntime {
     app_id: Uuid,
     #[getter(skip)]
     engine: ComponentRuntimeEngine,
+    #[getter(skip)]
+    http_route_table: Arc<HttpRouteTable>,
 }
 
 impl ComponentRuntime {
@@ -52,14 +60,20 @@ impl ComponentRuntime {
         // TODO: change app ID for resource ID?
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
-        env_vars: &std::collections::HashMap<String, String>,
+        env_vars: &HashMap<String, String>,
     ) -> eyre::Result<Self> {
-        let instance =
+        let engine =
             ComponentRuntimeEngine::new(components, app_id, component_output_tx, env_vars).await?;
+        let http_route_table = build_http_route_table(&engine, env_vars)?;
         Ok(Self {
             app_id,
-            engine: instance,
+            engine,
+            http_route_table: Arc::new(http_route_table),
         })
+    }
+
+    pub fn http_route_table(&self) -> Arc<HttpRouteTable> {
+        self.http_route_table.clone()
     }
 
     pub fn component_interfaces(&self) -> Vec<ComponentBinary> {
@@ -180,6 +194,43 @@ impl ComponentOutput {
             component_response_to_agent_opt,
         })
     }
+}
+
+fn has_incoming_handler(component_binary: &ComponentBinary) -> bool {
+    component_binary
+        .exported_interfaces()
+        .iter()
+        .any(|e| e.name.starts_with("wasi:http/incoming-handler"))
+}
+
+fn build_http_route_table(
+    engine: &ComponentRuntimeEngine,
+    env_vars: &HashMap<String, String>,
+) -> eyre::Result<HttpRouteTable> {
+    let mut routes = HashMap::new();
+    for entry in &engine.compiled_components {
+        if !has_incoming_handler(&entry.component_binary) {
+            continue;
+        }
+        let component = entry.component_binary.component();
+        trace!(
+            "detected incoming-handler on {}:{}",
+            component.namespace(),
+            component.name()
+        );
+        let instance_pre = engine
+            .linker
+            .instantiate_pre(&entry.component)
+            .map_err(|e| eyre!("{e:#?}"))?;
+        let proxy_pre = ProxyPre::new(instance_pre).map_err(|e| eyre!("{e:#?}"))?;
+        let route_key = format!("{}/{}", component.namespace(), component.name());
+        let http_route = HttpRoute {
+            component: component.clone(),
+            proxy_pre,
+        };
+        routes.insert(route_key, Arc::new(http_route));
+    }
+    Ok(HttpRouteTable::new(routes, env_vars.clone()))
 }
 
 impl Debug for ComponentRuntime {

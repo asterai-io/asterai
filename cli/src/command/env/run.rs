@@ -5,11 +5,18 @@ use crate::runtime::build_runtime;
 use asterai_runtime::component::Component;
 use asterai_runtime::environment::{Environment, EnvironmentMetadata};
 use asterai_runtime::resource::metadata::ResourceKind;
+use asterai_runtime::runtime::http::{self, HttpRouteTable};
+use axum::extract::State;
+use axum::response::IntoResponse;
 use eyre::{Context, OptionExt, bail};
+use http_body_util::BodyExt;
+use hyper::StatusCode as HyperStatusCode;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::fs;
+use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub(super) struct RunArgs {
@@ -18,16 +25,34 @@ pub(super) struct RunArgs {
     env_ref: String,
     /// If true, don't pull from registry - use cached version only.
     no_pull: bool,
+    port: u16,
+    host: String,
 }
 
 impl RunArgs {
     pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
         let mut env_ref: Option<String> = None;
         let mut no_pull = false;
-        for arg in args {
+        let mut port: u16 = 8080;
+        let mut host = "127.0.0.1".to_string();
+        let mut args = args.peekable();
+        while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--no-pull" => {
                     no_pull = true;
+                }
+                "--port" | "-p" => {
+                    let val = args
+                        .next()
+                        .ok_or_else(|| eyre::eyre!("--port requires a value"))?;
+                    port = val
+                        .parse()
+                        .map_err(|_| eyre::eyre!("invalid port: {}", val))?;
+                }
+                "--host" => {
+                    host = args
+                        .next()
+                        .ok_or_else(|| eyre::eyre!("--host requires a value"))?;
                 }
                 "--help" | "-h" | "help" => {
                     print_help();
@@ -48,7 +73,12 @@ impl RunArgs {
             "missing environment reference\n\nUsage: asterai env run <namespace:name[@version]>\n\
              Example: asterai env run myteam:my-env",
         )?;
-        Ok(Self { env_ref, no_pull })
+        Ok(Self {
+            env_ref,
+            no_pull,
+            port,
+            host,
+        })
     }
 
     pub async fn execute(&self, api_endpoint: &str, registry_endpoint: &str) -> eyre::Result<()> {
@@ -68,7 +98,8 @@ impl RunArgs {
             None => {
                 if self.no_pull {
                     bail!(
-                        "environment '{}:{}{}' not found locally (use without --no-pull to fetch from registry)",
+                        "environment '{}:{}{}' not found locally \
+                         (use without --no-pull to fetch from registry)",
                         namespace,
                         name,
                         version
@@ -90,7 +121,27 @@ impl RunArgs {
         };
         // Run the environment.
         let mut runtime = build_runtime(environment).await?;
+        let route_table = runtime.http_route_table();
+        let has_http_routes = !route_table.is_empty();
+        if has_http_routes {
+            let addr: SocketAddr = format!("{}:{}", self.host, self.port).parse()?;
+            print_routes(&route_table, &addr);
+            let app = axum::Router::new()
+                .fallback(handle_request)
+                .with_state(route_table);
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            tokio::spawn(async move {
+                if let Err(e) = axum::serve(listener, app).await {
+                    eprintln!("http server error: {e}");
+                }
+            });
+        }
         runtime.run().await?;
+        // If there are HTTP routes but no CLI run components,
+        // keep the process alive for the HTTP server.
+        if has_http_routes {
+            tokio::signal::ctrl_c().await?;
+        }
         Ok(())
     }
 
@@ -237,6 +288,59 @@ fn parse_env_reference(s: &str) -> eyre::Result<(String, String, Option<String>)
     Ok((namespace.to_string(), name.to_string(), version))
 }
 
+async fn handle_request(
+    State(route_table): State<Arc<HttpRouteTable>>,
+    req: axum::extract::Request,
+) -> impl IntoResponse {
+    let path = req.uri().path().to_string();
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() < 2 {
+        return (
+            HyperStatusCode::NOT_FOUND,
+            "not found: expected /:namespace/:name/...",
+        )
+            .into_response();
+    }
+    let namespace = segments[0];
+    let name = segments[1];
+    let route = match route_table.lookup(namespace, name) {
+        Some(r) => r.clone(),
+        None => {
+            return (
+                HyperStatusCode::NOT_FOUND,
+                format!("no component at /{namespace}/{name}"),
+            )
+                .into_response();
+        }
+    };
+    let (mut parts, body) = req.into_parts();
+    parts.uri = http::strip_path_prefix(&parts.uri, namespace, name);
+    // Collect body bytes and re-wrap for wasmtime compatibility.
+    let body_bytes = match body.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(e) => {
+            eprintln!("error reading request body: {e:#}");
+            return (HyperStatusCode::BAD_REQUEST, "failed to read request body").into_response();
+        }
+    };
+    let full_body = http_body_util::Full::new(body_bytes).map_err(|never| match never {});
+    let hyper_req = hyper::Request::from_parts(parts, full_body);
+    match http::handle_http_request(&route, route_table.env_vars(), hyper_req).await {
+        Ok(resp) => resp.into_response(),
+        Err(e) => {
+            eprintln!("error handling request: {e:#}");
+            (HyperStatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into_response()
+        }
+    }
+}
+
+fn print_routes(route_table: &HttpRouteTable, addr: &SocketAddr) {
+    println!("listening on http://{addr}");
+    for (path, route) in route_table.routes() {
+        println!("  /{path} -> {}", route.component);
+    }
+}
+
 fn print_help() {
     println!(
         r#"Run an environment locally.
@@ -248,12 +352,15 @@ Arguments:
 
 Options:
   --no-pull             Don't pull from registry, use cached version only
+  -p, --port <port>     HTTP server port (default: 8080)
+  --host <host>         HTTP server host (default: 127.0.0.1)
   -h, --help            Show this help message
 
 Examples:
   asterai env run myteam:my-env             # Pull (if needed) and run latest
   asterai env run myteam:my-env@1.2.0       # Pull (if needed) and run specific version
   asterai env run myteam:my-env --no-pull   # Run cached version only
+  asterai env run myteam:my-env -p 3000     # Run with HTTP server on port 3000
 "#
     );
 }

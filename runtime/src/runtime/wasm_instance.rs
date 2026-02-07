@@ -23,7 +23,7 @@ use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::p2::add_to_linker_async;
 use wasmtime_wasi_http::{WasiHttpCtx, add_only_http_to_linker_async};
 
-static ENGINE: Lazy<Engine> = Lazy::new(|| {
+pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = Config::new();
     config.async_support(true);
     let cache = Cache::from_file(None).unwrap();
@@ -34,6 +34,13 @@ static ENGINE: Lazy<Engine> = Lazy::new(|| {
 pub struct ComponentRuntimeEngine {
     pub(super) store: Store<StoreState>,
     pub(super) instances: Vec<ComponentRuntimeInstance>,
+    pub(super) linker: Linker<StoreState>,
+    pub(super) compiled_components: Vec<CompiledComponentEntry>,
+}
+
+pub struct CompiledComponentEntry {
+    pub component: wasmtime::component::Component,
+    pub component_binary: ComponentBinary,
 }
 
 #[derive(Clone)]
@@ -88,6 +95,7 @@ impl ComponentRuntimeEngine {
         add_only_http_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
         add_asterai_host_to_linker(&mut linker)?;
         let mut instances = Vec::new();
+        let mut compiled_components = Vec::new();
         // Sort by ascending order of imports count,
         // so that components with no dependencies are added first.
         components.sort_by_key(|b| std::cmp::Reverse(b.get_imports_count()));
@@ -100,6 +108,10 @@ impl ComponentRuntimeEngine {
             std::io::stdout().flush().ok();
             let component = interface.fetch_compiled_component(engine).await?;
             println!(" done.");
+            compiled_components.push(CompiledComponentEntry {
+                component: component.clone(),
+                component_binary: interface.clone(),
+            });
             let instance = linker
                 .instantiate_async(&mut store, &component)
                 .await
@@ -116,6 +128,8 @@ impl ComponentRuntimeEngine {
         let mut runtime_engine = Self {
             store,
             instances: instances.clone(),
+            linker,
+            compiled_components,
         };
         runtime_engine.store.data_mut().runtime_data = Some(HostEnvRuntimeData {
             app_id,
