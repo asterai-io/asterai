@@ -10,7 +10,6 @@ use derive_getters::Getters;
 use eyre::eyre;
 use log::error;
 use once_cell::sync::Lazy;
-use serde_json::Value;
 use std::fmt::Debug;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -20,6 +19,7 @@ use wit_parser::PackageName;
 mod entry;
 pub mod env;
 pub mod output;
+pub mod parsing;
 mod std_out_err;
 mod wasm_instance;
 mod wit_bindings;
@@ -206,56 +206,5 @@ impl ComponentFunctionInterfaceExt for ComponentFunctionInterface {
         inputs: &[Val],
     ) -> eyre::Result<Option<ComponentOutput>> {
         runtime.call_function(self, inputs).await
-    }
-}
-
-pub trait ValExt {
-    fn try_into_json_value(self) -> Option<Value>;
-}
-
-impl ValExt for Val {
-    fn try_into_json_value(self) -> Option<Value> {
-        let value = match self {
-            Val::Bool(v) => Value::Bool(v),
-            Val::S8(v) => Value::Number(v.into()),
-            Val::U8(v) => Value::Number(v.into()),
-            Val::S16(v) => Value::Number(v.into()),
-            Val::U16(v) => Value::Number(v.into()),
-            Val::S32(v) => Value::Number(v.into()),
-            Val::U32(v) => Value::Number(v.into()),
-            Val::S64(v) => Value::Number(v.into()),
-            Val::U64(v) => Value::Number(v.into()),
-            Val::Float32(v) => Value::Number(serde_json::Number::from_f64(v as f64).unwrap()),
-            Val::Float64(v) => Value::Number(serde_json::Number::from_f64(v).unwrap()),
-            Val::Char(v) => Value::String(v.to_string()),
-            Val::String(v) => Value::String(v),
-            Val::List(v) => Value::Array(
-                v.iter()
-                    .filter_map(|val| val.clone().try_into_json_value())
-                    .collect(),
-            ),
-            Val::Tuple(v) => Value::Array(
-                v.iter()
-                    .filter_map(|val| val.clone().try_into_json_value())
-                    .collect(),
-            ),
-            Val::Option(v) => v
-                .as_deref()
-                .and_then(|v| v.clone().try_into_json_value())
-                .unwrap_or(Value::Null),
-            Val::Result(v) => v
-                .ok()
-                .and_then(|v| v.clone()?.try_into_json_value())
-                .unwrap_or(Value::Null),
-            Val::Variant(_, _) => return None,
-            Val::Enum(_) => return None,
-            Val::Record(_) => todo!(),
-            Val::Flags(_) => return None,
-            Val::Resource(_) => return None,
-            Val::Future(_) => return None,
-            Val::Stream(_) => return None,
-            Val::ErrorContext(_) => return None,
-        };
-        Some(value)
     }
 }
