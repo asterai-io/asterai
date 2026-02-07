@@ -7,14 +7,14 @@ use crate::command::env::run::RunArgs;
 use crate::command::env::set_var::SetVarArgs;
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::version_resolver::ComponentRef;
-use asterai_runtime::component::Component;
-use asterai_runtime::resource::{Resource, ResourceId};
+use asterai_runtime::resource::ResourceId;
 use eyre::{OptionExt, bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
 mod add_component;
 mod call;
+pub(crate) mod call_api;
 mod cp;
 mod delete;
 mod edit;
@@ -30,7 +30,7 @@ mod set_var;
 pub struct EnvArgs {
     action: EnvAction,
     env_resource_or_id: Option<ResourceOrIdArg>,
-    component: Option<Component>,
+    component_arg: Option<ResourceOrIdArg>,
     component_ref: Option<ComponentRef>,
     function: Option<String>,
     function_args: Vec<String>,
@@ -85,7 +85,7 @@ impl EnvArgs {
             EnvAction::Run => Self {
                 action,
                 env_resource_or_id: None,
-                component: None,
+                component_arg: None,
                 component_ref: None,
                 function: None,
                 function_args: vec![],
@@ -111,7 +111,7 @@ impl EnvArgs {
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
-                    component: None,
+                    component_arg: None,
                     component_ref: None,
                     function: None,
                     function_args: vec![],
@@ -129,7 +129,7 @@ impl EnvArgs {
             action @ (EnvAction::Inspect | EnvAction::Edit) => Self {
                 action,
                 env_resource_or_id: Some(parse_env_name_or_id()?),
-                component: None,
+                component_arg: None,
                 component_ref: None,
                 function: None,
                 function_args: vec![],
@@ -143,26 +143,29 @@ impl EnvArgs {
                 api_endpoint,
                 registry_endpoint,
             },
-            EnvAction::Call => Self {
-                action,
-                env_resource_or_id: Some(parse_env_name_or_id()?),
-                component: Some(
-                    Component::from_str(&args.next().expect("missing component name"))
-                        .expect("invalid component name"),
-                ),
-                component_ref: None,
-                function: Some(args.next().expect("missing function")),
-                function_args: args.collect::<Vec<_>>(),
-                run_args: None,
-                set_var_args: None,
-                push_args: None,
-                pull_args: None,
-                delete_args: None,
-                cp_args: None,
-                should_open_editor: false,
-                api_endpoint,
-                registry_endpoint,
-            },
+            EnvAction::Call => {
+                let env = parse_env_name_or_id()?;
+                let comp_str = args.next().ok_or_eyre("missing component name")?;
+                let comp_arg = ResourceOrIdArg::from_str(&comp_str).map_err(|e| eyre!(e))?;
+                let function = args.next().ok_or_eyre("missing function")?;
+                Self {
+                    action,
+                    env_resource_or_id: Some(env),
+                    component_arg: Some(comp_arg),
+                    component_ref: None,
+                    function: Some(function),
+                    function_args: args.collect::<Vec<_>>(),
+                    run_args: None,
+                    set_var_args: None,
+                    push_args: None,
+                    pull_args: None,
+                    delete_args: None,
+                    cp_args: None,
+                    should_open_editor: false,
+                    api_endpoint,
+                    registry_endpoint,
+                }
+            }
             EnvAction::AddComponent => {
                 let env_resource_or_id = parse_env_name_or_id()?;
                 let component_string = args.next().ok_or_eyre(
@@ -172,7 +175,7 @@ impl EnvArgs {
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
-                    component: None,
+                    component_arg: None,
                     component_ref: Some(component_ref),
                     function: None,
                     function_args: vec![],
@@ -196,7 +199,7 @@ impl EnvArgs {
                 Self {
                     action,
                     env_resource_or_id: Some(env_resource_or_id),
-                    component: None,
+                    component_arg: None,
                     component_ref: Some(component_ref),
                     function: None,
                     function_args: vec![],
@@ -214,7 +217,7 @@ impl EnvArgs {
             EnvAction::List => Self {
                 action,
                 env_resource_or_id: None,
-                component: None,
+                component_arg: None,
                 component_ref: None,
                 function: None,
                 function_args: vec![],
@@ -231,7 +234,7 @@ impl EnvArgs {
             EnvAction::SetVar => Self {
                 action,
                 env_resource_or_id: None,
-                component: None,
+                component_arg: None,
                 component_ref: None,
                 function: None,
                 function_args: vec![],
@@ -248,7 +251,7 @@ impl EnvArgs {
             EnvAction::Push => Self {
                 action,
                 env_resource_or_id: None,
-                component: None,
+                component_arg: None,
                 component_ref: None,
                 function: None,
                 function_args: vec![],
@@ -265,7 +268,7 @@ impl EnvArgs {
             EnvAction::Pull => Self {
                 action,
                 env_resource_or_id: None,
-                component: None,
+                component_arg: None,
                 component_ref: None,
                 function: None,
                 function_args: vec![],
@@ -282,7 +285,7 @@ impl EnvArgs {
             EnvAction::Delete => Self {
                 action,
                 env_resource_or_id: None,
-                component: None,
+                component_arg: None,
                 component_ref: None,
                 function: None,
                 function_args: vec![],
@@ -299,7 +302,7 @@ impl EnvArgs {
             EnvAction::Cp => Self {
                 action,
                 env_resource_or_id: None,
-                component: None,
+                component_arg: None,
                 component_ref: None,
                 function: None,
                 function_args: vec![],
@@ -378,16 +381,6 @@ impl EnvArgs {
             .unwrap()
             .with_local_namespace_fallback();
         ResourceId::from_str(&resource_id_string).map_err(|e| eyre!(e))
-    }
-
-    // TODO if only resource_id available, should this get latest version?
-    fn resource(&self) -> eyre::Result<Resource> {
-        let resource_id_string = self
-            .env_resource_or_id
-            .as_ref()
-            .unwrap()
-            .with_local_namespace_fallback();
-        Resource::from_str(&resource_id_string).map_err(|e| eyre!(e))
     }
 
     pub async fn push(&self) -> eyre::Result<()> {

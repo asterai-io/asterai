@@ -1,13 +1,15 @@
 use crate::auth::Auth;
+use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use eyre::{Context, OptionExt, bail};
 use reqwest::StatusCode;
 use std::fs;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct DeleteArgs {
-    /// Environment reference (namespace:name).
-    env_ref: String,
+    /// Environment reference (name or namespace:name).
+    env_ref: ResourceOrIdArg,
     /// Skip confirmation prompt.
     force: bool,
     /// Delete from remote registry instead of local.
@@ -16,7 +18,7 @@ pub struct DeleteArgs {
 
 impl DeleteArgs {
     pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
-        let mut env_ref: Option<String> = None;
+        let mut env_ref: Option<ResourceOrIdArg> = None;
         let mut force = false;
         let mut remote = false;
         for arg in args {
@@ -38,13 +40,14 @@ impl DeleteArgs {
                     if env_ref.is_some() {
                         bail!("unexpected argument: {}", other);
                     }
-                    env_ref = Some(other.to_string());
+                    env_ref = Some(ResourceOrIdArg::from_str(other).unwrap());
                 }
             }
         }
         let env_ref = env_ref.ok_or_eyre(
-            "missing environment reference\n\nUsage: asterai env delete <namespace:name>\n\
-             Example: asterai env delete myteam:my-env",
+            "missing environment reference\n\n\
+             Usage: asterai env delete <name>\n\
+             Example: asterai env delete my-env",
         )?;
         Ok(Self {
             env_ref,
@@ -54,11 +57,12 @@ impl DeleteArgs {
     }
 
     pub async fn execute(&self, api_endpoint: &str) -> eyre::Result<()> {
-        let (namespace, name) = parse_env_reference(&self.env_ref)?;
+        let namespace = self.env_ref.resolved_namespace();
+        let name = self.env_ref.name();
         if self.remote {
-            self.execute_remote(&namespace, &name, api_endpoint).await
+            self.execute_remote(&namespace, name, api_endpoint).await
         } else {
-            self.execute_local(&namespace, &name)
+            self.execute_local(&namespace, name)
         }
     }
 
@@ -165,26 +169,18 @@ impl DeleteArgs {
     }
 }
 
-/// Parse an environment reference like "namespace:name".
-fn parse_env_reference(s: &str) -> eyre::Result<(String, String)> {
-    let (namespace, name) = s
-        .split_once(':')
-        .or_else(|| s.split_once('/'))
-        .ok_or_else(|| eyre::eyre!("invalid environment reference '{}': use namespace:name", s))?;
-
-    Ok((namespace.to_string(), name.to_string()))
-}
-
 fn print_help() {
     println!(
         r#"Delete an environment.
 
 By default, deletes the environment locally. Use --remote to delete from the registry.
 
-Usage: asterai env delete <namespace:name> [options]
+Usage: asterai env delete <name> [options]
+       asterai env delete <namespace:name> [options]
 
 Arguments:
-  <namespace:name>      Environment to delete
+  <[namespace:]name>    Environment to delete
+                        Namespace defaults to your account namespace
 
 Options:
   -r, --remote          Delete from registry instead of locally
@@ -192,7 +188,7 @@ Options:
   -h, --help            Show this help message
 
 Examples:
-  asterai env delete myteam:my-env              # Delete locally
+  asterai env delete my-env                     # Delete locally, default namespace
   asterai env delete myteam:my-env --force      # Delete locally, skip confirmation
   asterai env delete myteam:my-env --remote     # Delete from registry
 "#

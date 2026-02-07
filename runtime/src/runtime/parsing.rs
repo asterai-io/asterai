@@ -1,7 +1,7 @@
 use eyre::bail;
 use serde_json::Value;
 use wasmtime::component::Val;
-use wit_parser::Type;
+use wit_parser::{Type, TypeDef, TypeDefKind};
 
 pub trait ValExt {
     fn try_into_json_value(self) -> Option<Value>;
@@ -134,4 +134,92 @@ fn json_to_i64(value: &Value) -> eyre::Result<i64> {
 
 fn json_to_f64(value: &Value) -> eyre::Result<f64> {
     value.as_f64().ok_or_else(|| eyre::eyre!("expected number"))
+}
+
+/// Converts a JSON value to a wasmtime Val based on the expected WIT TypeDef.
+pub fn json_value_to_val_typedef(value: &Value, type_def: &TypeDef) -> eyre::Result<Val> {
+    match &type_def.kind {
+        TypeDefKind::Type(ty) => json_value_to_val(value, ty),
+        TypeDefKind::Record(record) => {
+            let Value::Object(map) = value else {
+                bail!("expected JSON object for record");
+            };
+            let fields = record
+                .fields
+                .iter()
+                .map(|field| {
+                    let v = map
+                        .get(&field.name)
+                        .ok_or_else(|| eyre::eyre!("missing field '{}'", field.name))?;
+                    let val = json_value_to_val(v, &field.ty)?;
+                    Ok((field.name.clone(), val))
+                })
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(Val::Record(fields))
+        }
+        TypeDefKind::List(ty) => {
+            let Value::Array(arr) = value else {
+                bail!("expected JSON array for list");
+            };
+            let vals = arr
+                .iter()
+                .map(|v| json_value_to_val(v, ty))
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(Val::List(vals))
+        }
+        TypeDefKind::Tuple(tuple) => {
+            let Value::Array(arr) = value else {
+                bail!("expected JSON array for tuple");
+            };
+            if arr.len() != tuple.types.len() {
+                bail!(
+                    "tuple has {} elements, got {}",
+                    tuple.types.len(),
+                    arr.len()
+                );
+            }
+            let vals = arr
+                .iter()
+                .zip(tuple.types.iter())
+                .map(|(v, ty)| json_value_to_val(v, ty))
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(Val::Tuple(vals))
+        }
+        TypeDefKind::Enum(e) => {
+            let Value::String(s) = value else {
+                bail!("expected string for enum");
+            };
+            if !e.cases.iter().any(|c| c.name == *s) {
+                let cases: Vec<&str> = e.cases.iter().map(|c| c.name.as_str()).collect();
+                bail!("invalid enum value '{s}', expected one of: {cases:?}");
+            }
+            Ok(Val::Enum(s.clone()))
+        }
+        TypeDefKind::Option(ty) => {
+            if value.is_null() {
+                return Ok(Val::Option(None));
+            }
+            let inner = json_value_to_val(value, ty)?;
+            Ok(Val::Option(Some(Box::new(inner))))
+        }
+        TypeDefKind::Flags(flags) => {
+            let Value::Array(arr) = value else {
+                bail!("expected JSON array for flags");
+            };
+            let names = arr
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => {
+                        if !flags.flags.iter().any(|f| f.name == *s) {
+                            bail!("invalid flag '{s}'");
+                        }
+                        Ok(s.clone())
+                    }
+                    _ => bail!("expected string for flag name"),
+                })
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(Val::Flags(names))
+        }
+        _ => bail!("unsupported type: {:#?}", type_def.kind),
+    }
 }

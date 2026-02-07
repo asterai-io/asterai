@@ -1,4 +1,6 @@
 use crate::auth::Auth;
+use crate::command::env::call_api::{AppState, CORS_ORIGINS_ENV, RUNTIME_SECRET_ENV, handle_call};
+use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
 use crate::runtime::build_runtime;
@@ -17,12 +19,13 @@ use std::fs;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::sync::Mutex;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 #[derive(Debug)]
 pub(super) struct RunArgs {
-    /// Environment reference (namespace:name or namespace:name@version).
-    // TODO also support just `name` and default to user's personal namespace
-    env_ref: String,
+    /// Environment reference (name, namespace:name, or namespace:name@version).
+    env_ref: ResourceOrIdArg,
     /// If true, don't pull from registry - use cached version only.
     no_pull: bool,
     port: u16,
@@ -31,7 +34,7 @@ pub(super) struct RunArgs {
 
 impl RunArgs {
     pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
-        let mut env_ref: Option<String> = None;
+        let mut env_ref: Option<ResourceOrIdArg> = None;
         let mut no_pull = false;
         let mut port: u16 = 8080;
         let mut host = "127.0.0.1".to_string();
@@ -65,13 +68,14 @@ impl RunArgs {
                     if env_ref.is_some() {
                         bail!("unexpected argument: {}", other);
                     }
-                    env_ref = Some(other.to_string());
+                    env_ref = Some(ResourceOrIdArg::from_str(other).unwrap());
                 }
             }
         }
         let env_ref = env_ref.ok_or_eyre(
-            "missing environment reference\n\nUsage: asterai env run <namespace:name[@version]>\n\
-             Example: asterai env run myteam:my-env",
+            "missing environment reference\n\n\
+             Usage: asterai env run <name[@version]>\n\
+             Example: asterai env run my-env",
         )?;
         Ok(Self {
             env_ref,
@@ -82,9 +86,11 @@ impl RunArgs {
     }
 
     pub async fn execute(&self, api_endpoint: &str, registry_endpoint: &str) -> eyre::Result<()> {
-        let (namespace, name, version) = parse_env_reference(&self.env_ref)?;
+        let namespace = self.env_ref.resolved_namespace();
+        let name = self.env_ref.name();
+        let version = self.env_ref.version().map(|v| v.to_string());
         // Try to find environment locally first.
-        let local_env = self.find_local_environment(&namespace, &name, version.as_deref());
+        let local_env = self.find_local_environment(&namespace, name, version.as_deref());
         let environment = match local_env {
             Some(env) => {
                 println!(
@@ -111,7 +117,7 @@ impl RunArgs {
                 // Pull from registry.
                 self.pull_environment(
                     &namespace,
-                    &name,
+                    name,
                     version.as_deref(),
                     api_endpoint,
                     registry_endpoint,
@@ -120,28 +126,45 @@ impl RunArgs {
             }
         };
         // Run the environment.
-        let mut runtime = build_runtime(environment).await?;
+        let runtime = build_runtime(environment).await?;
         let route_table = runtime.http_route_table();
-        let has_http_routes = !route_table.is_empty();
-        if has_http_routes {
-            let addr: SocketAddr = format!("{}:{}", self.host, self.port).parse()?;
-            print_routes(&route_table, &addr);
-            let app = axum::Router::new()
-                .fallback(handle_request)
-                .with_state(route_table);
-            let listener = tokio::net::TcpListener::bind(addr).await?;
-            tokio::spawn(async move {
-                if let Err(e) = axum::serve(listener, app).await {
-                    eprintln!("http server error: {e}");
-                }
-            });
+        let runtime = Arc::new(Mutex::new(runtime));
+        // Always start the HTTP server (call API + component routes).
+        let addr: SocketAddr = format!("{}:{}", self.host, self.port).parse()?;
+        let runtime_secret = std::env::var(RUNTIME_SECRET_ENV).ok();
+        if runtime_secret.is_some() {
+            println!("call API authentication enabled ({RUNTIME_SECRET_ENV} is set)");
         }
-        runtime.run().await?;
-        // If there are HTTP routes but no CLI run components,
-        // keep the process alive for the HTTP server.
-        if has_http_routes {
-            tokio::signal::ctrl_c().await?;
+        let state = AppState {
+            route_table: route_table.clone(),
+            runtime: runtime.clone(),
+            runtime_secret,
+        };
+        let mut app = axum::Router::new()
+            .route("/health", axum::routing::get(|| async { "ok" }))
+            .route(
+                "/v1/environment/{env_ns}/{env_name}/call",
+                axum::routing::post(handle_call),
+            )
+            .fallback(handle_request)
+            .with_state(state);
+        if let Some(cors) = build_cors_layer() {
+            app = app.layer(cors);
         }
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        print_routes(&route_table, &addr);
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, app).await {
+                eprintln!("http server error: {e}");
+            }
+        });
+        // Run CLI components (wasi:cli/run).
+        {
+            let mut rt = runtime.lock().await;
+            rt.run().await?;
+        }
+        // Keep alive for the HTTP server.
+        tokio::signal::ctrl_c().await?;
         Ok(())
     }
 
@@ -270,28 +293,11 @@ impl RunArgs {
     }
 }
 
-/// Parse an environment reference like "namespace:name" or "namespace:name@version".
-fn parse_env_reference(s: &str) -> eyre::Result<(String, String, Option<String>)> {
-    let (id_part, version) = match s.split_once('@') {
-        Some((id, ver)) => (id, Some(ver.to_string())),
-        None => (s, None),
-    };
-    let (namespace, name) = id_part
-        .split_once(':')
-        .or_else(|| id_part.split_once('/'))
-        .ok_or_else(|| {
-            eyre::eyre!(
-                "invalid environment reference '{}': use namespace:name or namespace:name@version",
-                s
-            )
-        })?;
-    Ok((namespace.to_string(), name.to_string(), version))
-}
-
 async fn handle_request(
-    State(route_table): State<Arc<HttpRouteTable>>,
+    State(state): State<AppState>,
     req: axum::extract::Request,
 ) -> impl IntoResponse {
+    let route_table = &state.route_table;
     let path = req.uri().path().to_string();
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     if segments.len() < 4 {
@@ -353,14 +359,39 @@ fn print_routes(route_table: &HttpRouteTable, addr: &SocketAddr) {
     }
 }
 
+fn build_cors_layer() -> Option<CorsLayer> {
+    let origins = std::env::var(CORS_ORIGINS_ENV).ok()?;
+    let cors = match origins.trim() {
+        "*" => {
+            println!("CORS enabled for all origins");
+            CorsLayer::very_permissive()
+        }
+        csv => {
+            let origins: Vec<_> = csv
+                .split(',')
+                .map(|s| s.trim().parse().expect("invalid CORS origin"))
+                .collect();
+            println!("CORS enabled for: {csv}");
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(origins))
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+        }
+    };
+    Some(cors)
+}
+
 fn print_help() {
     println!(
         r#"Run an environment locally.
 
-Usage: asterai env run <namespace:name[@version]> [options]
+Usage: asterai env run <name[@version]> [options]
+       asterai env run <namespace:name[@version]> [options]
 
 Arguments:
-  <namespace:name[@version]>  Environment reference (runs latest if no version specified)
+  <[namespace:]name[@version]>  Environment reference
+                                Namespace defaults to your account namespace
+                                Version defaults to latest available
 
 Options:
   --no-pull             Don't pull from registry, use cached version only
@@ -369,10 +400,11 @@ Options:
   -h, --help            Show this help message
 
 Examples:
+  asterai env run my-env                    # Run latest, default namespace
   asterai env run myteam:my-env             # Pull (if needed) and run latest
   asterai env run myteam:my-env@1.2.0       # Pull (if needed) and run specific version
-  asterai env run myteam:my-env --no-pull   # Run cached version only
-  asterai env run myteam:my-env -p 3000     # Run with HTTP server on port 3000
+  asterai env run my-env --no-pull          # Run cached version only
+  asterai env run my-env -p 3000            # Run with HTTP server on port 3000
 "#
     );
 }

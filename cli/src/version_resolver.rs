@@ -5,7 +5,6 @@
 
 use crate::auth::Auth;
 use crate::local_store::LocalStore;
-use asterai_runtime::resource::ResourceId;
 use eyre::{bail, eyre};
 use semver::Version;
 use serde::Deserialize;
@@ -102,18 +101,20 @@ pub struct ComponentRef {
 
 impl ComponentRef {
     /// Parse a component reference string.
-    /// Accepts formats: `namespace:name@version` or `namespace:name` (version optional).
+    /// Accepts: `namespace:name@version`, `namespace:name`, `name@version`, or `name`.
+    /// When namespace is omitted, defaults to the logged-in user's namespace.
     pub fn parse(s: &str) -> eyre::Result<Self> {
-        // Handle namespace:name@version or namespace/name@version.
         let (id_part, version) = match s.split_once('@') {
             Some((id, ver)) => (id, Some(Version::from_str(ver).map_err(|e| eyre!(e))?)),
             None => (s, None),
         };
-        // Parse namespace:name or namespace/name.
-        let resource_id = ResourceId::from_str(id_part).map_err(|e| eyre!(e))?;
+        let (namespace, name) = match id_part.split_once(':').or_else(|| id_part.split_once('/')) {
+            Some((ns, n)) => (ns.to_string(), n.to_string()),
+            None => (Auth::read_user_or_fallback_namespace(), id_part.to_string()),
+        };
         Ok(Self {
-            namespace: resource_id.namespace().to_string(),
-            name: resource_id.name().to_string(),
+            namespace,
+            name,
             version,
         })
     }

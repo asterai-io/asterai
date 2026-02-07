@@ -12,11 +12,28 @@ pub struct ResourceOrIdArg {
 }
 
 impl ResourceOrIdArg {
-    pub fn with_local_namespace_fallback(&self) -> String {
-        let namespace = self
-            .namespace
+    #[allow(dead_code)]
+    pub fn namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn version(&self) -> Option<&Version> {
+        self.version.as_ref()
+    }
+
+    /// Resolve namespace, falling back to logged-in user's namespace.
+    pub fn resolved_namespace(&self) -> String {
+        self.namespace
             .clone()
-            .unwrap_or_else(Auth::read_user_or_fallback_namespace);
+            .unwrap_or_else(Auth::read_user_or_fallback_namespace)
+    }
+
+    pub fn with_local_namespace_fallback(&self) -> String {
+        let namespace = self.resolved_namespace();
         let version = self
             .version
             .as_ref()

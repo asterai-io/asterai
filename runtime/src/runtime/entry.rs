@@ -1,13 +1,18 @@
 //! Host entry points for the asterai host API.
+use crate::component::ComponentId;
+use crate::component::function_name::ComponentFunctionName;
 use crate::component::wit::ComponentInterface;
-use crate::runtime::env::HostEnv;
+use crate::runtime::env::{HostEnv, create_fresh_store, create_linker};
+use crate::runtime::parsing::{ValExt, json_value_to_val_typedef};
+use crate::runtime::wasm_instance::ENGINE;
 use crate::runtime::wit_bindings::exports::asterai::host::api::{
     CallError, CallErrorKind, ComponentInfo, RuntimeInfo,
 };
 use std::collections::HashSet;
 use std::future::Future;
+use std::str::FromStr;
 use wasmtime::StoreContextMut;
-use wasmtime::component::Linker;
+use wasmtime::component::{Linker, Val};
 
 type HostFuture<'a, T> = Box<dyn Future<Output = Result<T, wasmtime::Error>> + Send + 'a>;
 
@@ -98,14 +103,127 @@ fn component_implements<'a>(
 }
 
 fn call_component_function<'a>(
-    _store: StoreContextMut<'a, HostEnv>,
-    (_component_name, _function_name, _args_json): (String, String, String),
+    mut store: StoreContextMut<'a, HostEnv>,
+    (component_name, function_name_str, args_json): (String, String, String),
 ) -> HostFuture<'a, (Result<String, CallError>,)> {
     Box::new(async move {
-        Ok((Err(CallError {
+        let result = call_component_function_inner(
+            &mut store,
+            &component_name,
+            &function_name_str,
+            &args_json,
+        )
+        .await;
+        Ok((result,))
+    })
+}
+
+async fn call_component_function_inner(
+    store: &mut StoreContextMut<'_, HostEnv>,
+    component_name: &str,
+    function_name_str: &str,
+    args_json: &str,
+) -> Result<String, CallError> {
+    let comp_id = ComponentId::from_str(component_name).map_err(|e| CallError {
+        kind: CallErrorKind::ComponentNotFound,
+        message: format!("invalid component name: {e}"),
+    })?;
+    let function_name = ComponentFunctionName::from_str(function_name_str).unwrap();
+    // Extract compiled component, function info, and env vars from caller's store.
+    let (compiled_component, _component_binary, function, env_vars) = {
+        let runtime_data = store.data().runtime_data.as_ref().ok_or(CallError {
             kind: CallErrorKind::InvocationFailed,
-            message: "not yet implemented".to_owned(),
-        }),))
+            message: "runtime not initialized".to_owned(),
+        })?;
+        let (binary, component) = runtime_data
+            .compiled_components
+            .iter()
+            .find(|(cb, _)| cb.component().id() == comp_id)
+            .ok_or(CallError {
+                kind: CallErrorKind::ComponentNotFound,
+                message: format!("component '{component_name}' not found"),
+            })?;
+        let func = binary
+            .get_functions()
+            .into_iter()
+            .find(|f| f.name == function_name)
+            .ok_or(CallError {
+                kind: CallErrorKind::FunctionNotFound,
+                message: format!("function '{function_name_str}' not found on '{component_name}'"),
+            })?;
+        (
+            component.clone(),
+            binary.clone(),
+            func,
+            runtime_data.env_vars.clone(),
+        )
+    };
+    // Parse and validate JSON args.
+    let json_args: Vec<serde_json::Value> =
+        serde_json::from_str(args_json).map_err(|e| CallError {
+            kind: CallErrorKind::InvalidArgs,
+            message: format!("invalid JSON args: {e}"),
+        })?;
+    if json_args.len() != function.inputs.len() {
+        return Err(CallError {
+            kind: CallErrorKind::InvalidArgs,
+            message: format!(
+                "expected {} arg(s), got {}",
+                function.inputs.len(),
+                json_args.len()
+            ),
+        });
+    }
+    let inputs: Vec<Val> = json_args
+        .iter()
+        .zip(function.inputs.iter())
+        .map(|(arg, (_name, type_def))| json_value_to_val_typedef(arg, type_def))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| CallError {
+            kind: CallErrorKind::InvalidArgs,
+            message: format!("failed to convert args: {e}"),
+        })?;
+    // Create a fresh store to avoid reentrant call issues.
+    let engine = &*ENGINE;
+    let mut fresh_store = create_fresh_store(engine, &env_vars);
+    let linker = create_linker(engine).map_err(|e| CallError {
+        kind: CallErrorKind::InvocationFailed,
+        message: format!("failed to set up linker: {e}"),
+    })?;
+    let instance = linker
+        .instantiate_async(&mut fresh_store, &compiled_component)
+        .await
+        .map_err(|e| CallError {
+            kind: CallErrorKind::InvocationFailed,
+            message: format!("failed to instantiate component: {e}"),
+        })?;
+    // Call the function on the fresh instance.
+    let mut results = function.new_results_vec();
+    let func = function
+        .get_func(&mut fresh_store, &instance)
+        .map_err(|e| CallError {
+            kind: CallErrorKind::InvocationFailed,
+            message: format!("failed to get function: {e}"),
+        })?;
+    func.call_async(&mut fresh_store, &inputs, &mut results)
+        .await
+        .map_err(|e| CallError {
+            kind: CallErrorKind::InvocationFailed,
+            message: format!("{e:#}"),
+        })?;
+    func.post_return_async(&mut fresh_store)
+        .await
+        .map_err(|e| CallError {
+            kind: CallErrorKind::InvocationFailed,
+            message: format!("{e:#}"),
+        })?;
+    let output_val = results.into_iter().next();
+    let json_output = output_val
+        .and_then(|v| v.try_into_json_value())
+        .unwrap_or(serde_json::Value::Null);
+    serde_json::to_string(&json_output).map_err(|e| CallError {
+        kind: CallErrorKind::SerializationFailed,
+        message: format!("{e}"),
     })
 }
 

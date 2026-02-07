@@ -1,4 +1,5 @@
 use crate::auth::Auth;
+use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
 use asterai_runtime::component::Component;
@@ -12,15 +13,15 @@ use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct PullArgs {
-    /// Environment reference (namespace:name or namespace:name@version).
-    env_ref: String,
+    /// Environment reference (name, namespace:name, or namespace:name@version).
+    env_ref: ResourceOrIdArg,
     /// Whether to skip pulling components.
     manifest_only: bool,
 }
 
 impl PullArgs {
     pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
-        let mut env_ref: Option<String> = None;
+        let mut env_ref: Option<ResourceOrIdArg> = None;
         let mut manifest_only = false;
         for arg in args {
             match arg.as_str() {
@@ -38,13 +39,14 @@ impl PullArgs {
                     if env_ref.is_some() {
                         bail!("unexpected argument: {}", other);
                     }
-                    env_ref = Some(other.to_string());
+                    env_ref = Some(ResourceOrIdArg::from_str(other).unwrap());
                 }
             }
         }
         let env_ref = env_ref.ok_or_eyre(
-            "missing environment reference\n\nUsage: asterai env pull <namespace:name[@version]>\n\
-             Example: asterai env pull myteam:my-env",
+            "missing environment reference\n\n\
+             Usage: asterai env pull <name[@version]>\n\
+             Example: asterai env pull my-env",
         )?;
         Ok(Self {
             env_ref,
@@ -55,8 +57,9 @@ impl PullArgs {
     pub async fn execute(&self, api_endpoint: &str, registry_endpoint: &str) -> eyre::Result<()> {
         let api_key = Auth::read_stored_api_key()
             .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
-        // Parse environment reference.
-        let (namespace, name, version) = parse_env_reference(&self.env_ref)?;
+        let namespace = self.env_ref.resolved_namespace();
+        let name = self.env_ref.name();
+        let version = self.env_ref.version().map(|v| v.to_string());
         println!(
             "pulling environment {}:{}{}...",
             namespace,
@@ -151,43 +154,26 @@ impl PullArgs {
     }
 }
 
-/// Parse an environment reference like "namespace:name" or "namespace:name@version".
-fn parse_env_reference(s: &str) -> eyre::Result<(String, String, Option<String>)> {
-    // Check for version.
-    let (id_part, version) = match s.split_once('@') {
-        Some((id, ver)) => (id, Some(ver.to_string())),
-        None => (s, None),
-    };
-    // Parse namespace:name or namespace/name.
-    let (namespace, name) = id_part
-        .split_once(':')
-        .or_else(|| id_part.split_once('/'))
-        .ok_or_else(|| {
-            eyre::eyre!(
-                "invalid environment reference '{}': use namespace:name or namespace:name@version",
-                s
-            )
-        })?;
-    Ok((namespace.to_string(), name.to_string(), version))
-}
-
 fn print_help() {
     println!(
         r#"Pull an environment from the registry.
 
-Usage: asterai env pull <namespace:name[@version]> [options]
+Usage: asterai env pull <name[@version]> [options]
+       asterai env pull <namespace:name[@version]> [options]
 
 Arguments:
-  <namespace:name[@version]>  Environment reference (pulls latest if no version specified)
+  <[namespace:]name[@version]>  Environment reference
+                                Namespace defaults to your account namespace
+                                Version defaults to latest available
 
 Options:
   -m, --manifest-only     Only pull the environment manifest, not component WASMs
   -h, --help              Show this help message
 
 Examples:
+  asterai env pull my-env                    # Pull latest, default namespace
   asterai env pull myteam:my-env             # Pull latest version
   asterai env pull myteam:my-env@1.2.0       # Pull specific version
-  asterai env pull myteam:my-env --staging   # Pull from staging
 "#
     );
 }

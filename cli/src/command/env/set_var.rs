@@ -1,4 +1,5 @@
 use crate::command::env::EnvArgs;
+use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use asterai_runtime::resource::ResourceId;
 use eyre::{OptionExt, bail};
@@ -56,8 +57,13 @@ impl SetVarArgs {
     }
 
     pub fn execute(&self) -> eyre::Result<()> {
-        let resource_id = parse_env_id(&self.env_ref)?;
-        let mut environment = LocalStore::fetch_environment(&resource_id)?;
+        let arg = ResourceOrIdArg::from_str(&self.env_ref).unwrap();
+        let ns = arg.resolved_namespace();
+        let id_string = format!("{ns}:{}", arg.name());
+        let resource_id = ResourceId::from_str(&id_string)
+            .map_err(|e| eyre::eyre!("invalid environment reference: {e}"))?;
+        let mut environment = LocalStore::fetch_environment(&resource_id)
+            .map_err(|_| eyre::eyre!("environment '{}' not found locally", resource_id))?;
         println!(
             "updating environment {}:{}@{}",
             environment.namespace(),
@@ -122,19 +128,6 @@ fn parse_var_assignment(s: &str) -> eyre::Result<(String, Option<String>)> {
         false => Some(value.to_string()),
     };
     Ok((key.to_string(), value))
-}
-
-/// Parse an environment ID, adding local namespace if not specified.
-/// TODO remove local namespace? init any, but push will fail if unauthed
-fn parse_env_id(s: &str) -> eyre::Result<ResourceId> {
-    // If no namespace separator, assume local namespace.
-    let has_namespace = s.contains(':') || s.contains('/');
-    let id_string = match has_namespace {
-        true => s.to_string(),
-        false => format!("local:{}", s),
-    };
-    ResourceId::from_str(&id_string)
-        .map_err(|e| eyre::eyre!("invalid environment reference: {}", e))
 }
 
 /// Mask a value for display (show first 4 chars if long enough).
