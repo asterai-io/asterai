@@ -4,15 +4,21 @@ use crate::component::function_name::ComponentFunctionName;
 use crate::component::wit::ComponentInterface;
 use crate::runtime::env::HostEnv;
 use crate::runtime::parsing::{ValExt, json_value_to_val_typedef};
-use crate::runtime::wasm_instance::set_last_component;
+use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
+use crate::runtime::wasm_instance::ENGINE;
 use crate::runtime::wit_bindings::exports::asterai::host::api::{
     CallError, CallErrorKind, ComponentInfo, RuntimeInfo,
 };
 use std::collections::HashSet;
 use std::future::Future;
 use std::str::FromStr;
-use wasmtime::StoreContextMut;
-use wasmtime::component::{Linker, Val};
+use tokio::sync::mpsc;
+use uuid::Uuid;
+use wasmtime::component::{Linker, ResourceTable, Val};
+use wasmtime::{Store, StoreContextMut};
+use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi::p2::add_to_linker_async;
+use wasmtime_wasi_http::{WasiHttpCtx, add_only_http_to_linker_async};
 
 type HostFuture<'a, T> = Box<dyn Future<Output = Result<T, wasmtime::Error>> + Send + 'a>;
 
@@ -129,23 +135,21 @@ async fn call_component_function_inner(
         message: format!("invalid component name: {e}"),
     })?;
     let function_name = ComponentFunctionName::from_str(function_name_str).unwrap();
-    // Clone the instance and function info while borrowing store immutably.
-    let (instance, function) = {
+    // Extract compiled component, function info, and env vars from caller's store.
+    let (compiled_component, _component_binary, function, env_vars) = {
         let runtime_data = store.data().runtime_data.as_ref().ok_or(CallError {
             kind: CallErrorKind::InvocationFailed,
             message: "runtime not initialized".to_owned(),
         })?;
-        let inst = runtime_data
-            .instances
+        let (binary, component) = runtime_data
+            .compiled_components
             .iter()
-            .find(|i| i.component_interface.component().id() == comp_id)
+            .find(|(cb, _)| cb.component().id() == comp_id)
             .ok_or(CallError {
                 kind: CallErrorKind::ComponentNotFound,
                 message: format!("component '{component_name}' not found"),
-            })?
-            .clone();
-        let func = inst
-            .component_interface
+            })?;
+        let func = binary
             .get_functions()
             .into_iter()
             .find(|f| f.name == function_name)
@@ -153,8 +157,14 @@ async fn call_component_function_inner(
                 kind: CallErrorKind::FunctionNotFound,
                 message: format!("function '{function_name_str}' not found on '{component_name}'"),
             })?;
-        (inst, func)
+        (
+            component.clone(),
+            binary.clone(),
+            func,
+            runtime_data.env_vars.clone(),
+        )
     };
+    // Parse and validate JSON args.
     let json_args: Vec<serde_json::Value> =
         serde_json::from_str(args_json).map_err(|e| CallError {
             kind: CallErrorKind::InvalidArgs,
@@ -179,22 +189,63 @@ async fn call_component_function_inner(
             kind: CallErrorKind::InvalidArgs,
             message: format!("failed to convert args: {e}"),
         })?;
+    // Create a fresh store to avoid reentrant call issues.
+    let engine = &*ENGINE;
+    let app_id = Uuid::new_v4();
+    let mut wasi_ctx_builder = WasiCtxBuilder::new();
+    wasi_ctx_builder
+        .stdout(ComponentStdout { app_id })
+        .stderr(ComponentStderr { app_id })
+        .inherit_network();
+    for (key, value) in &env_vars {
+        wasi_ctx_builder.env(key, value);
+    }
+    let (component_output_tx, mut component_output_rx) = mpsc::channel(32);
+    tokio::spawn(async move { while component_output_rx.recv().await.is_some() {} });
+    let host_env = HostEnv {
+        runtime_data: None,
+        wasi_ctx: wasi_ctx_builder.build(),
+        http_ctx: WasiHttpCtx::new(),
+        table: ResourceTable::new(),
+        component_output_tx,
+    };
+    let mut fresh_store = Store::new(engine, host_env);
+    let mut linker = Linker::new(engine);
+    linker.allow_shadowing(true);
+    add_to_linker_async(&mut linker).map_err(|e| CallError {
+        kind: CallErrorKind::InvocationFailed,
+        message: format!("failed to set up linker: {e}"),
+    })?;
+    add_only_http_to_linker_async(&mut linker).map_err(|e| CallError {
+        kind: CallErrorKind::InvocationFailed,
+        message: format!("failed to set up http linker: {e}"),
+    })?;
+    add_asterai_host_to_linker(&mut linker).map_err(|e| CallError {
+        kind: CallErrorKind::InvocationFailed,
+        message: format!("failed to set up host linker: {e}"),
+    })?;
+    let instance = linker
+        .instantiate_async(&mut fresh_store, &compiled_component)
+        .await
+        .map_err(|e| CallError {
+            kind: CallErrorKind::InvocationFailed,
+            message: format!("failed to instantiate component: {e}"),
+        })?;
+    // Call the function on the fresh instance.
     let mut results = function.new_results_vec();
     let func = function
-        .get_func(&mut *store, &instance.instance)
+        .get_func(&mut fresh_store, &instance)
         .map_err(|e| CallError {
             kind: CallErrorKind::InvocationFailed,
             message: format!("failed to get function: {e}"),
         })?;
-    let component = function.component.clone();
-    set_last_component(component, store);
-    func.call_async(&mut *store, &inputs, &mut results)
+    func.call_async(&mut fresh_store, &inputs, &mut results)
         .await
         .map_err(|e| CallError {
             kind: CallErrorKind::InvocationFailed,
             message: format!("{e:#}"),
         })?;
-    func.post_return_async(&mut *store)
+    func.post_return_async(&mut fresh_store)
         .await
         .map_err(|e| CallError {
             kind: CallErrorKind::InvocationFailed,

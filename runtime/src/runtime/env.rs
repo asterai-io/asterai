@@ -1,6 +1,8 @@
 use crate::component::Component;
+use crate::component::binary::{ComponentBinary, WasmtimeComponent};
 use crate::runtime::output::ComponentOutput;
 use crate::runtime::wasm_instance::ComponentRuntimeInstance;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -29,6 +31,10 @@ pub struct HostEnvRuntimeData {
     /// so this needs to be implemented correctly for security purposes.
     pub last_component: Arc<Mutex<Option<Component>>>,
     pub component_response_to_agent: Option<String>,
+    /// Pre-compiled components for dynamic calls (fresh store per call).
+    pub compiled_components: Vec<(ComponentBinary, WasmtimeComponent)>,
+    /// Environment variables to inject into fresh stores for dynamic calls.
+    pub env_vars: HashMap<String, String>,
 }
 
 impl WasiView for HostEnv {

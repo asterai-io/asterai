@@ -131,11 +131,18 @@ impl ComponentRuntimeEngine {
             linker,
             compiled_components,
         };
+        let compiled_for_dynamic_calls = runtime_engine
+            .compiled_components
+            .iter()
+            .map(|e| (e.component_binary.clone(), e.component.clone()))
+            .collect();
         runtime_engine.store.data_mut().runtime_data = Some(HostEnvRuntimeData {
             app_id,
             instances,
             last_component,
             component_response_to_agent: None,
+            compiled_components: compiled_for_dynamic_calls,
+            env_vars: env_vars.clone(),
         });
         Ok(runtime_engine)
     }
