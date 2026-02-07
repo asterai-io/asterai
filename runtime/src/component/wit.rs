@@ -39,6 +39,10 @@ impl ComponentWit {
     pub fn world(&self) -> &World {
         &self.resolve.worlds[self.world_id]
     }
+
+    pub fn world_docs(&self) -> Option<String> {
+        self.world().docs.contents.clone()
+    }
 }
 
 /// Uniform interface for querying WIT imports and exports.
@@ -56,11 +60,13 @@ pub struct ImportedInterface {
 pub struct ExportedInterface {
     /// Fully qualified name, e.g. "asterai:host/api@0.1.0".
     pub name: String,
+    pub docs: Option<String>,
     pub functions: Vec<ComponentFunction>,
 }
 
 pub struct ComponentFunction {
     pub name: String,
+    pub docs: Option<String>,
     pub params: Vec<FunctionParam>,
     /// Display string for return type. None if no return.
     pub return_type: Option<String>,
@@ -102,6 +108,7 @@ impl ComponentInterface for ComponentWit {
                         .collect();
                     Some(ExportedInterface {
                         name: format_interface_name(&self.resolve, *id),
+                        docs: iface.docs.contents.clone(),
                         functions,
                     })
                 }
@@ -148,6 +155,7 @@ fn build_exported_function(resolve: &Resolve, func: &wit_parser::Function) -> Co
     };
     ComponentFunction {
         name: func.name.clone(),
+        docs: func.docs.contents.clone(),
         params,
         return_type,
     }

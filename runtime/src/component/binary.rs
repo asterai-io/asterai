@@ -228,6 +228,7 @@ impl ComponentBinary {
             name: ComponentFunctionName::new(interface_name, function.name.clone()),
             inputs: input_types,
             output_type,
+            docs: function.docs.contents.clone(),
             component: self.component.clone(),
         }
     }
