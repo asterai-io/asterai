@@ -61,10 +61,12 @@ impl ComponentRuntime {
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
         env_vars: &HashMap<String, String>,
+        env_namespace: &str,
+        env_name: &str,
     ) -> eyre::Result<Self> {
         let engine =
             ComponentRuntimeEngine::new(components, app_id, component_output_tx, env_vars).await?;
-        let http_route_table = build_http_route_table(&engine, env_vars)?;
+        let http_route_table = build_http_route_table(&engine, env_vars, env_namespace, env_name)?;
         Ok(Self {
             app_id,
             engine,
@@ -206,6 +208,8 @@ fn has_incoming_handler(component_binary: &ComponentBinary) -> bool {
 fn build_http_route_table(
     engine: &ComponentRuntimeEngine,
     env_vars: &HashMap<String, String>,
+    env_namespace: &str,
+    env_name: &str,
 ) -> eyre::Result<HttpRouteTable> {
     let mut routes = HashMap::new();
     for entry in &engine.compiled_components {
@@ -230,7 +234,12 @@ fn build_http_route_table(
         };
         routes.insert(route_key, Arc::new(http_route));
     }
-    Ok(HttpRouteTable::new(routes, env_vars.clone()))
+    Ok(HttpRouteTable::new(
+        routes,
+        env_vars.clone(),
+        env_namespace.to_string(),
+        env_name.to_string(),
+    ))
 }
 
 impl Debug for ComponentRuntime {

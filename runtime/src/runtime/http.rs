@@ -25,11 +25,23 @@ pub struct HttpRoute {
 pub struct HttpRouteTable {
     routes: HashMap<String, Arc<HttpRoute>>,
     env_vars: HashMap<String, String>,
+    env_namespace: String,
+    env_name: String,
 }
 
 impl HttpRouteTable {
-    pub fn new(routes: HashMap<String, Arc<HttpRoute>>, env_vars: HashMap<String, String>) -> Self {
-        Self { routes, env_vars }
+    pub fn new(
+        routes: HashMap<String, Arc<HttpRoute>>,
+        env_vars: HashMap<String, String>,
+        env_namespace: String,
+        env_name: String,
+    ) -> Self {
+        Self {
+            routes,
+            env_vars,
+            env_namespace,
+            env_name,
+        }
     }
 
     pub fn lookup(&self, namespace: &str, name: &str) -> Option<&Arc<HttpRoute>> {
@@ -47,6 +59,14 @@ impl HttpRouteTable {
 
     pub fn env_vars(&self) -> &HashMap<String, String> {
         &self.env_vars
+    }
+
+    pub fn env_namespace(&self) -> &str {
+        &self.env_namespace
+    }
+
+    pub fn env_name(&self) -> &str {
+        &self.env_name
     }
 }
 
@@ -113,9 +133,15 @@ where
     }
 }
 
-pub fn strip_path_prefix(uri: &hyper::Uri, namespace: &str, name: &str) -> hyper::Uri {
+pub fn strip_path_prefix(
+    uri: &hyper::Uri,
+    env_namespace: &str,
+    env_name: &str,
+    comp_namespace: &str,
+    comp_name: &str,
+) -> hyper::Uri {
     let path = uri.path();
-    let prefix = format!("/{namespace}/{name}");
+    let prefix = format!("/{env_namespace}/{env_name}/{comp_namespace}/{comp_name}");
     let stripped = path.strip_prefix(&prefix).unwrap_or(path);
     let stripped = match stripped.is_empty() {
         true => "/",

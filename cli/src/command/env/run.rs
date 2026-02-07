@@ -294,27 +294,37 @@ async fn handle_request(
 ) -> impl IntoResponse {
     let path = req.uri().path().to_string();
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    if segments.len() < 2 {
+    if segments.len() < 4 {
         return (
             HyperStatusCode::NOT_FOUND,
-            "not found: expected /:namespace/:name/...",
+            "not found: expected \
+             /:env-namespace/:env-name/:comp-namespace/:comp-name/...",
         )
             .into_response();
     }
-    let namespace = segments[0];
-    let name = segments[1];
-    let route = match route_table.lookup(namespace, name) {
+    let env_ns = segments[0];
+    let env_name = segments[1];
+    let comp_ns = segments[2];
+    let comp_name = segments[3];
+    if env_ns != route_table.env_namespace() || env_name != route_table.env_name() {
+        return (
+            HyperStatusCode::NOT_FOUND,
+            format!("no environment at /{env_ns}/{env_name}"),
+        )
+            .into_response();
+    }
+    let route = match route_table.lookup(comp_ns, comp_name) {
         Some(r) => r.clone(),
         None => {
             return (
                 HyperStatusCode::NOT_FOUND,
-                format!("no component at /{namespace}/{name}"),
+                format!("no component at /{env_ns}/{env_name}/{comp_ns}/{comp_name}"),
             )
                 .into_response();
         }
     };
     let (mut parts, body) = req.into_parts();
-    parts.uri = http::strip_path_prefix(&parts.uri, namespace, name);
+    parts.uri = http::strip_path_prefix(&parts.uri, env_ns, env_name, comp_ns, comp_name);
     // Collect body bytes and re-wrap for wasmtime compatibility.
     let body_bytes = match body.collect().await {
         Ok(collected) => collected.to_bytes(),
@@ -335,9 +345,11 @@ async fn handle_request(
 }
 
 fn print_routes(route_table: &HttpRouteTable, addr: &SocketAddr) {
+    let env_ns = route_table.env_namespace();
+    let env_name = route_table.env_name();
     println!("listening on http://{addr}");
-    for (path, route) in route_table.routes() {
-        println!("  /{path} -> {}", route.component);
+    for (comp_path, route) in route_table.routes() {
+        println!("  /{env_ns}/{env_name}/{comp_path} -> {}", route.component);
     }
 }
 
