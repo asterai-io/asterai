@@ -228,6 +228,7 @@ impl ComponentBinary {
             name: ComponentFunctionName::new(interface_name, function.name.clone()),
             inputs: input_types,
             output_type,
+            docs: function.docs.contents.clone(),
             component: self.component.clone(),
         }
     }
@@ -294,7 +295,7 @@ fn format_function_signature(f: &ComponentFunction) -> String {
         .iter()
         .map(|p| format!("{}: {}", p.name, p.type_name))
         .collect();
-    match &f.return_type {
+    match &f.return_type_name {
         Some(ret) => format!("{}({}) -> {}", f.name, params.join(", "), ret),
         None => format!("{}({})", f.name, params.join(", ")),
     }

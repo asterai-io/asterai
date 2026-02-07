@@ -6,7 +6,7 @@ use crate::runtime::env::{HostEnv, create_fresh_store, create_linker};
 use crate::runtime::parsing::{ValExt, json_value_to_val_typedef};
 use crate::runtime::wasm_instance::ENGINE;
 use crate::runtime::wit_bindings::exports::asterai::host::api::{
-    CallError, CallErrorKind, ComponentInfo, RuntimeInfo,
+    CallError, CallErrorKind, ComponentInfo, FunctionInfo, ParamInfo, RuntimeInfo, TypeInfo,
 };
 use std::collections::HashSet;
 use std::future::Future;
@@ -236,21 +236,80 @@ fn build_all_component_infos(store: &StoreContextMut<HostEnv>) -> Vec<ComponentI
         .iter()
         .map(|instance| {
             let component = instance.component_interface.component();
-            let interfaces: Vec<String> = instance
-                .component_interface
-                .exported_interfaces()
-                .into_iter()
-                .map(|e| e.name)
+            let exported = instance.component_interface.exported_interfaces();
+            let interfaces: Vec<String> = exported
+                .iter()
+                .map(|e| e.name.clone())
                 .collect::<HashSet<_>>()
                 .into_iter()
+                .collect();
+            let description = build_component_description(
+                instance.component_interface.wit().world_docs(),
+                &exported,
+            );
+            let functions = exported
+                .iter()
+                .flat_map(|iface| {
+                    let short_iface_name = extract_short_interface_name(&iface.name);
+                    iface.functions.iter().map(move |f| FunctionInfo {
+                        name: f.name.clone(),
+                        interface_name: Some(short_iface_name.clone()),
+                        description: f.docs.clone(),
+                        inputs: f
+                            .params
+                            .iter()
+                            .map(|p| ParamInfo {
+                                name: p.name.clone(),
+                                type_name: p.type_name.clone(),
+                                type_schema: p.type_schema.clone(),
+                            })
+                            .collect(),
+                        output: f.return_type_name.as_ref().map(|name| TypeInfo {
+                            type_name: name.clone(),
+                            type_schema: f.return_type_schema.clone().unwrap_or_default(),
+                        }),
+                    })
+                })
                 .collect();
             ComponentInfo {
                 name: component.id().to_string(),
                 version: component.version().to_string(),
                 interfaces,
+                description,
+                functions,
             }
         })
         .collect()
+}
+
+fn build_component_description(
+    world_docs: Option<String>,
+    exported: &[crate::component::wit::ExportedInterface],
+) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(docs) = &world_docs {
+        parts.push(docs.trim().to_owned());
+    }
+    for iface in exported {
+        if let Some(docs) = &iface.docs {
+            let name = extract_short_interface_name(&iface.name);
+            parts.push(format!("{name}: {}", docs.trim()));
+        }
+    }
+    match parts.is_empty() {
+        true => None,
+        false => Some(parts.join("\n\n")),
+    }
+}
+
+/// Extract the short interface name from a fully qualified name.
+/// e.g. "asterai:llm/llm@1.0.0" => "llm".
+fn extract_short_interface_name(fq_name: &str) -> String {
+    let name = fq_name.rsplit_once('/').map(|(_, n)| n).unwrap_or(fq_name);
+    name.split_once('@')
+        .map(|(n, _)| n)
+        .unwrap_or(name)
+        .to_owned()
 }
 
 fn get_last_component_id(store: &StoreContextMut<HostEnv>) -> Option<String> {

@@ -133,7 +133,7 @@ fn wasm2wit(input_file: &Path, output_file: &Path) -> eyre::Result<()> {
         }
     };
     let mut printer = WitPrinter::default();
-    printer.emit_docs(false);
+    printer.emit_docs(true);
     let dependency_ids: Vec<_> = resolve
         .package_names
         .values()
