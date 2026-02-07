@@ -2,9 +2,8 @@
 use crate::component::ComponentId;
 use crate::component::function_name::ComponentFunctionName;
 use crate::component::wit::ComponentInterface;
-use crate::runtime::env::HostEnv;
+use crate::runtime::env::{HostEnv, create_fresh_store, create_linker};
 use crate::runtime::parsing::{ValExt, json_value_to_val_typedef};
-use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
 use crate::runtime::wasm_instance::ENGINE;
 use crate::runtime::wit_bindings::exports::asterai::host::api::{
     CallError, CallErrorKind, ComponentInfo, RuntimeInfo,
@@ -12,13 +11,8 @@ use crate::runtime::wit_bindings::exports::asterai::host::api::{
 use std::collections::HashSet;
 use std::future::Future;
 use std::str::FromStr;
-use tokio::sync::mpsc;
-use uuid::Uuid;
-use wasmtime::component::{Linker, ResourceTable, Val};
-use wasmtime::{Store, StoreContextMut};
-use wasmtime_wasi::WasiCtxBuilder;
-use wasmtime_wasi::p2::add_to_linker_async;
-use wasmtime_wasi_http::{WasiHttpCtx, add_only_http_to_linker_async};
+use wasmtime::StoreContextMut;
+use wasmtime::component::{Linker, Val};
 
 type HostFuture<'a, T> = Box<dyn Future<Output = Result<T, wasmtime::Error>> + Send + 'a>;
 
@@ -191,38 +185,10 @@ async fn call_component_function_inner(
         })?;
     // Create a fresh store to avoid reentrant call issues.
     let engine = &*ENGINE;
-    let app_id = Uuid::new_v4();
-    let mut wasi_ctx_builder = WasiCtxBuilder::new();
-    wasi_ctx_builder
-        .stdout(ComponentStdout { app_id })
-        .stderr(ComponentStderr { app_id })
-        .inherit_network();
-    for (key, value) in &env_vars {
-        wasi_ctx_builder.env(key, value);
-    }
-    let (component_output_tx, mut component_output_rx) = mpsc::channel(32);
-    tokio::spawn(async move { while component_output_rx.recv().await.is_some() {} });
-    let host_env = HostEnv {
-        runtime_data: None,
-        wasi_ctx: wasi_ctx_builder.build(),
-        http_ctx: WasiHttpCtx::new(),
-        table: ResourceTable::new(),
-        component_output_tx,
-    };
-    let mut fresh_store = Store::new(engine, host_env);
-    let mut linker = Linker::new(engine);
-    linker.allow_shadowing(true);
-    add_to_linker_async(&mut linker).map_err(|e| CallError {
+    let mut fresh_store = create_fresh_store(engine, &env_vars);
+    let linker = create_linker(engine).map_err(|e| CallError {
         kind: CallErrorKind::InvocationFailed,
         message: format!("failed to set up linker: {e}"),
-    })?;
-    add_only_http_to_linker_async(&mut linker).map_err(|e| CallError {
-        kind: CallErrorKind::InvocationFailed,
-        message: format!("failed to set up http linker: {e}"),
-    })?;
-    add_asterai_host_to_linker(&mut linker).map_err(|e| CallError {
-        kind: CallErrorKind::InvocationFailed,
-        message: format!("failed to set up host linker: {e}"),
     })?;
     let instance = linker
         .instantiate_async(&mut fresh_store, &compiled_component)

@@ -1,21 +1,15 @@
 use crate::component::Component;
-use crate::runtime::env::HostEnv;
-use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
+use crate::runtime::env::{HostEnv, create_fresh_store};
 use crate::runtime::wasm_instance::ENGINE;
 use bytes::Bytes;
 use eyre::eyre;
 use http_body::Body;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use uuid::Uuid;
-use wasmtime::Store;
-use wasmtime::component::ResourceTable;
-use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi_http::WasiHttpView;
 use wasmtime_wasi_http::bindings::ProxyPre;
 use wasmtime_wasi_http::bindings::http::types::Scheme;
 use wasmtime_wasi_http::body::HyperOutgoingBody;
-use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
 
 pub struct HttpRoute {
     pub component: Component,
@@ -79,26 +73,7 @@ where
     B: Body<Data = Bytes, Error = hyper::Error> + Send + 'static,
 {
     let engine = &*ENGINE;
-    let app_id = Uuid::new_v4();
-    let mut wasi_ctx_builder = WasiCtxBuilder::new();
-    wasi_ctx_builder
-        .stdout(ComponentStdout { app_id })
-        .stderr(ComponentStderr { app_id })
-        .inherit_network();
-    for (key, value) in env_vars {
-        wasi_ctx_builder.env(key, value);
-    }
-    let wasi_ctx = wasi_ctx_builder.build();
-    let (component_output_tx, mut component_output_rx) = mpsc::channel(32);
-    tokio::spawn(async move { while component_output_rx.recv().await.is_some() {} });
-    let host_env = HostEnv {
-        runtime_data: None,
-        wasi_ctx,
-        http_ctx: WasiHttpCtx::new(),
-        table: ResourceTable::new(),
-        component_output_tx,
-    };
-    let mut store = Store::new(engine, host_env);
+    let mut store = create_fresh_store(engine, env_vars);
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let req = store
         .data_mut()

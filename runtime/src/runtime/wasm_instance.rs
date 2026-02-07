@@ -2,10 +2,8 @@ use crate::component::Component;
 use crate::component::binary::ComponentBinary;
 use crate::component::function_interface::ComponentFunctionInterface;
 use crate::component::function_name::ComponentFunctionName;
-use crate::runtime::entry::add_asterai_host_to_linker;
-use crate::runtime::env::{HostEnv, HostEnvRuntimeData};
+use crate::runtime::env::{HostEnv, HostEnvRuntimeData, create_linker, create_store};
 use crate::runtime::output::ComponentOutput;
-use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
 use eyre::{Context, eyre};
 use log::trace;
 use once_cell::sync::Lazy;
@@ -19,9 +17,6 @@ use wasmtime::component::*;
 use wasmtime::{
     AsContext, AsContextMut, Cache, Config, Engine, Store, StoreContext, StoreContextMut,
 };
-use wasmtime_wasi::WasiCtxBuilder;
-use wasmtime_wasi::p2::add_to_linker_async;
-use wasmtime_wasi_http::{WasiHttpCtx, add_only_http_to_linker_async};
 
 pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = Config::new();
@@ -65,35 +60,8 @@ impl ComponentRuntimeEngine {
     ) -> eyre::Result<Self> {
         let engine = &ENGINE;
         let last_component = Arc::new(Mutex::new(None));
-        // Create a WASI context and put it in a Store; all instances in the store
-        // share this context. `WasiCtxBuilder` provides a number of ways to
-        // configure what the target program will have access to.
-        let mut wasi_ctx_builder = WasiCtxBuilder::new();
-        wasi_ctx_builder
-            .stdout(ComponentStdout { app_id })
-            .stderr(ComponentStderr { app_id })
-            .inherit_network();
-        // Inject environment variables from the environment config.
-        for (key, value) in env_vars {
-            wasi_ctx_builder.env(key, value);
-        }
-        let wasi_ctx = wasi_ctx_builder.build();
-        let http_ctx = WasiHttpCtx::new();
-        let table = ResourceTable::new();
-        let host_env = HostEnv {
-            runtime_data: None,
-            wasi_ctx,
-            http_ctx,
-            table,
-            component_output_tx,
-        };
-        let mut store = Store::new(engine, host_env);
-        let mut linker = Linker::new(engine);
-        // Prevent "defined twice" errors.
-        linker.allow_shadowing(true);
-        add_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
-        add_only_http_to_linker_async(&mut linker).map_err(|e| eyre!(e))?;
-        add_asterai_host_to_linker(&mut linker)?;
+        let mut store = create_store(engine, env_vars, app_id, component_output_tx);
+        let mut linker = create_linker(engine)?;
         let mut instances = Vec::new();
         let mut compiled_components = Vec::new();
         // Sort by ascending order of imports count,
