@@ -250,8 +250,10 @@ fn build_all_component_infos(store: &StoreContextMut<HostEnv>) -> Vec<ComponentI
             let functions = exported
                 .iter()
                 .flat_map(|iface| {
-                    iface.functions.iter().map(|f| FunctionInfo {
+                    let short_iface_name = extract_short_interface_name(&iface.name);
+                    iface.functions.iter().map(move |f| FunctionInfo {
                         name: f.name.clone(),
+                        interface_name: Some(short_iface_name.clone()),
                         description: f.docs.clone(),
                         inputs: f
                             .params
@@ -286,13 +288,7 @@ fn build_component_description(
     }
     for iface in exported {
         if let Some(docs) = &iface.docs {
-            let name = iface
-                .name
-                .rsplit_once('/')
-                .map(|(_, n)| n)
-                .unwrap_or(&iface.name);
-            // Strip version suffix if present.
-            let name = name.split_once('@').map(|(n, _)| n).unwrap_or(name);
+            let name = extract_short_interface_name(&iface.name);
             parts.push(format!("{name}: {}", docs.trim()));
         }
     }
@@ -300,6 +296,16 @@ fn build_component_description(
         true => None,
         false => Some(parts.join("\n\n")),
     }
+}
+
+/// Extract the short interface name from a fully qualified name.
+/// e.g. "asterai:llm/llm@1.0.0" => "llm".
+fn extract_short_interface_name(fq_name: &str) -> String {
+    let name = fq_name.rsplit_once('/').map(|(_, n)| n).unwrap_or(fq_name);
+    name.split_once('@')
+        .map(|(n, _)| n)
+        .unwrap_or(name)
+        .to_owned()
 }
 
 fn get_last_component_id(store: &StoreContextMut<HostEnv>) -> Option<String> {

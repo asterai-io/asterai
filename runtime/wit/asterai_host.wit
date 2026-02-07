@@ -23,6 +23,7 @@ interface api {
 
   record function-info {
     name: string,
+    interface-name: option<string>,
     description: option<string>,
     inputs: list<param-info>,
     output: option<string>,
