@@ -26,12 +26,18 @@ interface api {
     interface-name: option<string>,
     description: option<string>,
     inputs: list<param-info>,
-    output: option<string>,
+    output: option<type-info>,
   }
 
   record param-info {
     name: string,
-    type-description: string,
+    type-name: string,
+    type-schema: string,
+  }
+
+  record type-info {
+    type-name: string,
+    type-schema: string,
   }
 
   component-implements: func(

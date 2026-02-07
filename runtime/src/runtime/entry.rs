@@ -6,7 +6,7 @@ use crate::runtime::env::{HostEnv, create_fresh_store, create_linker};
 use crate::runtime::parsing::{ValExt, json_value_to_val_typedef};
 use crate::runtime::wasm_instance::ENGINE;
 use crate::runtime::wit_bindings::exports::asterai::host::api::{
-    CallError, CallErrorKind, ComponentInfo, FunctionInfo, ParamInfo, RuntimeInfo,
+    CallError, CallErrorKind, ComponentInfo, FunctionInfo, ParamInfo, RuntimeInfo, TypeInfo,
 };
 use std::collections::HashSet;
 use std::future::Future;
@@ -260,10 +260,14 @@ fn build_all_component_infos(store: &StoreContextMut<HostEnv>) -> Vec<ComponentI
                             .iter()
                             .map(|p| ParamInfo {
                                 name: p.name.clone(),
-                                type_description: p.type_name.clone(),
+                                type_name: p.type_name.clone(),
+                                type_schema: p.type_schema.clone(),
                             })
                             .collect(),
-                        output: f.return_type.clone(),
+                        output: f.return_type_name.as_ref().map(|name| TypeInfo {
+                            type_name: name.clone(),
+                            type_schema: f.return_type_schema.clone().unwrap_or_default(),
+                        }),
                     })
                 })
                 .collect();

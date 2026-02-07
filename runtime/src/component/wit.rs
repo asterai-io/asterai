@@ -68,14 +68,18 @@ pub struct ComponentFunction {
     pub name: String,
     pub docs: Option<String>,
     pub params: Vec<FunctionParam>,
-    /// Display string for return type. None if no return.
-    pub return_type: Option<String>,
+    /// Display string for return type name. None if no return.
+    pub return_type_name: Option<String>,
+    /// Fully expanded WIT schema for return type. None if no return.
+    pub return_type_schema: Option<String>,
 }
 
 pub struct FunctionParam {
     pub name: String,
     /// Display string, e.g. "string", "option<config>".
     pub type_name: String,
+    /// Fully expanded WIT schema, e.g. "record { name: string, age: u32 }".
+    pub type_schema: String,
 }
 
 impl ComponentInterface for ComponentWit {
@@ -140,9 +144,10 @@ fn build_exported_function(resolve: &Resolve, func: &wit_parser::Function) -> Co
         .map(|(name, ty)| FunctionParam {
             name: name.clone(),
             type_name: type_display(resolve, *ty),
+            type_schema: type_schema_display(resolve, *ty),
         })
         .collect();
-    let return_type = match &func.results {
+    let return_type_name = match &func.results {
         results if results.len() == 0 => None,
         Results::Anon(ty) => Some(type_display(resolve, *ty)),
         Results::Named(named) => {
@@ -153,11 +158,23 @@ fn build_exported_function(resolve: &Resolve, func: &wit_parser::Function) -> Co
             Some(format!("({})", parts.join(", ")))
         }
     };
+    let return_type_schema = match &func.results {
+        results if results.len() == 0 => None,
+        Results::Anon(ty) => Some(type_schema_display(resolve, *ty)),
+        Results::Named(named) => {
+            let parts: Vec<String> = named
+                .iter()
+                .map(|(n, ty)| format!("{n}: {}", type_schema_display(resolve, *ty)))
+                .collect();
+            Some(format!("({})", parts.join(", ")))
+        }
+    };
     ComponentFunction {
         name: func.name.clone(),
         docs: func.docs.contents.clone(),
         params,
-        return_type,
+        return_type_name,
+        return_type_schema,
     }
 }
 
@@ -240,6 +257,89 @@ fn type_kind_display(resolve: &Resolve, kind: &TypeDefKind) -> String {
         TypeDefKind::Enum(_) => "enum".to_owned(),
         TypeDefKind::Flags(_) => "flags".to_owned(),
         TypeDefKind::Type(ty) => type_display(resolve, *ty),
+        _ => "unknown".to_owned(),
+    }
+}
+
+/// Recursively expands a WIT type into a fully self-contained schema string.
+/// Unlike `type_display`, this never returns just a type name for complex types —
+/// it always inlines the full structure.
+pub fn type_schema_display(resolve: &Resolve, ty: Type) -> String {
+    match ty {
+        Type::Id(id) => {
+            let type_def = &resolve.types[id];
+            type_kind_schema_display(resolve, &type_def.kind)
+        }
+        _ => type_display(resolve, ty),
+    }
+}
+
+fn type_kind_schema_display(resolve: &Resolve, kind: &TypeDefKind) -> String {
+    match kind {
+        TypeDefKind::Option(ty) => {
+            format!("option<{}>", type_schema_display(resolve, *ty))
+        }
+        TypeDefKind::List(ty) => {
+            format!("list<{}>", type_schema_display(resolve, *ty))
+        }
+        TypeDefKind::Result(r) => {
+            let ok =
+                r.ok.map(|t| type_schema_display(resolve, t))
+                    .unwrap_or_else(|| "_".to_owned());
+            let err = r
+                .err
+                .map(|t| type_schema_display(resolve, t))
+                .unwrap_or_else(|| "_".to_owned());
+            format!("result<{ok}, {err}>")
+        }
+        TypeDefKind::Tuple(t) => {
+            let parts: Vec<String> = t
+                .types
+                .iter()
+                .map(|ty| type_schema_display(resolve, *ty))
+                .collect();
+            format!("tuple<{}>", parts.join(", "))
+        }
+        TypeDefKind::Record(r) => {
+            let fields: Vec<String> = r
+                .fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, type_schema_display(resolve, f.ty)))
+                .collect();
+            format!("record {{ {} }}", fields.join(", "))
+        }
+        TypeDefKind::Variant(v) => {
+            let cases: Vec<String> = v
+                .cases
+                .iter()
+                .map(|c| match c.ty {
+                    Some(ty) => format!("{}({})", c.name, type_schema_display(resolve, ty)),
+                    None => c.name.clone(),
+                })
+                .collect();
+            format!("variant {{ {} }}", cases.join(", "))
+        }
+        TypeDefKind::Enum(e) => {
+            format!(
+                "enum {{ {} }}",
+                e.cases
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+        TypeDefKind::Flags(f) => {
+            format!(
+                "flags {{ {} }}",
+                f.flags
+                    .iter()
+                    .map(|f| f.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+        TypeDefKind::Type(ty) => type_schema_display(resolve, *ty),
         _ => "unknown".to_owned(),
     }
 }
