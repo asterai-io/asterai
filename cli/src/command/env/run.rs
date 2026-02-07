@@ -140,6 +140,7 @@ impl RunArgs {
             runtime_secret,
         };
         let app = axum::Router::new()
+            .route("/health", axum::routing::get(|| async { "ok" }))
             .route(
                 "/v1/environment/{env_ns}/{env_name}/call",
                 axum::routing::post(handle_call),
