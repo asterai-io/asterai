@@ -9,7 +9,8 @@ impl EnvArgs {
             .component_ref
             .as_ref()
             .ok_or_eyre("missing component")?;
-        let mut environment = LocalStore::fetch_environment(&resource_id)?;
+        let mut environment = LocalStore::fetch_environment(&resource_id)
+            .map_err(|_| eyre::eyre!("environment '{}' not found locally", resource_id))?;
         // Remove by namespace:name only (version not needed for removal).
         let removed = environment.remove_component(&component_ref.namespace, &component_ref.name);
         if !removed {

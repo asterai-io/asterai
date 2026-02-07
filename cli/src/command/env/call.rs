@@ -21,7 +21,8 @@ impl EnvArgs {
             "calling env {resource_id}'s {comp_ns}:{comp_name} \
              component function {function_string}"
         );
-        let environment = LocalStore::fetch_environment(&resource_id)?;
+        let environment = LocalStore::fetch_environment(&resource_id)
+            .map_err(|_| eyre::eyre!("environment '{}' not found locally", resource_id))?;
         let mut runtime = build_runtime(environment).await?;
         let (function_name, package_name_opt) = parse_function_string_into_parts(function_string)?;
         let function = runtime

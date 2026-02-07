@@ -22,7 +22,8 @@ impl EnvArgs {
                 RegistryClient::new(&client, &self.api_endpoint, &self.registry_endpoint);
             registry.pull_component(None, &component, false).await?;
         }
-        let mut environment = LocalStore::fetch_environment(&resource_id)?;
+        let mut environment = LocalStore::fetch_environment(&resource_id)
+            .map_err(|_| eyre::eyre!("environment '{}' not found locally", resource_id))?;
         environment.add_component(&component);
         LocalStore::write_environment(&environment)?;
         Ok(())

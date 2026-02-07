@@ -62,7 +62,8 @@ impl SetVarArgs {
         let id_string = format!("{ns}:{}", arg.name());
         let resource_id = ResourceId::from_str(&id_string)
             .map_err(|e| eyre::eyre!("invalid environment reference: {e}"))?;
-        let mut environment = LocalStore::fetch_environment(&resource_id)?;
+        let mut environment = LocalStore::fetch_environment(&resource_id)
+            .map_err(|_| eyre::eyre!("environment '{}' not found locally", resource_id))?;
         println!(
             "updating environment {}:{}@{}",
             environment.namespace(),
