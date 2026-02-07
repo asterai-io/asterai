@@ -25,7 +25,7 @@ interface api {
     name: string,
     description: option<string>,
     inputs: list<param-info>,
-    has-output: bool,
+    output: option<string>,
   }
 
   record param-info {

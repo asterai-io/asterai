@@ -261,7 +261,7 @@ fn build_all_component_infos(store: &StoreContextMut<HostEnv>) -> Vec<ComponentI
                                 type_description: p.type_name.clone(),
                             })
                             .collect(),
-                        has_output: f.return_type.is_some(),
+                        output: f.return_type.clone(),
                     })
                 })
                 .collect();
