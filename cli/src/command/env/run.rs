@@ -1,4 +1,5 @@
 use crate::auth::Auth;
+use crate::command::env::call_api::{AppState, handle_call};
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
@@ -18,6 +19,7 @@ use std::fs;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub(super) struct RunArgs {
@@ -123,28 +125,36 @@ impl RunArgs {
             }
         };
         // Run the environment.
-        let mut runtime = build_runtime(environment).await?;
+        let runtime = build_runtime(environment).await?;
         let route_table = runtime.http_route_table();
-        let has_http_routes = !route_table.is_empty();
-        if has_http_routes {
-            let addr: SocketAddr = format!("{}:{}", self.host, self.port).parse()?;
-            print_routes(&route_table, &addr);
-            let app = axum::Router::new()
-                .fallback(handle_request)
-                .with_state(route_table);
-            let listener = tokio::net::TcpListener::bind(addr).await?;
-            tokio::spawn(async move {
-                if let Err(e) = axum::serve(listener, app).await {
-                    eprintln!("http server error: {e}");
-                }
-            });
+        let runtime = Arc::new(Mutex::new(runtime));
+        // Always start the HTTP server (call API + component routes).
+        let addr: SocketAddr = format!("{}:{}", self.host, self.port).parse()?;
+        let state = AppState {
+            route_table: route_table.clone(),
+            runtime: runtime.clone(),
+        };
+        let app = axum::Router::new()
+            .route(
+                "/v1/environment/{env_ns}/{env_name}/call",
+                axum::routing::post(handle_call),
+            )
+            .fallback(handle_request)
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        print_routes(&route_table, &addr);
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, app).await {
+                eprintln!("http server error: {e}");
+            }
+        });
+        // Run CLI components (wasi:cli/run).
+        {
+            let mut rt = runtime.lock().await;
+            rt.run().await?;
         }
-        runtime.run().await?;
-        // If there are HTTP routes but no CLI run components,
-        // keep the process alive for the HTTP server.
-        if has_http_routes {
-            tokio::signal::ctrl_c().await?;
-        }
+        // Keep alive for the HTTP server.
+        tokio::signal::ctrl_c().await?;
         Ok(())
     }
 
@@ -274,9 +284,10 @@ impl RunArgs {
 }
 
 async fn handle_request(
-    State(route_table): State<Arc<HttpRouteTable>>,
+    State(state): State<AppState>,
     req: axum::extract::Request,
 ) -> impl IntoResponse {
+    let route_table = &state.route_table;
     let path = req.uri().path().to_string();
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     if segments.len() < 4 {

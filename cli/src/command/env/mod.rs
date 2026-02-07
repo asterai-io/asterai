@@ -14,6 +14,7 @@ use strum_macros::EnumString;
 
 mod add_component;
 mod call;
+pub(crate) mod call_api;
 mod cp;
 mod delete;
 mod edit;
