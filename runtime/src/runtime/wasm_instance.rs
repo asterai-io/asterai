@@ -330,7 +330,7 @@ pub async fn call_wasm_component_function_concurrent(
 /// This is necessary for knowing the component ID in case the function
 /// called accesses host functions such as logging or any other part of the host API.
 /// TODO: this doesnt currently work with concurrent calls, decide whether to keep it.
-fn set_last_component(component: Component, store: &mut StoreContextMut<HostEnv>) {
+pub(super) fn set_last_component(component: Component, store: &mut StoreContextMut<HostEnv>) {
     *store
         .data_mut()
         .runtime_data

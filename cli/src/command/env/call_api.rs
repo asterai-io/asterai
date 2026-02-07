@@ -41,10 +41,10 @@ pub async fn handle_call(
     headers: axum::http::HeaderMap,
     axum::Json(body): axum::Json<CallRequest>,
 ) -> impl IntoResponse {
-    if let Some(secret) = &state.runtime_secret {
-        if !check_bearer_token(&headers, secret) {
-            return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
-        }
+    if let Some(secret) = &state.runtime_secret
+        && !check_bearer_token(&headers, secret)
+    {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
     match handle_call_inner(&state, &env_ns, &env_name, body).await {
         Ok(response) => (StatusCode::OK, axum::Json(response)).into_response(),
