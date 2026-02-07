@@ -154,6 +154,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml 0.8.23",
+ "tower-http",
  "tracing-subscriber",
  "uuid",
  "wit-component 0.225.0",

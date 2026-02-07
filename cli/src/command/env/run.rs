@@ -1,5 +1,5 @@
 use crate::auth::Auth;
-use crate::command::env::call_api::{AppState, RUNTIME_SECRET_ENV, handle_call};
+use crate::command::env::call_api::{AppState, CORS_ORIGINS_ENV, RUNTIME_SECRET_ENV, handle_call};
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
@@ -20,6 +20,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 #[derive(Debug)]
 pub(super) struct RunArgs {
@@ -139,7 +140,7 @@ impl RunArgs {
             runtime: runtime.clone(),
             runtime_secret,
         };
-        let app = axum::Router::new()
+        let mut app = axum::Router::new()
             .route("/health", axum::routing::get(|| async { "ok" }))
             .route(
                 "/v1/environment/{env_ns}/{env_name}/call",
@@ -147,6 +148,9 @@ impl RunArgs {
             )
             .fallback(handle_request)
             .with_state(state);
+        if let Some(cors) = build_cors_layer() {
+            app = app.layer(cors);
+        }
         let listener = tokio::net::TcpListener::bind(addr).await?;
         print_routes(&route_table, &addr);
         tokio::spawn(async move {
@@ -353,6 +357,28 @@ fn print_routes(route_table: &HttpRouteTable, addr: &SocketAddr) {
     for (comp_path, route) in route_table.routes() {
         println!("  /{env_ns}/{env_name}/{comp_path} -> {}", route.component);
     }
+}
+
+fn build_cors_layer() -> Option<CorsLayer> {
+    let origins = std::env::var(CORS_ORIGINS_ENV).ok()?;
+    let cors = match origins.trim() {
+        "*" => {
+            println!("CORS enabled for all origins");
+            CorsLayer::very_permissive()
+        }
+        csv => {
+            let origins: Vec<_> = csv
+                .split(',')
+                .map(|s| s.trim().parse().expect("invalid CORS origin"))
+                .collect();
+            println!("CORS enabled for: {csv}");
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(origins))
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+        }
+    };
+    Some(cors)
 }
 
 fn print_help() {

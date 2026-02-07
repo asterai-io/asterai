@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub const RUNTIME_SECRET_ENV: &str = "ASTERAI_RUNTIME_SECRET";
+pub const CORS_ORIGINS_ENV: &str = "ASTERAI_CORS_ORIGINS";
 
 #[derive(Clone)]
 pub struct AppState {
