@@ -11,10 +11,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+pub const RUNTIME_SECRET_ENV: &str = "ASTERAI_RUNTIME_SECRET";
+
 #[derive(Clone)]
 pub struct AppState {
     pub route_table: Arc<HttpRouteTable>,
     pub runtime: Arc<Mutex<ComponentRuntime>>,
+    /// If set, `/v1/...` routes require `Authorization: Bearer <secret>`.
+    pub runtime_secret: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -33,8 +37,14 @@ struct CallResponse {
 pub async fn handle_call(
     State(state): State<AppState>,
     axum::extract::Path((env_ns, env_name)): axum::extract::Path<(String, String)>,
+    headers: axum::http::HeaderMap,
     axum::Json(body): axum::Json<CallRequest>,
 ) -> impl IntoResponse {
+    if let Some(secret) = &state.runtime_secret {
+        if !check_bearer_token(&headers, secret) {
+            return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+        }
+    }
     match handle_call_inner(&state, &env_ns, &env_name, body).await {
         Ok(response) => (StatusCode::OK, axum::Json(response)).into_response(),
         Err(e) => {
@@ -88,4 +98,15 @@ async fn handle_call_inner(
         .and_then(|o| o.function_output_opt)
         .and_then(|o| o.value.val.try_into_json_value());
     Ok(CallResponse { output })
+}
+
+fn check_bearer_token(headers: &axum::http::HeaderMap, expected: &str) -> bool {
+    let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
+        return false;
+    };
+    let Ok(value) = value.to_str() else {
+        return false;
+    };
+    let token = value.strip_prefix("Bearer ").unwrap_or(value);
+    token == expected
 }

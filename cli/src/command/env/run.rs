@@ -1,5 +1,5 @@
 use crate::auth::Auth;
-use crate::command::env::call_api::{AppState, handle_call};
+use crate::command::env::call_api::{AppState, RUNTIME_SECRET_ENV, handle_call};
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
@@ -130,9 +130,14 @@ impl RunArgs {
         let runtime = Arc::new(Mutex::new(runtime));
         // Always start the HTTP server (call API + component routes).
         let addr: SocketAddr = format!("{}:{}", self.host, self.port).parse()?;
+        let runtime_secret = std::env::var(RUNTIME_SECRET_ENV).ok();
+        if runtime_secret.is_some() {
+            println!("call API authentication enabled ({RUNTIME_SECRET_ENV} is set)");
+        }
         let state = AppState {
             route_table: route_table.clone(),
             runtime: runtime.clone(),
+            runtime_secret,
         };
         let app = axum::Router::new()
             .route(
