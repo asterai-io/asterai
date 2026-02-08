@@ -187,6 +187,7 @@ async fn call_component_function_inner(
     // Create a fresh store to avoid reentrant call issues.
     let engine = &*ENGINE;
     let mut fresh_store = create_fresh_store(engine, &env_vars, &preopened_dirs);
+    fresh_store.data_mut().runtime_data = store.data().runtime_data.clone();
     let linker = create_linker(engine).map_err(|e| CallError {
         kind: CallErrorKind::InvocationFailed,
         message: format!("failed to set up linker: {e}"),
