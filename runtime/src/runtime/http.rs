@@ -5,6 +5,7 @@ use bytes::Bytes;
 use eyre::eyre;
 use http_body::Body;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use wasmtime_wasi_http::WasiHttpView;
 use wasmtime_wasi_http::bindings::ProxyPre;
@@ -19,6 +20,7 @@ pub struct HttpRoute {
 pub struct HttpRouteTable {
     routes: HashMap<String, Arc<HttpRoute>>,
     env_vars: HashMap<String, String>,
+    preopened_dirs: Vec<PathBuf>,
     env_namespace: String,
     env_name: String,
 }
@@ -27,12 +29,14 @@ impl HttpRouteTable {
     pub fn new(
         routes: HashMap<String, Arc<HttpRoute>>,
         env_vars: HashMap<String, String>,
+        preopened_dirs: Vec<PathBuf>,
         env_namespace: String,
         env_name: String,
     ) -> Self {
         Self {
             routes,
             env_vars,
+            preopened_dirs,
             env_namespace,
             env_name,
         }
@@ -55,6 +59,10 @@ impl HttpRouteTable {
         &self.env_vars
     }
 
+    pub fn preopened_dirs(&self) -> &[PathBuf] {
+        &self.preopened_dirs
+    }
+
     pub fn env_namespace(&self) -> &str {
         &self.env_namespace
     }
@@ -67,13 +75,14 @@ impl HttpRouteTable {
 pub async fn handle_http_request<B>(
     route: &HttpRoute,
     env_vars: &HashMap<String, String>,
+    preopened_dirs: &[PathBuf],
     req: hyper::Request<B>,
 ) -> eyre::Result<hyper::Response<HyperOutgoingBody>>
 where
     B: Body<Data = Bytes, Error = hyper::Error> + Send + 'static,
 {
     let engine = &*ENGINE;
-    let mut store = create_fresh_store(engine, env_vars);
+    let mut store = create_fresh_store(engine, env_vars, preopened_dirs);
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let req = store
         .data_mut()

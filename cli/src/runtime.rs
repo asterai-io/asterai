@@ -7,12 +7,16 @@ use asterai_runtime::component::{Component, ComponentId};
 use asterai_runtime::environment::Environment;
 use asterai_runtime::runtime::ComponentRuntime;
 use eyre::{Context, OptionExt};
+use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 /// Build a ComponentRuntime from an Environment.
-pub async fn build_runtime(environment: Environment) -> eyre::Result<ComponentRuntime> {
+pub async fn build_runtime(
+    environment: Environment,
+    allow_dirs: &[PathBuf],
+) -> eyre::Result<ComponentRuntime> {
     let mut local_components = LocalStore::list_components();
     let mut components = Vec::with_capacity(environment.components.len());
     // environment.components is HashMap<String, String>
@@ -30,6 +34,12 @@ pub async fn build_runtime(environment: Environment) -> eyre::Result<ComponentRu
         let component = pull_component(&component_id, version).await?;
         components.push(component);
     }
+    if !allow_dirs.is_empty() {
+        println!("allowed directories:");
+        for dir in allow_dirs {
+            println!("  {}", dir.display());
+        }
+    }
     // TODO: update this according to new API.
     let app_id = Uuid::new_v4();
     let (component_output_tx, mut component_output_rx) = mpsc::channel(32);
@@ -40,6 +50,7 @@ pub async fn build_runtime(environment: Environment) -> eyre::Result<ComponentRu
         app_id,
         component_output_tx,
         &environment.vars,
+        allow_dirs,
         &environment.metadata.namespace,
         &environment.metadata.name,
     )
@@ -75,4 +86,19 @@ fn find_component(
         c.component().id() == *id && c.component().version().to_string() == version
     })?;
     Some(components.swap_remove(index))
+}
+
+pub fn expand_tilde(path: &str, home: Option<&str>) -> PathBuf {
+    match path.strip_prefix("~/") {
+        Some(rest) => match home {
+            Some(h) => PathBuf::from(h).join(rest),
+            None => PathBuf::from(path),
+        },
+        None => match path == "~" {
+            true => home
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(path)),
+            false => PathBuf::from(path),
+        },
+    }
 }

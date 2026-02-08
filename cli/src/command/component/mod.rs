@@ -53,9 +53,10 @@ impl ComponentArgs {
             .map_err(|_| eyre!("unknown component action"))?;
         // Collect remaining args and extract common flags.
         let remaining_args: Vec<String> = args.collect();
-        let (api_endpoint, registry_endpoint, filtered_args) =
-            extract_common_flags(remaining_args)?;
-        let args = filtered_args.into_iter();
+        let common = extract_common_flags(remaining_args)?;
+        let api_endpoint = common.api_endpoint;
+        let registry_endpoint = common.registry_endpoint;
+        let args = common.remaining_args.into_iter();
         let none_args = Self {
             action,
             build_args: None,

@@ -130,7 +130,7 @@ async fn call_component_function_inner(
     })?;
     let function_name = ComponentFunctionName::from_str(function_name_str).unwrap();
     // Extract compiled component, function info, and env vars from caller's store.
-    let (compiled_component, _component_binary, function, env_vars) = {
+    let (compiled_component, _component_binary, function, env_vars, preopened_dirs) = {
         let runtime_data = store.data().runtime_data.as_ref().ok_or(CallError {
             kind: CallErrorKind::InvocationFailed,
             message: "runtime not initialized".to_owned(),
@@ -156,6 +156,7 @@ async fn call_component_function_inner(
             binary.clone(),
             func,
             runtime_data.env_vars.clone(),
+            runtime_data.preopened_dirs.clone(),
         )
     };
     // Parse and validate JSON args.
@@ -185,7 +186,7 @@ async fn call_component_function_inner(
         })?;
     // Create a fresh store to avoid reentrant call issues.
     let engine = &*ENGINE;
-    let mut fresh_store = create_fresh_store(engine, &env_vars);
+    let mut fresh_store = create_fresh_store(engine, &env_vars, &preopened_dirs);
     let linker = create_linker(engine).map_err(|e| CallError {
         kind: CallErrorKind::InvocationFailed,
         message: format!("failed to set up linker: {e}"),

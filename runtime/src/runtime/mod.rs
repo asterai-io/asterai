@@ -14,6 +14,7 @@ use log::{error, trace};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -61,12 +62,20 @@ impl ComponentRuntime {
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
         env_vars: &HashMap<String, String>,
+        preopened_dirs: &[PathBuf],
         env_namespace: &str,
         env_name: &str,
     ) -> eyre::Result<Self> {
-        let engine =
-            ComponentRuntimeEngine::new(components, app_id, component_output_tx, env_vars).await?;
-        let http_route_table = build_http_route_table(&engine, env_vars, env_namespace, env_name)?;
+        let engine = ComponentRuntimeEngine::new(
+            components,
+            app_id,
+            component_output_tx,
+            env_vars,
+            preopened_dirs,
+        )
+        .await?;
+        let http_route_table =
+            build_http_route_table(&engine, env_vars, preopened_dirs, env_namespace, env_name)?;
         Ok(Self {
             app_id,
             engine,
@@ -208,6 +217,7 @@ fn has_incoming_handler(component_binary: &ComponentBinary) -> bool {
 fn build_http_route_table(
     engine: &ComponentRuntimeEngine,
     env_vars: &HashMap<String, String>,
+    preopened_dirs: &[PathBuf],
     env_namespace: &str,
     env_name: &str,
 ) -> eyre::Result<HttpRouteTable> {
@@ -237,6 +247,7 @@ fn build_http_route_table(
     Ok(HttpRouteTable::new(
         routes,
         env_vars.clone(),
+        preopened_dirs.to_vec(),
         env_namespace.to_string(),
         env_name.to_string(),
     ))
