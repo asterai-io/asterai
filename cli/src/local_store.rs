@@ -223,7 +223,13 @@ impl LocalStore {
         let component_path = path.join("component.wasm");
         let component_bytes = fs::read(&component_path)?;
         let component = Component::from_str(&resource.to_string())?;
-        ComponentBinary::from_component_bytes(component, component_bytes)
+        let mut binary = ComponentBinary::from_component_bytes(component, component_bytes)?;
+        let package_path = path.join("package.wasm");
+        if package_path.exists() {
+            let package_bytes = fs::read(&package_path)?;
+            binary.apply_package_docs(&package_bytes)?;
+        }
+        Ok(binary)
     }
 
     /// Fetch a component by ID (returns the most recent version).

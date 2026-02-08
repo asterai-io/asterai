@@ -17,6 +17,27 @@ interface api {
     name: string,
     version: string,
     interfaces: list<string>,
+    description: option<string>,
+    functions: list<function-info>,
+  }
+
+  record function-info {
+    name: string,
+    interface-name: option<string>,
+    description: option<string>,
+    inputs: list<param-info>,
+    output: option<type-info>,
+  }
+
+  record param-info {
+    name: string,
+    type-name: string,
+    type-schema: string,
+  }
+
+  record type-info {
+    type-name: string,
+    type-schema: string,
   }
 
   component-implements: func(

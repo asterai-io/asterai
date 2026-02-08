@@ -148,6 +148,7 @@ mod test {
                 owner: TypeOwner::None,
                 docs: Default::default(),
                 stability: Default::default(),
+                span: None,
             },
             value: SerializableVal {
                 name: None,
@@ -157,6 +158,7 @@ mod test {
                 name: ComponentFunctionName::from_str("important_function").unwrap(),
                 inputs: vec![],
                 output_type: None,
+                docs: None,
                 component: Component::from_str("namespace:component@0.1.0").unwrap(),
                 package_name: wit_parser::PackageName {
                     namespace: "namespace".to_owned(),
@@ -179,6 +181,7 @@ mod test {
                 owner: TypeOwner::None,
                 docs: Default::default(),
                 stability: Default::default(),
+                span: None,
             },
             value: SerializableVal {
                 name: None,
@@ -188,6 +191,7 @@ mod test {
                 name: ComponentFunctionName::from_str("important_function").unwrap(),
                 inputs: vec![],
                 output_type: None,
+                docs: None,
                 component: Component::from_str("namespace:component@0.1.0").unwrap(),
                 package_name: wit_parser::PackageName {
                     namespace: "namespace".to_owned(),

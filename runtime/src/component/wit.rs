@@ -1,6 +1,7 @@
 use eyre::eyre;
+use std::collections::HashMap;
 use wit_parser::decoding::DecodedWasm;
-use wit_parser::{Resolve, Results, Type, TypeDefKind, World, WorldId, WorldItem};
+use wit_parser::{Resolve, Type, TypeDefKind, World, WorldId, WorldItem};
 
 /// Lightweight read-only wrapper around parsed WIT data.
 #[derive(Clone)]
@@ -39,6 +40,77 @@ impl ComponentWit {
     pub fn world(&self) -> &World {
         &self.resolve.worlds[self.world_id]
     }
+
+    pub fn world_docs(&self) -> Option<String> {
+        self.world().docs.contents.clone()
+    }
+
+    /// Overlays doc comments from a WIT package onto this component's
+    /// Resolve. This is needed because cargo-component strips the
+    /// `package-docs` section when compiling, so docs must be sourced
+    /// from the original `package.wasm`.
+    pub fn apply_package_docs(&mut self, package_bytes: &[u8]) -> eyre::Result<()> {
+        let decoded = wit_parser::decoding::decode(package_bytes).map_err(|e| eyre!(e))?;
+        let (pkg_resolve, pkg_id) = match decoded {
+            DecodedWasm::WitPackage(r, p) => (r, p),
+            _ => return Ok(()),
+        };
+        let pkg = &pkg_resolve.packages[pkg_id];
+        // Build docs lookup: iface_name → (iface_docs, {func_name → func_docs}).
+        let mut docs_map: HashMap<&str, (Option<&str>, HashMap<&str, &str>)> = HashMap::new();
+        for (_name, iface_id) in &pkg.interfaces {
+            let iface = &pkg_resolve.interfaces[*iface_id];
+            let Some(iface_name) = iface.name.as_deref() else {
+                continue;
+            };
+            let func_docs: HashMap<&str, &str> = iface
+                .functions
+                .values()
+                .filter_map(|f| Some((f.name.as_str(), f.docs.contents.as_deref()?)))
+                .collect();
+            docs_map.insert(iface_name, (iface.docs.contents.as_deref(), func_docs));
+        }
+        // Apply world docs.
+        if let Some(world_docs) = pkg
+            .worlds
+            .values()
+            .find_map(|wid| pkg_resolve.worlds[*wid].docs.contents.as_deref())
+        {
+            self.resolve.worlds[self.world_id].docs.contents = Some(world_docs.to_owned());
+        }
+        // Collect exported interface IDs.
+        let export_iface_ids: Vec<_> = self
+            .world()
+            .exports
+            .values()
+            .filter_map(|item| match item {
+                WorldItem::Interface { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+        // Apply interface and function docs.
+        for iface_id in export_iface_ids {
+            let iface_name = match self.resolve.interfaces[iface_id].name.as_deref() {
+                Some(n) => n,
+                None => continue,
+            };
+            let Some((iface_doc, func_docs)) = docs_map.get(iface_name) else {
+                continue;
+            };
+            if let Some(doc) = iface_doc {
+                self.resolve.interfaces[iface_id].docs.contents = Some(doc.to_string());
+            }
+            for (func_name, doc) in func_docs {
+                if let Some(func) = self.resolve.interfaces[iface_id]
+                    .functions
+                    .get_mut(*func_name)
+                {
+                    func.docs.contents = Some(doc.to_string());
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Uniform interface for querying WIT imports and exports.
@@ -56,20 +128,26 @@ pub struct ImportedInterface {
 pub struct ExportedInterface {
     /// Fully qualified name, e.g. "asterai:host/api@0.1.0".
     pub name: String,
+    pub docs: Option<String>,
     pub functions: Vec<ComponentFunction>,
 }
 
 pub struct ComponentFunction {
     pub name: String,
+    pub docs: Option<String>,
     pub params: Vec<FunctionParam>,
-    /// Display string for return type. None if no return.
-    pub return_type: Option<String>,
+    /// Display string for return type name. None if no return.
+    pub return_type_name: Option<String>,
+    /// Fully expanded WIT schema for return type. None if no return.
+    pub return_type_schema: Option<String>,
 }
 
 pub struct FunctionParam {
     pub name: String,
     /// Display string, e.g. "string", "option<config>".
     pub type_name: String,
+    /// Fully expanded WIT schema, e.g. "record { name: string, age: u32 }".
+    pub type_schema: String,
 }
 
 impl ComponentInterface for ComponentWit {
@@ -102,6 +180,7 @@ impl ComponentInterface for ComponentWit {
                         .collect();
                     Some(ExportedInterface {
                         name: format_interface_name(&self.resolve, *id),
+                        docs: iface.docs.contents.clone(),
                         functions,
                     })
                 }
@@ -133,23 +212,17 @@ fn build_exported_function(resolve: &Resolve, func: &wit_parser::Function) -> Co
         .map(|(name, ty)| FunctionParam {
             name: name.clone(),
             type_name: type_display(resolve, *ty),
+            type_schema: type_schema_display(resolve, *ty),
         })
         .collect();
-    let return_type = match &func.results {
-        results if results.len() == 0 => None,
-        Results::Anon(ty) => Some(type_display(resolve, *ty)),
-        Results::Named(named) => {
-            let parts: Vec<String> = named
-                .iter()
-                .map(|(n, ty)| format!("{n}: {}", type_display(resolve, *ty)))
-                .collect();
-            Some(format!("({})", parts.join(", ")))
-        }
-    };
+    let return_type_name = func.result.map(|ty| type_display(resolve, ty));
+    let return_type_schema = func.result.map(|ty| type_schema_display(resolve, ty));
     ComponentFunction {
         name: func.name.clone(),
+        docs: func.docs.contents.clone(),
         params,
-        return_type,
+        return_type_name,
+        return_type_schema,
     }
 }
 
@@ -190,6 +263,7 @@ pub fn type_display(resolve: &Resolve, ty: Type) -> String {
         Type::F64 => "f64".to_owned(),
         Type::Char => "char".to_owned(),
         Type::String => "string".to_owned(),
+        Type::ErrorContext => "error-context".to_owned(),
         Type::Id(id) => {
             let type_def = &resolve.types[id];
             if let Some(name) = &type_def.name {
@@ -232,6 +306,89 @@ fn type_kind_display(resolve: &Resolve, kind: &TypeDefKind) -> String {
         TypeDefKind::Enum(_) => "enum".to_owned(),
         TypeDefKind::Flags(_) => "flags".to_owned(),
         TypeDefKind::Type(ty) => type_display(resolve, *ty),
+        _ => "unknown".to_owned(),
+    }
+}
+
+/// Recursively expands a WIT type into a fully self-contained schema string.
+/// Unlike `type_display`, this never returns just a type name for complex types —
+/// it always inlines the full structure.
+pub fn type_schema_display(resolve: &Resolve, ty: Type) -> String {
+    match ty {
+        Type::Id(id) => {
+            let type_def = &resolve.types[id];
+            type_kind_schema_display(resolve, &type_def.kind)
+        }
+        _ => type_display(resolve, ty),
+    }
+}
+
+fn type_kind_schema_display(resolve: &Resolve, kind: &TypeDefKind) -> String {
+    match kind {
+        TypeDefKind::Option(ty) => {
+            format!("option<{}>", type_schema_display(resolve, *ty))
+        }
+        TypeDefKind::List(ty) => {
+            format!("list<{}>", type_schema_display(resolve, *ty))
+        }
+        TypeDefKind::Result(r) => {
+            let ok =
+                r.ok.map(|t| type_schema_display(resolve, t))
+                    .unwrap_or_else(|| "_".to_owned());
+            let err = r
+                .err
+                .map(|t| type_schema_display(resolve, t))
+                .unwrap_or_else(|| "_".to_owned());
+            format!("result<{ok}, {err}>")
+        }
+        TypeDefKind::Tuple(t) => {
+            let parts: Vec<String> = t
+                .types
+                .iter()
+                .map(|ty| type_schema_display(resolve, *ty))
+                .collect();
+            format!("tuple<{}>", parts.join(", "))
+        }
+        TypeDefKind::Record(r) => {
+            let fields: Vec<String> = r
+                .fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, type_schema_display(resolve, f.ty)))
+                .collect();
+            format!("record {{ {} }}", fields.join(", "))
+        }
+        TypeDefKind::Variant(v) => {
+            let cases: Vec<String> = v
+                .cases
+                .iter()
+                .map(|c| match c.ty {
+                    Some(ty) => format!("{}({})", c.name, type_schema_display(resolve, ty)),
+                    None => c.name.clone(),
+                })
+                .collect();
+            format!("variant {{ {} }}", cases.join(", "))
+        }
+        TypeDefKind::Enum(e) => {
+            format!(
+                "enum {{ {} }}",
+                e.cases
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+        TypeDefKind::Flags(f) => {
+            format!(
+                "flags {{ {} }}",
+                f.flags
+                    .iter()
+                    .map(|f| f.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+        TypeDefKind::Type(ty) => type_schema_display(resolve, *ty),
         _ => "unknown".to_owned(),
     }
 }

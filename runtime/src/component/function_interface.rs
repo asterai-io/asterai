@@ -24,6 +24,8 @@ pub struct ComponentFunctionInterface {
     /// although they were initially specified.
     /// Instead, a tuple can be used (which is a single wrapper type).
     pub output_type: Option<TypeDef>,
+    /// WIT doc comment on the function, if any.
+    pub docs: Option<String>,
     /// What component this function belongs to,
     /// i.e. this includes the package name where the function is implemented.
     pub component: Component,

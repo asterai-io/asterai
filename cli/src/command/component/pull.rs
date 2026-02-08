@@ -64,7 +64,7 @@ impl PullArgs {
         let registry = RegistryClient::new(&client, api_url, registry_url);
         let token = registry.get_token(None, &repo_name).await?;
         println!("fetching manifest...");
-        let manifest = registry.fetch_manifest(&repo_name, tag, &token).await?;
+        let (manifest, manifest_digest) = registry.fetch_manifest(&repo_name, tag, &token).await?;
         let output_dir = self.determine_output_dir(namespace, name, &version)?;
         // Download layers.
         for (i, layer) in manifest.layers.iter().enumerate() {
@@ -79,6 +79,16 @@ impl PullArgs {
             let file_path = output_dir.join(filename);
             fs::write(&file_path, &blob_bytes)
                 .wrap_err_with(|| format!("failed to write {}", filename))?;
+            println!("  saved to {}", file_path.display());
+        }
+        // Fetch WIT package via referrers API.
+        if !output_dir.join("package.wasm").exists()
+            && let Ok(Some(wit_bytes)) = registry
+                .fetch_wit_referrer(&repo_name, &manifest_digest, &token)
+                .await
+        {
+            let file_path = output_dir.join("package.wasm");
+            fs::write(&file_path, &wit_bytes).wrap_err("failed to write package.wasm")?;
             println!("  saved to {}", file_path.display());
         }
         self.write_metadata(&output_dir, &repo_name, tag)?;

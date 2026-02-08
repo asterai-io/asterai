@@ -87,6 +87,7 @@ pub fn json_value_to_val(value: &Value, ty: &Type) -> eyre::Result<Val> {
             _ => bail!("expected string for char"),
         },
         Type::Id(_) => bail!("unresolved type reference in JSON"),
+        Type::ErrorContext => bail!("error-context not supported in JSON"),
     }
 }
 
@@ -117,6 +118,7 @@ pub fn parse_primitive(arg: &str, ty: &Type) -> eyre::Result<Val> {
             Ok(Val::Char(c))
         }
         Type::Id(_) => bail!("unresolved type reference"),
+        Type::ErrorContext => bail!("error-context not supported"),
     }
 }
 

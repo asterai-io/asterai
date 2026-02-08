@@ -32,6 +32,21 @@ pub struct OciManifest {
     pub layers: Vec<OciDescriptor>,
 }
 
+/// OCI referrers index response.
+#[derive(Deserialize)]
+pub struct OciIndex {
+    pub manifests: Vec<OciIndexEntry>,
+}
+
+#[derive(Deserialize)]
+pub struct OciIndexEntry {
+    pub digest: String,
+    #[serde(rename = "artifactType")]
+    pub artifact_type: Option<String>,
+}
+
+const ARTIFACT_TYPE_WIT: &str = "application/vnd.wasm.wit.v1+wasm";
+
 /// OCI content descriptor.
 #[derive(Deserialize)]
 pub struct OciDescriptor {
@@ -103,12 +118,13 @@ impl<'a> RegistryClient<'a> {
     }
 
     /// Fetch an OCI manifest for the given repository and tag.
+    /// Returns the manifest and its digest (from Docker-Content-Digest header).
     pub async fn fetch_manifest(
         &self,
         repo_name: &str,
         tag: &str,
         token: &str,
-    ) -> eyre::Result<OciManifest> {
+    ) -> eyre::Result<(OciManifest, String)> {
         let manifest_url = format!("{}/v2/{}/manifests/{}", self.registry_url, repo_name, tag);
         let response = self
             .client
@@ -126,8 +142,14 @@ impl<'a> RegistryClient<'a> {
                 .unwrap_or_else(|_| "unknown error".to_string());
             bail!("failed to fetch manifest ({}): {}", status, error_text);
         }
+        let digest = response
+            .headers()
+            .get("Docker-Content-Digest")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
         let manifest: OciManifest = response.json().await.wrap_err("failed to parse manifest")?;
-        Ok(manifest)
+        Ok((manifest, digest))
     }
 
     /// Download a blob from the registry.
@@ -160,6 +182,111 @@ impl<'a> RegistryClient<'a> {
         Ok(bytes.to_vec())
     }
 
+    /// Fetch the WIT package.wasm for a component via the OCI referrers API,
+    /// falling back to the OCI 1.1 tag-based referrers index if the native
+    /// API is not supported (404).
+    pub async fn fetch_wit_referrer(
+        &self,
+        repo_name: &str,
+        manifest_digest: &str,
+        token: &str,
+    ) -> eyre::Result<Option<Vec<u8>>> {
+        if manifest_digest.is_empty() {
+            return Ok(None);
+        }
+        // Try native referrers API first.
+        let index = self
+            .fetch_referrers_native(repo_name, manifest_digest, token)
+            .await?;
+        // Fall back to tag-based index.
+        let index = match index {
+            Some(idx) => idx,
+            None => {
+                match self
+                    .fetch_referrers_tag(repo_name, manifest_digest, token)
+                    .await?
+                {
+                    Some(idx) => idx,
+                    None => return Ok(None),
+                }
+            }
+        };
+        let wit_entry = index.manifests.iter().find(|m| {
+            m.artifact_type
+                .as_deref()
+                .is_some_and(|t| t == ARTIFACT_TYPE_WIT)
+        });
+        let Some(entry) = wit_entry else {
+            return Ok(None);
+        };
+        let (wit_manifest, _) = self.fetch_manifest(repo_name, &entry.digest, token).await?;
+        let Some(layer) = wit_manifest.layers.first() else {
+            return Ok(None);
+        };
+        let blob = self.download_blob(repo_name, &layer.digest, token).await?;
+        Ok(Some(blob))
+    }
+
+    /// Try the native OCI referrers API. Returns None if not supported (404).
+    async fn fetch_referrers_native(
+        &self,
+        repo_name: &str,
+        manifest_digest: &str,
+        token: &str,
+    ) -> eyre::Result<Option<OciIndex>> {
+        let url = format!(
+            "{}/v2/{}/referrers/{}?artifactType={}",
+            self.registry_url, repo_name, manifest_digest, ARTIFACT_TYPE_WIT
+        );
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Accept", "application/vnd.oci.image.index.v1+json")
+            .send()
+            .await
+            .wrap_err("failed to fetch referrers")?;
+        if !response.status().is_success() {
+            return Ok(None);
+        }
+        let index: OciIndex = response
+            .json()
+            .await
+            .wrap_err("failed to parse referrers index")?;
+        Ok(Some(index))
+    }
+
+    /// Fetch the tag-based referrers index (OCI 1.1 fallback).
+    /// Tag format: `sha256-<hex>` (subject digest with `:` replaced by `-`).
+    async fn fetch_referrers_tag(
+        &self,
+        repo_name: &str,
+        manifest_digest: &str,
+        token: &str,
+    ) -> eyre::Result<Option<OciIndex>> {
+        let fallback_tag = manifest_digest.replace(':', "-");
+        let url = format!(
+            "{}/v2/{}/manifests/{}",
+            self.registry_url, repo_name, fallback_tag
+        );
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Accept", "application/vnd.oci.image.index.v1+json")
+            .send()
+            .await
+            .wrap_err("failed to fetch referrers tag index")?;
+        if !response.status().is_success() {
+            return Ok(None);
+        }
+        let index: OciIndex = response
+            .json()
+            .await
+            .wrap_err("failed to parse referrers tag index")?;
+        Ok(Some(index))
+    }
+
     /// Pull a component from the registry and save it locally.
     /// If `api_key` is `None`, uses stored API key if available.
     /// Returns the output directory path.
@@ -189,7 +316,7 @@ impl<'a> RegistryClient<'a> {
         // Get registry token.
         let token = self.get_token(api_key, &repo_name).await?;
         // Fetch manifest.
-        let manifest = self.fetch_manifest(&repo_name, &version, &token).await?;
+        let (manifest, manifest_digest) = self.fetch_manifest(&repo_name, &version, &token).await?;
         // Create output directory.
         fs::create_dir_all(&output_dir)?;
         // Download layers.
@@ -203,6 +330,14 @@ impl<'a> RegistryClient<'a> {
             };
             let file_path = output_dir.join(filename);
             fs::write(&file_path, &blob_bytes)?;
+        }
+        // Fetch WIT package via referrers API.
+        if !output_dir.join("package.wasm").exists()
+            && let Ok(Some(wit_bytes)) = self
+                .fetch_wit_referrer(&repo_name, &manifest_digest, &token)
+                .await
+        {
+            fs::write(output_dir.join("package.wasm"), &wit_bytes)?;
         }
         // Write component metadata.
         let metadata = serde_json::json!({
