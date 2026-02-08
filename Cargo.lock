@@ -140,7 +140,7 @@ checksum = "7d902e3d592a523def97af8f317b08ce16b7ab854c1985a0c671e6f15cebc236"
 
 [[package]]
 name = "asterai"
-version = "1.0.0-alpha.4"
+version = "1.0.0-alpha.5"
 dependencies = [
  "asterai_runtime",
  "async-trait",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "asterai_runtime"
-version = "1.0.0-alpha.4"
+version = "1.0.0-alpha.5"
 dependencies = [
  "anyhow",
  "async-trait",
