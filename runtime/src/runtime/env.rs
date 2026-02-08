@@ -61,6 +61,14 @@ pub fn create_store(
     for (key, value) in env_vars {
         wasi_ctx.env(key, value);
     }
+    if !preopened_dirs.is_empty() {
+        let dirs_value = preopened_dirs
+            .iter()
+            .map(|d| d.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(":");
+        wasi_ctx.env("ASTERAI_ALLOWED_DIRS", &dirs_value);
+    }
     for dir in preopened_dirs {
         if !dir.exists() {
             if let Err(e) = std::fs::create_dir_all(dir) {
