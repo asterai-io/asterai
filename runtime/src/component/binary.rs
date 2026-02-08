@@ -18,9 +18,7 @@ use wasmtime::Engine;
 pub use wasmtime::component::Component as WasmtimeComponent;
 use wit_bindgen::rt::async_support::futures::StreamExt;
 use wit_parser::decoding::DecodedWasm;
-use wit_parser::{
-    Function, PackageName, Results, Type, TypeDef, TypeDefKind, TypeOwner, WorldItem,
-};
+use wit_parser::{Function, PackageName, Type, TypeDef, TypeDefKind, TypeOwner, WorldItem};
 
 /// A component with its fully resolved interface
 /// as well as the compiled binary.
@@ -148,6 +146,12 @@ impl ComponentBinary {
         out
     }
 
+    /// Overlays doc comments from a WIT `package.wasm` onto this
+    /// component. See [`ComponentWit::apply_package_docs`].
+    pub fn apply_package_docs(&mut self, package_bytes: &[u8]) -> eyre::Result<()> {
+        self.wit.apply_package_docs(package_bytes)
+    }
+
     pub fn wit(&self) -> &ComponentWit {
         &self.wit
     }
@@ -204,19 +208,7 @@ impl ComponentBinary {
         package_name: PackageName,
     ) -> ComponentFunctionInterface {
         let resolve = self.wit.resolve();
-        let output_type = {
-            if function.results.len() == 0 {
-                None
-            } else {
-                let result_type = match function.results {
-                    Results::Named(_) => {
-                        panic!("multiple, named function return values not supported currently");
-                    }
-                    Results::Anon(result_type) => result_type,
-                };
-                Some(map_type_to_type_def(resolve, result_type))
-            }
-        };
+        let output_type = function.result.map(|ty| map_type_to_type_def(resolve, ty));
         let input_types = function
             .params
             .clone()
@@ -265,6 +257,7 @@ fn map_type_to_type_def(resolve: &wit_parser::Resolve, wit_type: Type) -> TypeDe
             owner: TypeOwner::None,
             docs: Default::default(),
             stability: Default::default(),
+            span: None,
         },
     }
 }
