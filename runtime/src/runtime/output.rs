@@ -148,7 +148,6 @@ mod test {
                 owner: TypeOwner::None,
                 docs: Default::default(),
                 stability: Default::default(),
-                span: None,
             },
             value: SerializableVal {
                 name: None,
@@ -181,7 +180,6 @@ mod test {
                 owner: TypeOwner::None,
                 docs: Default::default(),
                 stability: Default::default(),
-                span: None,
             },
             value: SerializableVal {
                 name: None,

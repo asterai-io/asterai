@@ -257,7 +257,6 @@ fn map_type_to_type_def(resolve: &wit_parser::Resolve, wit_type: Type) -> TypeDe
             owner: TypeOwner::None,
             docs: Default::default(),
             stability: Default::default(),
-            span: None,
         },
     }
 }
