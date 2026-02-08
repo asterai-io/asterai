@@ -1,5 +1,5 @@
 use crate::auth::Auth;
-use crate::command::env::call_api::{AppState, CORS_ORIGINS_ENV, RUNTIME_SECRET_ENV, handle_call};
+use crate::command::env::call_api::{AppState, RUNTIME_SECRET_ENV, handle_call};
 use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::local_store::LocalStore;
 use crate::registry::{GetEnvironmentResponse, RegistryClient};
@@ -30,14 +30,20 @@ pub(super) struct RunArgs {
     no_pull: bool,
     port: u16,
     host: String,
+    cors_origins: Option<String>,
+    allow_dirs: Vec<std::path::PathBuf>,
 }
 
 impl RunArgs {
-    pub fn parse(args: impl Iterator<Item = String>) -> eyre::Result<Self> {
+    pub fn parse(
+        args: impl Iterator<Item = String>,
+        allow_dirs: Vec<std::path::PathBuf>,
+    ) -> eyre::Result<Self> {
         let mut env_ref: Option<ResourceOrIdArg> = None;
         let mut no_pull = false;
         let mut port: u16 = 8080;
         let mut host = "127.0.0.1".to_string();
+        let mut cors_origins: Option<String> = None;
         let mut args = args.peekable();
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -56,6 +62,12 @@ impl RunArgs {
                     host = args
                         .next()
                         .ok_or_else(|| eyre::eyre!("--host requires a value"))?;
+                }
+                "--cors-origins" => {
+                    cors_origins = Some(
+                        args.next()
+                            .ok_or_else(|| eyre::eyre!("--cors-origins requires a value"))?,
+                    );
                 }
                 "--help" | "-h" | "help" => {
                     print_help();
@@ -82,6 +94,8 @@ impl RunArgs {
             no_pull,
             port,
             host,
+            cors_origins,
+            allow_dirs,
         })
     }
 
@@ -126,7 +140,7 @@ impl RunArgs {
             }
         };
         // Run the environment.
-        let runtime = build_runtime(environment).await?;
+        let runtime = build_runtime(environment, &self.allow_dirs).await?;
         let route_table = runtime.http_route_table();
         let runtime = Arc::new(Mutex::new(runtime));
         // Always start the HTTP server (call API + component routes).
@@ -148,7 +162,7 @@ impl RunArgs {
             )
             .fallback(handle_request)
             .with_state(state);
-        if let Some(cors) = build_cors_layer() {
+        if let Some(cors) = build_cors_layer(self.cors_origins.as_deref()) {
             app = app.layer(cors);
         }
         let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -341,7 +355,14 @@ async fn handle_request(
     };
     let full_body = http_body_util::Full::new(body_bytes).map_err(|never| match never {});
     let hyper_req = hyper::Request::from_parts(parts, full_body);
-    match http::handle_http_request(&route, route_table.env_vars(), hyper_req).await {
+    match http::handle_http_request(
+        &route,
+        route_table.env_vars(),
+        route_table.preopened_dirs(),
+        hyper_req,
+    )
+    .await
+    {
         Ok(resp) => resp.into_response(),
         Err(e) => {
             eprintln!("error handling request: {e:#}");
@@ -359,8 +380,8 @@ fn print_routes(route_table: &HttpRouteTable, addr: &SocketAddr) {
     }
 }
 
-fn build_cors_layer() -> Option<CorsLayer> {
-    let origins = std::env::var(CORS_ORIGINS_ENV).ok()?;
+fn build_cors_layer(cors_origins: Option<&str>) -> Option<CorsLayer> {
+    let origins = cors_origins?;
     let cors = match origins.trim() {
         "*" => {
             println!("CORS enabled for all origins");
@@ -394,10 +415,17 @@ Arguments:
                                 Version defaults to latest available
 
 Options:
-  --no-pull             Don't pull from registry, use cached version only
-  -p, --port <port>     HTTP server port (default: 8080)
-  --host <host>         HTTP server host (default: 127.0.0.1)
-  -h, --help            Show this help message
+  --no-pull                   Don't pull from registry, use cached version only
+  -p, --port <port>           HTTP server port (default: 8080)
+  --host <host>               HTTP server host (default: 127.0.0.1)
+  --allow-dir <path>          Grant components read/write access to a host
+                              directory. Can be specified multiple times.
+                              Tilde (~) is expanded.
+  --cors-origins <origins>    Comma-separated CORS origins, or "*" for all
+  -h, --help                  Show this help message
+
+Environment variables:
+  ASTERAI_RUNTIME_SECRET      Require this secret as Bearer token for call API
 
 Examples:
   asterai env run my-env                    # Run latest, default namespace
@@ -405,6 +433,7 @@ Examples:
   asterai env run myteam:my-env@1.2.0       # Pull (if needed) and run specific version
   asterai env run my-env --no-pull          # Run cached version only
   asterai env run my-env -p 3000            # Run with HTTP server on port 3000
+  asterai env run my-env --allow-dir ~/.asterbot  # With filesystem access
 "#
     );
 }

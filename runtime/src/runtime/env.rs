@@ -6,13 +6,14 @@ use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
 use crate::runtime::wasm_instance::ComponentRuntimeInstance;
 use eyre::eyre;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::p2::add_to_linker_async;
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView, add_only_http_to_linker_async};
 
 /// The component host env data.
@@ -40,12 +41,15 @@ pub struct HostEnvRuntimeData {
     pub compiled_components: Vec<(ComponentBinary, WasmtimeComponent)>,
     /// Environment variables to inject into fresh stores for dynamic calls.
     pub env_vars: HashMap<String, String>,
+    /// Preopened directories for filesystem access in fresh stores.
+    pub preopened_dirs: Vec<PathBuf>,
 }
 
 /// Create a Store with an externally provided app ID and output channel.
 pub fn create_store(
     engine: &Engine,
     env_vars: &HashMap<String, String>,
+    preopened_dirs: &[PathBuf],
     app_id: Uuid,
     component_output_tx: mpsc::Sender<ComponentOutput>,
 ) -> Store<HostEnv> {
@@ -56,6 +60,27 @@ pub fn create_store(
         .inherit_network();
     for (key, value) in env_vars {
         wasi_ctx.env(key, value);
+    }
+    if !preopened_dirs.is_empty() {
+        let dirs_value = preopened_dirs
+            .iter()
+            .map(|d| d.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(":");
+        wasi_ctx.env("ASTERAI_ALLOWED_DIRS", &dirs_value);
+    }
+    for dir in preopened_dirs {
+        if !dir.exists()
+            && let Err(e) = std::fs::create_dir_all(dir)
+        {
+            eprintln!("warning: failed to create {}: {e}", dir.display());
+            continue;
+        }
+        let guest_path = dir.to_string_lossy();
+        if let Err(e) = wasi_ctx.preopened_dir(dir, &*guest_path, DirPerms::all(), FilePerms::all())
+        {
+            eprintln!("warning: failed to preopen {}: {e}", dir.display());
+        }
     }
     let host_env = HostEnv {
         runtime_data: None,
@@ -68,10 +93,14 @@ pub fn create_store(
 }
 
 /// Create a disposable Store with a new app ID and a drain output channel.
-pub fn create_fresh_store(engine: &Engine, env_vars: &HashMap<String, String>) -> Store<HostEnv> {
+pub fn create_fresh_store(
+    engine: &Engine,
+    env_vars: &HashMap<String, String>,
+    preopened_dirs: &[PathBuf],
+) -> Store<HostEnv> {
     let (tx, mut rx) = mpsc::channel(32);
     tokio::spawn(async move { while rx.recv().await.is_some() {} });
-    create_store(engine, env_vars, Uuid::new_v4(), tx)
+    create_store(engine, env_vars, preopened_dirs, Uuid::new_v4(), tx)
 }
 
 /// Create a Linker with WASI, HTTP, and asterai host bindings.

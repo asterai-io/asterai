@@ -10,6 +10,7 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -57,10 +58,17 @@ impl ComponentRuntimeEngine {
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
         env_vars: &HashMap<String, String>,
+        preopened_dirs: &[PathBuf],
     ) -> eyre::Result<Self> {
         let engine = &ENGINE;
         let last_component = Arc::new(Mutex::new(None));
-        let mut store = create_store(engine, env_vars, app_id, component_output_tx);
+        let mut store = create_store(
+            engine,
+            env_vars,
+            preopened_dirs,
+            app_id,
+            component_output_tx,
+        );
         let mut linker = create_linker(engine)?;
         let mut instances = Vec::new();
         let mut compiled_components = Vec::new();
@@ -111,6 +119,7 @@ impl ComponentRuntimeEngine {
             component_response_to_agent: None,
             compiled_components: compiled_for_dynamic_calls,
             env_vars: env_vars.clone(),
+            preopened_dirs: preopened_dirs.to_vec(),
         });
         Ok(runtime_engine)
     }
