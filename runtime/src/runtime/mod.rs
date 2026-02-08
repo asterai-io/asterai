@@ -103,29 +103,66 @@ impl ComponentRuntime {
         component_id: &ComponentId,
         function_name: &ComponentFunctionName,
         package_name_opt: Option<PackageName>,
-    ) -> Option<ComponentFunctionInterface> {
-        self.component_interfaces().iter().find_map(|interface| {
-            if interface.component().id() != *component_id {
-                return None;
+    ) -> eyre::Result<Option<ComponentFunctionInterface>> {
+        let functions = self.get_component_functions(component_id);
+        let exact = functions.iter().find(|f| {
+            if !Self::matches_package(&f.package_name, &package_name_opt) {
+                return false;
             }
-            let functions = interface.get_functions();
-            functions.into_iter().find(|f| {
-                if let Some(package_name) = &package_name_opt {
-                    let is_same_package = f.package_name.name == package_name.name
-                        && f.package_name.namespace == package_name.namespace;
-                    // When specified, ensure the package name matches.
-                    if !is_same_package {
-                        return false;
-                    }
-                    let is_compatible_version = package_name.version.is_none()
-                        || package_name.version == f.package_name.version;
-                    if !is_compatible_version {
-                        return false;
-                    }
+            &f.name == function_name
+        });
+        if let Some(found) = exact {
+            return Ok(Some(found.clone()));
+        }
+        if function_name.interface.is_some() {
+            return Ok(None);
+        }
+        // Try matching by function name alone across all interfaces.
+        let matches: Vec<_> = functions
+            .into_iter()
+            .filter(|f| {
+                if !Self::matches_package(&f.package_name, &package_name_opt) {
+                    return false;
                 }
-                &f.name == function_name
+                f.name.name == function_name.name
             })
-        })
+            .collect();
+        match matches.len() {
+            0 => Ok(None),
+            1 => Ok(Some(matches.into_iter().next().unwrap())),
+            _ => {
+                let names: Vec<String> = matches.iter().map(|f| f.name.to_string()).collect();
+                Err(eyre!(
+                    "function '{}' is ambiguous, found in multiple \
+                     interfaces: {}. Use the full interface/function format.",
+                    function_name.name,
+                    names.join(", "),
+                ))
+            }
+        }
+    }
+
+    fn get_component_functions(
+        &self,
+        component_id: &ComponentId,
+    ) -> Vec<ComponentFunctionInterface> {
+        self.component_interfaces()
+            .iter()
+            .filter(|i| i.component().id() == *component_id)
+            .flat_map(|i| i.get_functions())
+            .collect()
+    }
+
+    fn matches_package(package_name: &PackageName, filter: &Option<PackageName>) -> bool {
+        let Some(filter) = filter else {
+            return true;
+        };
+        let is_same =
+            package_name.name == filter.name && package_name.namespace == filter.namespace;
+        if !is_same {
+            return false;
+        }
+        filter.version.is_none() || filter.version == package_name.version
     }
 
     /// Call all the `run` functions concurrently, which is commonly defined by `wasi:cli/run`
@@ -140,7 +177,7 @@ impl ComponentRuntime {
                 // Do not specify a package, as usually this is only implemented once.
                 // e.g. a common target would be wasi:cli@0.2.0
                 None,
-            );
+            )?;
             let Some(run_function) = run_function_opt else {
                 // Skip components that don't implement run.
                 continue;
