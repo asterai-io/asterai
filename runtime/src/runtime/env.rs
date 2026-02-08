@@ -70,11 +70,11 @@ pub fn create_store(
         wasi_ctx.env("ASTERAI_ALLOWED_DIRS", &dirs_value);
     }
     for dir in preopened_dirs {
-        if !dir.exists() {
-            if let Err(e) = std::fs::create_dir_all(dir) {
-                eprintln!("warning: failed to create {}: {e}", dir.display());
-                continue;
-            }
+        if !dir.exists()
+            && let Err(e) = std::fs::create_dir_all(dir)
+        {
+            eprintln!("warning: failed to create {}: {e}", dir.display());
+            continue;
         }
         let guest_path = dir.to_string_lossy();
         if let Err(e) = wasi_ctx.preopened_dir(dir, &*guest_path, DirPerms::all(), FilePerms::all())
