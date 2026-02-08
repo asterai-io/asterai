@@ -52,7 +52,7 @@ impl PullArgs {
 
     async fn execute(&self, api_url: &str, registry_url: &str) -> eyre::Result<()> {
         // Resolve version if not specified.
-        let resolved = self.component_ref.resolve(api_url).await?;
+        let resolved = self.component_ref.resolve(api_url, registry_url).await?;
         let component = Resource::from_str(&resolved)?;
         let namespace = component.namespace();
         let name = component.name();

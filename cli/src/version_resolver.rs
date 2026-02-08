@@ -5,6 +5,7 @@
 
 use crate::auth::Auth;
 use crate::local_store::LocalStore;
+use crate::registry::RegistryClient;
 use eyre::{bail, eyre};
 use semver::Version;
 use serde::Deserialize;
@@ -43,20 +44,17 @@ pub fn find_latest_local_version(namespace: &str, name: &str) -> Option<Version>
 }
 
 /// Fetch the latest remote version of a component from the API.
-pub async fn fetch_latest_remote_version(
+async fn fetch_latest_version_from_api(
     namespace: &str,
     name: &str,
     api_endpoint: &str,
 ) -> eyre::Result<Option<Version>> {
-    let Some(api_key) = Auth::read_stored_api_key() else {
-        return Ok(None);
-    };
     let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/components", api_endpoint))
-        .header("Authorization", api_key.trim())
-        .send()
-        .await?;
+    let mut request = client.get(format!("{}/v1/components", api_endpoint));
+    if let Some(api_key) = Auth::read_stored_api_key() {
+        request = request.header("Authorization", api_key.trim());
+    }
+    let response = request.send().await?;
     if !response.status().is_success() {
         return Ok(None);
     }
@@ -70,15 +68,47 @@ pub async fn fetch_latest_remote_version(
     Ok(None)
 }
 
+/// Fetch the latest remote version by listing OCI registry tags.
+async fn fetch_latest_version_from_registry(
+    namespace: &str,
+    name: &str,
+    api_endpoint: &str,
+    registry_endpoint: &str,
+) -> eyre::Result<Option<Version>> {
+    let client = reqwest::Client::new();
+    let registry = RegistryClient::new(&client, api_endpoint, registry_endpoint);
+    let repo_name = format!("{}/{}", namespace, name);
+    let tags = registry.list_tags(None, &repo_name).await?;
+    let latest = tags.iter().filter_map(|t| Version::from_str(t).ok()).max();
+    Ok(latest)
+}
+
+/// Fetch the latest remote version of a component.
+/// Tries the API first, then falls back to OCI registry tags.
+pub async fn fetch_latest_remote_version(
+    namespace: &str,
+    name: &str,
+    api_endpoint: &str,
+    registry_endpoint: &str,
+) -> eyre::Result<Option<Version>> {
+    let api_result = fetch_latest_version_from_api(namespace, name, api_endpoint).await?;
+    if api_result.is_some() {
+        return Ok(api_result);
+    }
+    fetch_latest_version_from_registry(namespace, name, api_endpoint, registry_endpoint).await
+}
+
 /// Resolve the latest version of a component from local and remote sources.
 /// Returns the highest version found.
 pub async fn resolve_latest_version(
     namespace: &str,
     name: &str,
     api_endpoint: &str,
+    registry_endpoint: &str,
 ) -> eyre::Result<Version> {
     let local = find_latest_local_version(namespace, name);
-    let remote = fetch_latest_remote_version(namespace, name, api_endpoint).await?;
+    let remote =
+        fetch_latest_remote_version(namespace, name, api_endpoint, registry_endpoint).await?;
     match (local, remote) {
         (Some(l), Some(r)) => Ok(std::cmp::max(l, r)),
         (Some(l), None) => Ok(l),
@@ -121,10 +151,17 @@ impl ComponentRef {
 
     /// Resolve to a full resource string with version.
     /// If version is not specified, resolves to the latest known version.
-    pub async fn resolve(&self, api_endpoint: &str) -> eyre::Result<String> {
+    pub async fn resolve(
+        &self,
+        api_endpoint: &str,
+        registry_endpoint: &str,
+    ) -> eyre::Result<String> {
         let version = match &self.version {
             Some(v) => v.clone(),
-            None => resolve_latest_version(&self.namespace, &self.name, api_endpoint).await?,
+            None => {
+                resolve_latest_version(&self.namespace, &self.name, api_endpoint, registry_endpoint)
+                    .await?
+            }
         };
         Ok(format!("{}:{}@{}", self.namespace, self.name, version))
     }

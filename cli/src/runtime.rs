@@ -6,7 +6,7 @@ use asterai_runtime::component::binary::ComponentBinary;
 use asterai_runtime::component::{Component, ComponentId};
 use asterai_runtime::environment::Environment;
 use asterai_runtime::runtime::ComponentRuntime;
-use eyre::{Context, OptionExt};
+use eyre::Context;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::sync::mpsc;
@@ -58,8 +58,7 @@ pub async fn build_runtime(
 }
 
 async fn pull_component(id: &ComponentId, version: &str) -> eyre::Result<ComponentBinary> {
-    let api_key = Auth::read_stored_api_key()
-        .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
+    let api_key = Auth::read_stored_api_key();
     let component_ref = format!("{}:{}@{}", id.namespace(), id.name(), version);
     let component = Component::from_str(&component_ref)
         .map_err(|e| eyre::eyre!("invalid component reference: {}", e))?;
@@ -67,7 +66,7 @@ async fn pull_component(id: &ComponentId, version: &str) -> eyre::Result<Compone
     let client = reqwest::Client::new();
     let registry = RegistryClient::new(&client, API_URL, REGISTRY_URL);
     let output_dir = registry
-        .pull_component(Some(&api_key), &component, true)
+        .pull_component(api_key.as_deref(), &component, true)
         .await?;
     LocalStore::parse_component(&output_dir).wrap_err_with(|| {
         format!(

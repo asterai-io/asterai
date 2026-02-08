@@ -55,8 +55,7 @@ impl PullArgs {
     }
 
     pub async fn execute(&self, api_endpoint: &str, registry_endpoint: &str) -> eyre::Result<()> {
-        let api_key = Auth::read_stored_api_key()
-            .ok_or_eyre("API key not found. Run 'asterai auth login' to authenticate.")?;
+        let api_key = Auth::read_stored_api_key();
         let namespace = self.env_ref.resolved_namespace();
         let name = self.env_ref.name();
         let version = self.env_ref.version().map(|v| v.to_string());
@@ -78,9 +77,11 @@ impl PullArgs {
             ),
             None => format!("{}/v1/environment/{}/{}", api_endpoint, namespace, name),
         };
-        let response = client
-            .get(&url)
-            .header("Authorization", api_key.trim())
+        let mut request = client.get(&url);
+        if let Some(key) = &api_key {
+            request = request.header("Authorization", key.trim());
+        }
+        let response = request
             .send()
             .await
             .wrap_err("failed to fetch environment")?;
@@ -145,7 +146,7 @@ impl PullArgs {
             let registry = RegistryClient::new(&client, api_endpoint, registry_endpoint);
             for component in &component_list {
                 registry
-                    .pull_component(Some(&api_key), component, false)
+                    .pull_component(api_key.as_deref(), component, false)
                     .await?;
             }
         }
