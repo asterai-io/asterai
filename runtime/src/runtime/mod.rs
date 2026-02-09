@@ -114,10 +114,15 @@ impl ComponentRuntime {
         if let Some(found) = exact {
             return Ok(Some(found.clone()));
         }
+        // The full function name was passed, and an exact match
+        // was not found.
         if function_name.interface.is_some() {
             return Ok(None);
         }
+        // Only the function name was passed (no interface).
         // Try matching by function name alone across all interfaces.
+        // This is allowed as long as there is no ambiguity
+        // (i.e. multiple functions of the same name across multiple interfaces).
         let matches: Vec<_> = functions
             .into_iter()
             .filter(|f| {
