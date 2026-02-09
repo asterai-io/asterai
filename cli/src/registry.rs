@@ -45,6 +45,12 @@ pub struct OciIndexEntry {
     pub artifact_type: Option<String>,
 }
 
+/// OCI tag list response.
+#[derive(Deserialize)]
+pub struct TagListResponse {
+    pub tags: Vec<String>,
+}
+
 const ARTIFACT_TYPE_WIT: &str = "application/vnd.wasm.wit.v1+wasm";
 
 /// OCI content descriptor.
@@ -285,6 +291,28 @@ impl<'a> RegistryClient<'a> {
             .await
             .wrap_err("failed to parse referrers tag index")?;
         Ok(Some(index))
+    }
+
+    /// List tags for a repository in the OCI registry.
+    pub async fn list_tags(
+        &self,
+        api_key: Option<&str>,
+        repo_name: &str,
+    ) -> eyre::Result<Vec<String>> {
+        let token = self.get_token(api_key, repo_name).await?;
+        let url = format!("{}/v2/{}/tags/list", self.registry_url, repo_name);
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .wrap_err("failed to list tags")?;
+        if !response.status().is_success() {
+            return Ok(vec![]);
+        }
+        let result: TagListResponse = response.json().await.wrap_err("failed to parse tag list")?;
+        Ok(result.tags)
     }
 
     /// Pull a component from the registry and save it locally.

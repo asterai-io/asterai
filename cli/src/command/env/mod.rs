@@ -43,6 +43,7 @@ pub struct EnvArgs {
     should_open_editor: bool,
     pub api_endpoint: String,
     pub registry_endpoint: String,
+    pub allow_dirs: Vec<std::path::PathBuf>,
 }
 
 #[derive(Copy, Clone, EnumString)]
@@ -72,9 +73,11 @@ impl EnvArgs {
             EnvAction::from_str(&action_string).map_err(|_| eyre!("unknown env action"))?;
         // Collect remaining args and extract common flags.
         let remaining_args: Vec<String> = args.collect();
-        let (api_endpoint, registry_endpoint, filtered_args) =
-            extract_common_flags(remaining_args)?;
-        let mut args = filtered_args.into_iter();
+        let common = extract_common_flags(remaining_args)?;
+        let api_endpoint = common.api_endpoint;
+        let registry_endpoint = common.registry_endpoint;
+        let allow_dirs = common.allow_dirs;
+        let mut args = common.remaining_args.into_iter();
         let mut parse_env_name_or_id = || -> eyre::Result<ResourceOrIdArg> {
             let Some(env_name_or_id_string) = args.next() else {
                 bail!("missing env name/id");
@@ -89,7 +92,7 @@ impl EnvArgs {
                 component_ref: None,
                 function: None,
                 function_args: vec![],
-                run_args: Some(RunArgs::parse(args)?),
+                run_args: Some(RunArgs::parse(args, allow_dirs.clone())?),
                 set_var_args: None,
                 push_args: None,
                 pull_args: None,
@@ -98,6 +101,7 @@ impl EnvArgs {
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
+                allow_dirs: allow_dirs.clone(),
             },
             EnvAction::Init => {
                 let env_resource_or_id = parse_env_name_or_id()?;
@@ -124,6 +128,7 @@ impl EnvArgs {
                     should_open_editor,
                     api_endpoint,
                     registry_endpoint,
+                    allow_dirs: allow_dirs.clone(),
                 }
             }
             action @ (EnvAction::Inspect | EnvAction::Edit) => Self {
@@ -142,6 +147,7 @@ impl EnvArgs {
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
+                allow_dirs: allow_dirs.clone(),
             },
             EnvAction::Call => {
                 let env = parse_env_name_or_id()?;
@@ -164,6 +170,7 @@ impl EnvArgs {
                     should_open_editor: false,
                     api_endpoint,
                     registry_endpoint,
+                    allow_dirs: allow_dirs.clone(),
                 }
             }
             EnvAction::AddComponent => {
@@ -188,6 +195,7 @@ impl EnvArgs {
                     should_open_editor: false,
                     api_endpoint,
                     registry_endpoint,
+                    allow_dirs: allow_dirs.clone(),
                 }
             }
             EnvAction::RemoveComponent => {
@@ -212,6 +220,7 @@ impl EnvArgs {
                     should_open_editor: false,
                     api_endpoint,
                     registry_endpoint,
+                    allow_dirs: allow_dirs.clone(),
                 }
             }
             EnvAction::List => Self {
@@ -230,6 +239,7 @@ impl EnvArgs {
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
+                allow_dirs: allow_dirs.clone(),
             },
             EnvAction::SetVar => Self {
                 action,
@@ -247,6 +257,7 @@ impl EnvArgs {
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
+                allow_dirs: allow_dirs.clone(),
             },
             EnvAction::Push => Self {
                 action,
@@ -264,6 +275,7 @@ impl EnvArgs {
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
+                allow_dirs: allow_dirs.clone(),
             },
             EnvAction::Pull => Self {
                 action,
@@ -281,6 +293,7 @@ impl EnvArgs {
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
+                allow_dirs: allow_dirs.clone(),
             },
             EnvAction::Delete => Self {
                 action,
@@ -298,6 +311,7 @@ impl EnvArgs {
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
+                allow_dirs: allow_dirs.clone(),
             },
             EnvAction::Cp => Self {
                 action,
@@ -315,6 +329,7 @@ impl EnvArgs {
                 should_open_editor: false,
                 api_endpoint,
                 registry_endpoint,
+                allow_dirs: allow_dirs.clone(),
             },
         };
         Ok(env_args)

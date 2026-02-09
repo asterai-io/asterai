@@ -23,7 +23,7 @@ impl EnvArgs {
         );
         let environment = LocalStore::fetch_environment(&resource_id)
             .map_err(|_| eyre::eyre!("environment '{}' not found locally", resource_id))?;
-        let mut runtime = build_runtime(environment).await?;
+        let mut runtime = build_runtime(environment, &self.allow_dirs).await?;
         let (function_name, package_name_opt) = parse_function_string_into_parts(function_string)?;
         let function = runtime
             .find_function(&comp_id, &function_name, package_name_opt)?

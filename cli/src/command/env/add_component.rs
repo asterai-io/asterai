@@ -13,7 +13,9 @@ impl EnvArgs {
             .as_ref()
             .ok_or_eyre("missing component")?;
         // Resolve version if not specified.
-        let resolved = component_ref.resolve(&self.api_endpoint).await?;
+        let resolved = component_ref
+            .resolve(&self.api_endpoint, &self.registry_endpoint)
+            .await?;
         let component = Component::from_str(&resolved)?;
         if !LocalStore::component_exists(&component) {
             // Pull the component from the registry.
