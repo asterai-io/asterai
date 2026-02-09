@@ -72,7 +72,7 @@ async fn handle_call_inner(
     let function_name = ComponentFunctionName::from_str(&body.function).unwrap();
     let mut runtime = state.runtime.lock().await;
     let function = runtime
-        .find_function(&comp_id, &function_name, None)
+        .find_function(&comp_id, &function_name, None)?
         .ok_or_else(|| {
             eyre::eyre!(
                 "function '{}' not found on component '{}'",

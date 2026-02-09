@@ -26,7 +26,7 @@ impl EnvArgs {
         let mut runtime = build_runtime(environment, &self.allow_dirs).await?;
         let (function_name, package_name_opt) = parse_function_string_into_parts(function_string)?;
         let function = runtime
-            .find_function(&comp_id, &function_name, package_name_opt)
+            .find_function(&comp_id, &function_name, package_name_opt)?
             .ok_or_eyre("function not found")?;
         let inputs = parse_inputs_from_string_args(&self.function_args, &function.inputs)?;
         let output_opt = runtime.call_function(function, &inputs).await?;
