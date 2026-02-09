@@ -84,7 +84,7 @@ pub async fn run_pkg(
     }
     let wit_content = fs::read(wit_input_path)
         .wrap_err_with(|| format!("failed to read WIT file at {:?}", wit_input_path))?;
-    let api_key = Auth::read_stored_api_key().ok_or_eyre("API key not found")?;
+    let api_key = Auth::read_stored_api_key();
     let client = reqwest::Client::new();
     let form = reqwest::multipart::Form::new().part(
         "package.wit",
@@ -92,10 +92,13 @@ pub async fn run_pkg(
             .file_name("package.wit")
             .mime_str("application/octet-stream")?,
     );
-    let response = client
+    let mut request = client
         .post(format!("{}/v1/wit/package", endpoint))
-        .header("Authorization", api_key.trim())
-        .multipart(form)
+        .multipart(form);
+    if let Some(key) = &api_key {
+        request = request.header("Authorization", key.trim());
+    }
+    let response = request
         .send()
         .await
         .wrap_err("failed to send request to pkg endpoint")?;
