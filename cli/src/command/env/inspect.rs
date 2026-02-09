@@ -15,13 +15,13 @@ impl EnvArgs {
         );
         if env.components.is_empty() {
             println!("components: (none)");
-            return Ok(());
-        }
-        let mut components: Vec<_> = env.component_refs();
-        components.sort();
-        println!("components:");
-        for component in components {
-            println!(" - {component}");
+        } else {
+            let mut components: Vec<_> = env.component_refs();
+            components.sort();
+            println!("components:");
+            for component in components {
+                println!(" - {component}");
+            }
         }
         if !env.vars.is_empty() {
             println!("vars:");
