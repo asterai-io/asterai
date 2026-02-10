@@ -22,6 +22,8 @@ use wit_parser::{Function, PackageName, Type, TypeDef, TypeDefKind, TypeOwner, W
 
 /// A component with its fully resolved interface
 /// as well as the compiled binary.
+///
+/// Cloning is cheap as this holds a reference to the underlying binary.
 #[derive(Clone)]
 pub struct ComponentBinary {
     component: Component,
