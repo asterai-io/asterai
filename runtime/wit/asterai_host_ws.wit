@@ -21,8 +21,3 @@ interface incoming-handler {
     on-close: func(id: connection-id, code: u16, reason: string);
     on-error: func(id: connection-id, message: string);
 }
-
-world host-ws {
-  export connection;
-  export incoming-handler;
-}
