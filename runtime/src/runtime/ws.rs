@@ -22,9 +22,12 @@ type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type WsSink = SplitSink<WsStream, Message>;
 type WsSource = SplitStream<WsStream>;
 
+#[derive(wasmtime::component::ComponentType, wasmtime::component::Lift)]
+#[component(record)]
 pub struct WsConfig {
     pub url: String,
     pub headers: Vec<(String, String)>,
+    #[component(name = "auto-reconnect")]
     pub auto_reconnect: bool,
 }
 
