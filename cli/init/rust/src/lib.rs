@@ -1,8 +1,12 @@
-use crate::bindings::asterai::host::api;
 use crate::bindings::exports::___USERNAME_SNAKE___::___COMPONENT_SNAKE___::___COMPONENT_SNAKE___::Guest;
 
 #[allow(warnings)]
-mod bindings;
+mod bindings {
+    wit_bindgen::generate!({
+        path: "wit/package.wasm",
+        world: "component",
+    });
+}
 
 struct Component;
 

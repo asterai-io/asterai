@@ -203,7 +203,7 @@ impl PushArgs {
             new_version
         );
         println!("\nPlease rebuild your component and push again:");
-        println!("  cargo component build --release");
+        println!("  cargo build --release --target wasm32-wasip2");
         println!("  asterai component push");
         Ok(())
     }

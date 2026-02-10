@@ -160,7 +160,9 @@ impl ComponentBinary {
 
     pub fn get_functions(&self) -> Vec<ComponentFunctionInterface> {
         let resolve = self.wit.resolve();
-        let world = self.wit.world();
+        let Some(world) = self.wit.world() else {
+            return Vec::new();
+        };
         let component_package_name = self.component.package_name();
         world
             .exports
@@ -200,7 +202,7 @@ impl ComponentBinary {
     }
 
     pub fn get_imports_count(&self) -> usize {
-        self.wit.world().imports.len()
+        self.wit.world().map(|w| w.imports.len()).unwrap_or(0)
     }
 
     fn map_wit_function_component_function(

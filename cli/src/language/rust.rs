@@ -26,15 +26,7 @@ impl Language for Rust {
     }
 
     fn is_dir_a_component(&self, dir: &Path) -> bool {
-        let cargo_toml = dir.join("Cargo.toml");
-        if !cargo_toml.exists() {
-            return false;
-        }
-        // Check if it's a WASM component by looking for the component metadata.
-        let Ok(content) = std::fs::read_to_string(&cargo_toml) else {
-            return false;
-        };
-        content.contains("[package.metadata.component]")
+        dir.join("Cargo.toml").exists() && dir.join("component.wit").exists()
     }
 
     fn get_wit_file_path(&self, dir: &Path) -> PathBuf {
@@ -51,23 +43,7 @@ impl Language for Rust {
 
     fn get_component_wasm_path(&self, dir: &Path) -> eyre::Result<PathBuf> {
         let crate_name = get_crate_name(dir)?;
-        let wasm_name = crate_name.replace('-', "_");
-        let filename = format!("{}.wasm", wasm_name);
-        // cargo-component may target wasip1 or wasip2 depending on version.
-        // Older versions target wasip1 and wrap to a wasip2 component.
-        let candidates = ["wasm32-wasip2", "wasm32-wasip1"];
-        for target in candidates {
-            let path = dir
-                .join("target")
-                .join(target)
-                .join("release")
-                .join(&filename);
-            if path.exists() {
-                return Ok(path);
-            }
-        }
-        // Default to wasm32-wasip2, though this will error later if
-        // used as it does not exist according to the checks above.
+        let filename = format!("{}.wasm", crate_name.replace('-', "_"));
         Ok(dir
             .join("target")
             .join("wasm32-wasip2")
@@ -82,7 +58,11 @@ impl Language for Rust {
         let pkg_wit = self.get_package_wit_path(dir);
         run_pkg(&wit_file, &pkg_wasm, Some(&pkg_wit), api_endpoint).await?;
         // Build.
-        run_command(dir, "cargo", &["component", "build", "--release"])?;
+        run_command(
+            dir,
+            "cargo",
+            &["build", "--release", "--target", "wasm32-wasip2"],
+        )?;
         let wasm_path = self.get_component_wasm_path(dir)?;
         if !wasm_path.exists() {
             bail!("built WASM file not found at {:?}", wasm_path);

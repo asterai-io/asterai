@@ -1,19 +1,24 @@
 use eyre::eyre;
 use std::collections::HashMap;
 use wit_parser::decoding::DecodedWasm;
-use wit_parser::{Resolve, Type, TypeDefKind, World, WorldId, WorldItem};
+use wit_parser::{PackageId, Resolve, Type, TypeDefKind, World, WorldId, WorldItem};
 
 /// Lightweight read-only wrapper around parsed WIT data.
 #[derive(Clone)]
 pub struct ComponentWit {
     resolve: Resolve,
-    world_id: WorldId,
+    world_id: Option<WorldId>,
+    pkg_id: Option<PackageId>,
 }
 
 impl ComponentWit {
     /// Construct from an already-decoded Resolve and WorldId.
     pub fn new(resolve: Resolve, world_id: WorldId) -> Self {
-        Self { resolve, world_id }
+        Self {
+            resolve,
+            world_id: Some(world_id),
+            pkg_id: None,
+        }
     }
 
     /// Parse from raw bytes
@@ -21,14 +26,18 @@ impl ComponentWit {
     pub fn from_bytes(bytes: &[u8]) -> eyre::Result<Self> {
         let decoded = wit_parser::decoding::decode(bytes).map_err(|e| eyre!(e))?;
         match decoded {
-            DecodedWasm::Component(resolve, world_id) => Ok(Self { resolve, world_id }),
+            DecodedWasm::Component(resolve, world_id) => Ok(Self {
+                resolve,
+                world_id: Some(world_id),
+                pkg_id: None,
+            }),
             DecodedWasm::WitPackage(resolve, pkg_id) => {
-                let world_id = *resolve.packages[pkg_id]
-                    .worlds
-                    .values()
-                    .next()
-                    .ok_or_else(|| eyre!("WIT package defines no worlds"))?;
-                Ok(Self { resolve, world_id })
+                let world_id = resolve.packages[pkg_id].worlds.values().next().copied();
+                Ok(Self {
+                    resolve,
+                    world_id,
+                    pkg_id: Some(pkg_id),
+                })
             }
         }
     }
@@ -37,17 +46,17 @@ impl ComponentWit {
         &self.resolve
     }
 
-    pub fn world(&self) -> &World {
-        &self.resolve.worlds[self.world_id]
+    pub fn world(&self) -> Option<&World> {
+        self.world_id.map(|id| &self.resolve.worlds[id])
     }
 
     pub fn world_docs(&self) -> Option<String> {
-        self.world().docs.contents.clone()
+        self.world()?.docs.contents.clone()
     }
 
     /// Overlays doc comments from a WIT package onto this component's
-    /// Resolve. This is needed because cargo-component strips the
-    /// `package-docs` section when compiling, so docs must be sourced
+    /// Resolve. This is needed because the compiled component binary does
+    /// not include the `package-docs` section, so docs must be sourced
     /// from the original `package.wasm`.
     pub fn apply_package_docs(&mut self, package_bytes: &[u8]) -> eyre::Result<()> {
         let decoded = wit_parser::decoding::decode(package_bytes).map_err(|e| eyre!(e))?;
@@ -71,23 +80,26 @@ impl ComponentWit {
             docs_map.insert(iface_name, (iface.docs.contents.as_deref(), func_docs));
         }
         // Apply world docs.
-        if let Some(world_docs) = pkg
-            .worlds
-            .values()
-            .find_map(|wid| pkg_resolve.worlds[*wid].docs.contents.as_deref())
-        {
-            self.resolve.worlds[self.world_id].docs.contents = Some(world_docs.to_owned());
+        let world_and_docs_opt = self.world_id.zip(
+            pkg.worlds
+                .values()
+                .find_map(|wid| pkg_resolve.worlds[*wid].docs.contents.as_deref()),
+        );
+        if let Some((world_id, world_docs)) = world_and_docs_opt {
+            self.resolve.worlds[world_id].docs.contents = Some(world_docs.to_owned());
         }
         // Collect exported interface IDs.
-        let export_iface_ids: Vec<_> = self
-            .world()
-            .exports
-            .values()
-            .filter_map(|item| match item {
-                WorldItem::Interface { id, .. } => Some(*id),
-                _ => None,
-            })
-            .collect();
+        let export_iface_ids: Vec<_> = match self.world() {
+            Some(world) => world
+                .exports
+                .values()
+                .filter_map(|item| match item {
+                    WorldItem::Interface { id, .. } => Some(*id),
+                    _ => None,
+                })
+                .collect(),
+            None => Vec::new(),
+        };
         // Apply interface and function docs.
         for iface_id in export_iface_ids {
             let iface_name = match self.resolve.interfaces[iface_id].name.as_deref() {
@@ -110,6 +122,31 @@ impl ComponentWit {
             }
         }
         Ok(())
+    }
+
+    /// Returns all interfaces defined in the package as exported interfaces.
+    /// Used for interface-only packages that define no worlds.
+    fn package_interfaces_as_exports(&self) -> Vec<ExportedInterface> {
+        let Some(pkg_id) = self.pkg_id else {
+            return Vec::new();
+        };
+        let pkg = &self.resolve.packages[pkg_id];
+        pkg.interfaces
+            .values()
+            .map(|iface_id| {
+                let iface = &self.resolve.interfaces[*iface_id];
+                let functions = iface
+                    .functions
+                    .iter()
+                    .map(|(_, func)| build_exported_function(&self.resolve, func))
+                    .collect();
+                ExportedInterface {
+                    name: format_interface_name(&self.resolve, *iface_id),
+                    docs: iface.docs.contents.clone(),
+                    functions,
+                }
+            })
+            .collect()
     }
 }
 
@@ -152,7 +189,9 @@ pub struct FunctionParam {
 
 impl ComponentInterface for ComponentWit {
     fn imported_interfaces(&self) -> Vec<ImportedInterface> {
-        let world = self.world();
+        let Some(world) = self.world() else {
+            return Vec::new();
+        };
         world
             .imports
             .iter()
@@ -166,7 +205,11 @@ impl ComponentInterface for ComponentWit {
     }
 
     fn exported_interfaces(&self) -> Vec<ExportedInterface> {
-        let world = self.world();
+        // For worldless packages, list all package interfaces as exports.
+        if self.world_id.is_none() {
+            return self.package_interfaces_as_exports();
+        }
+        let world = &self.resolve.worlds[self.world_id.unwrap()];
         world
             .exports
             .iter()
@@ -193,7 +236,9 @@ impl ComponentInterface for ComponentWit {
     /// with other components (only callable by the host).
     /// See <https://component-model.bytecodealliance.org/composing-and-distributing/composing.html#what-is-composition>.
     fn world_functions(&self) -> Vec<ComponentFunction> {
-        let world = self.world();
+        let Some(world) = self.world() else {
+            return Vec::new();
+        };
         world
             .exports
             .iter()
