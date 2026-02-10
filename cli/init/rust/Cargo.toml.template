@@ -6,8 +6,8 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
-[dependencies]
-wit-bindgen = "0.52.0"
+[lib]
+crate-type = ["cdylib"]
 
 [profile.release]
 codegen-units = 1
@@ -15,3 +15,6 @@ opt-level = "s"
 debug = false
 strip = true
 lto = true
+
+[dependencies]
+wit-bindgen = "0.52.0"
