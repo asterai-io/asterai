@@ -46,8 +46,8 @@ impl ComponentWit {
     }
 
     /// Overlays doc comments from a WIT package onto this component's
-    /// Resolve. This is needed because cargo-component strips the
-    /// `package-docs` section when compiling, so docs must be sourced
+    /// Resolve. This is needed because the compiled component binary does
+    /// not include the `package-docs` section, so docs must be sourced
     /// from the original `package.wasm`.
     pub fn apply_package_docs(&mut self, package_bytes: &[u8]) -> eyre::Result<()> {
         let decoded = wit_parser::decoding::decode(package_bytes).map_err(|e| eyre!(e))?;
