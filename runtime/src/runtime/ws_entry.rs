@@ -93,12 +93,12 @@ fn ws_send<'a>(
     })
 }
 
-fn ws_close<'a>(store: StoreContextMut<'a, HostEnv>, (id,): (u64,)) -> HostFuture<'a, ((),)> {
+fn ws_close<'a>(store: StoreContextMut<'a, HostEnv>, (id,): (u64,)) -> HostFuture<'a, ()> {
     Box::new(async move {
         if let Ok(mgr) = get_ws_manager(&store) {
             mgr.close(id).await;
         }
-        Ok(((),))
+        Ok(())
     })
 }
 
