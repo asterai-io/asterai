@@ -5,6 +5,7 @@ mod bindings {
     wit_bindgen::generate!({
         path: "wit/package.wasm",
         world: "component",
+        generate_all,
     });
 }
 
