@@ -213,10 +213,20 @@ impl ComponentRuntime {
             let func = run_function.get_func(&mut self.engine.store, &instance.instance)?;
             funcs.push((func, run_function.name, component));
         }
+        let last_component = self
+            .engine
+            .store
+            .data()
+            .runtime_data
+            .as_ref()
+            .unwrap()
+            .last_component
+            .clone();
         self.engine
             .store
             .run_concurrent(async |a| {
                 for (func, func_name, component) in funcs {
+                    *last_component.lock().unwrap() = Some(component.clone());
                     let result = call_wasm_component_function_concurrent(
                         &func,
                         &func_name,
