@@ -25,10 +25,12 @@ pub fn add_asterai_ws_to_linker(linker: &mut Linker<HostEnv>) -> eyre::Result<()
     Ok(())
 }
 
+/// Config record lowered as tuple: (url, headers, auto_reconnect).
+type WsConnectConfig = (String, Vec<(String, String)>, bool);
+
 fn ws_connect(
     mut store: StoreContextMut<HostEnv>,
-    // Config record lowered as tuple: (url, headers, auto_reconnect).
-    (config,): ((String, Vec<(String, String)>, bool),),
+    (config,): (WsConnectConfig,),
 ) -> HostFuture<(Result<u64, String>,)> {
     Box::new(async move {
         let result = ws_connect_inner(&mut store, config).await;

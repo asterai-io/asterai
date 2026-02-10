@@ -43,6 +43,12 @@ pub struct WsManager {
     runtime_data: OnceLock<HostEnvRuntimeData>,
 }
 
+impl Default for WsManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WsManager {
     pub fn new() -> Self {
         Self {
