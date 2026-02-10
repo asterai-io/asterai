@@ -23,10 +23,10 @@ pub use wasmtime::component::Val;
 use wasmtime_wasi_http::bindings::ProxyPre;
 use wit_parser::PackageName;
 
-mod component_linker;
 mod entry;
 pub mod env;
 pub mod http;
+mod link_components;
 pub mod output;
 pub mod parsing;
 pub(crate) mod std_out_err;

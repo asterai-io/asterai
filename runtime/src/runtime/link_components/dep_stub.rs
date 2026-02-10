@@ -4,14 +4,13 @@ use crate::component::Component;
 use crate::component::binary::ComponentBinary;
 use crate::component::function_interface::ComponentFunctionInterface;
 use crate::runtime::env::HostEnv;
+use crate::runtime::wasm_instance::{call_wasm_component_function, parse_component_output};
 use eyre::eyre;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use wasmtime::component::{Func, Instance, Linker};
 use wasmtime::{AsContext, AsContextMut};
-
-use super::wasm_instance::{call_wasm_component_function, parse_component_output};
 
 /// Resolved function slot populated after component instantiation.
 struct ResolvedFunc {
