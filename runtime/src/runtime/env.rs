@@ -4,6 +4,8 @@ use crate::runtime::entry::add_asterai_host_to_linker;
 use crate::runtime::output::ComponentOutput;
 use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
 use crate::runtime::wasm_instance::ComponentRuntimeInstance;
+use crate::runtime::ws::WsManager;
+use crate::runtime::ws_entry::add_asterai_ws_to_linker;
 use eyre::eyre;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -43,6 +45,8 @@ pub struct HostEnvRuntimeData {
     pub env_vars: HashMap<String, String>,
     /// Preopened directories for filesystem access in fresh stores.
     pub preopened_dirs: Vec<PathBuf>,
+    /// Shared WebSocket connection manager.
+    pub ws_manager: Option<Arc<WsManager>>,
 }
 
 /// Create a Store with an externally provided app ID and output channel.
@@ -110,6 +114,7 @@ pub fn create_linker(engine: &Engine) -> eyre::Result<Linker<HostEnv>> {
     add_to_linker_async(&mut linker).map_err(|e| eyre!("{e}"))?;
     add_only_http_to_linker_async(&mut linker).map_err(|e| eyre!("{e}"))?;
     add_asterai_host_to_linker(&mut linker)?;
+    add_asterai_ws_to_linker(&mut linker)?;
     Ok(linker)
 }
 

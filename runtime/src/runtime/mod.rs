@@ -8,6 +8,7 @@ use crate::runtime::output::{ComponentFunctionOutput, ComponentOutput};
 use crate::runtime::wasm_instance::{
     ComponentRuntimeEngine, call_wasm_component_function_concurrent,
 };
+use crate::runtime::ws::WsManager;
 use derive_getters::Getters;
 use eyre::eyre;
 use log::{error, trace};
@@ -30,6 +31,8 @@ pub mod parsing;
 pub(crate) mod std_out_err;
 mod wasm_instance;
 mod wit_bindings;
+pub mod ws;
+mod ws_entry;
 
 // The `run/run` function, commonly defined by `wasi:cli`.
 static CLI_RUN_FUNCTION_NAME: Lazy<ComponentFunctionName> = Lazy::new(|| ComponentFunctionName {
@@ -85,6 +88,16 @@ impl ComponentRuntime {
 
     pub fn http_route_table(&self) -> Arc<HttpRouteTable> {
         self.http_route_table.clone()
+    }
+
+    pub fn ws_manager(&self) -> Option<Arc<WsManager>> {
+        self.engine
+            .store
+            .data()
+            .runtime_data
+            .as_ref()?
+            .ws_manager
+            .clone()
     }
 
     pub fn component_interfaces(&self) -> Vec<ComponentBinary> {

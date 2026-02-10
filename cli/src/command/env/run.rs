@@ -179,6 +179,13 @@ impl RunArgs {
         }
         // Keep alive for the HTTP server.
         tokio::signal::ctrl_c().await?;
+        // Close all WebSocket connections.
+        {
+            let rt = runtime.lock().await;
+            if let Some(ws_mgr) = rt.ws_manager() {
+                ws_mgr.close_all().await;
+            }
+        }
         Ok(())
     }
 

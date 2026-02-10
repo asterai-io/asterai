@@ -4,6 +4,7 @@ use crate::component::function_interface::ComponentFunctionInterface;
 use crate::component::function_name::ComponentFunctionName;
 use crate::runtime::env::{HostEnv, HostEnvRuntimeData, create_linker, create_store};
 use crate::runtime::output::ComponentOutput;
+use crate::runtime::ws::WsManager;
 use eyre::{Context, eyre};
 use log::trace;
 use once_cell::sync::Lazy;
@@ -112,7 +113,8 @@ impl ComponentRuntimeEngine {
             .iter()
             .map(|e| (e.component_binary.clone(), e.component.clone()))
             .collect();
-        runtime_engine.store.data_mut().runtime_data = Some(HostEnvRuntimeData {
+        let ws_manager = Arc::new(WsManager::new());
+        let runtime_data = HostEnvRuntimeData {
             app_id,
             instances,
             last_component,
@@ -120,7 +122,10 @@ impl ComponentRuntimeEngine {
             compiled_components: compiled_for_dynamic_calls,
             env_vars: env_vars.clone(),
             preopened_dirs: preopened_dirs.to_vec(),
-        });
+            ws_manager: Some(Arc::clone(&ws_manager)),
+        };
+        ws_manager.set_runtime_data(runtime_data.clone());
+        runtime_engine.store.data_mut().runtime_data = Some(runtime_data);
         Ok(runtime_engine)
     }
 

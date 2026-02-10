@@ -51,3 +51,5 @@ http = { workspace = true }
 http-body = { workspace = true }
 http-body-util = { workspace = true }
 anyhow = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }

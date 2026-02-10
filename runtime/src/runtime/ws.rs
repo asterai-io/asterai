@@ -1,0 +1,427 @@
+use crate::component::binary::{ComponentBinary, WasmtimeComponent};
+use crate::runtime::env::{HostEnvRuntimeData, create_fresh_store, create_linker};
+use crate::runtime::wasm_instance::ENGINE;
+use eyre::eyre;
+use futures::stream::{SplitSink, SplitStream};
+use futures::{SinkExt, StreamExt};
+use log::{error, info, trace, warn};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
+use tokio::net::TcpStream;
+use tokio::sync::{RwLock, mpsc};
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use tokio_util::sync::CancellationToken;
+use wasmtime::component::TypedFunc;
+
+pub type ConnectionId = u64;
+
+type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
+type WsSink = SplitSink<WsStream, Message>;
+type WsSource = SplitStream<WsStream>;
+
+pub struct WsConfig {
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub auto_reconnect: bool,
+}
+
+#[allow(dead_code)]
+struct WsConnection {
+    write_tx: mpsc::Sender<Message>,
+    config: Arc<WsConfig>,
+    owner_binary: ComponentBinary,
+    owner_compiled: WasmtimeComponent,
+    cancel_token: CancellationToken,
+}
+
+pub struct WsManager {
+    connections: RwLock<HashMap<ConnectionId, WsConnection>>,
+    next_id: AtomicU64,
+    runtime_data: OnceLock<HostEnvRuntimeData>,
+}
+
+impl WsManager {
+    pub fn new() -> Self {
+        Self {
+            connections: RwLock::new(HashMap::new()),
+            next_id: AtomicU64::new(1),
+            runtime_data: OnceLock::new(),
+        }
+    }
+
+    pub fn set_runtime_data(&self, data: HostEnvRuntimeData) {
+        self.runtime_data.set(data).ok();
+    }
+
+    pub async fn connect(
+        self: &Arc<Self>,
+        config: WsConfig,
+        owner_binary: ComponentBinary,
+        owner_compiled: WasmtimeComponent,
+    ) -> Result<ConnectionId, String> {
+        let conn_id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let config = Arc::new(config);
+        let stream = open_ws_connection(&config).await?;
+        let (sink, source) = stream.split();
+        let cancel_token = CancellationToken::new();
+        let (write_tx, write_rx) = mpsc::channel::<Message>(64);
+        tokio::spawn(write_loop(sink, write_rx));
+        let manager = Arc::clone(self);
+        let read_config = Arc::clone(&config);
+        let read_binary = owner_binary.clone();
+        let read_compiled = owner_compiled.clone();
+        let read_cancel = cancel_token.clone();
+        tokio::spawn(async move {
+            read_loop(
+                source,
+                conn_id,
+                read_config,
+                read_binary,
+                read_compiled,
+                read_cancel,
+                manager,
+            )
+            .await;
+        });
+        let connection = WsConnection {
+            write_tx,
+            config,
+            owner_binary,
+            owner_compiled,
+            cancel_token,
+        };
+        self.connections.write().await.insert(conn_id, connection);
+        info!("ws connection {conn_id} opened");
+        Ok(conn_id)
+    }
+
+    pub async fn send(&self, id: ConnectionId, data: Vec<u8>) -> Result<(), String> {
+        let connections = self.connections.read().await;
+        let conn = connections
+            .get(&id)
+            .ok_or_else(|| format!("connection {id} not found"))?;
+        conn.write_tx
+            .send(Message::Binary(data.into()))
+            .await
+            .map_err(|e| format!("send failed: {e}"))
+    }
+
+    pub async fn close(&self, id: ConnectionId) {
+        let conn = self.connections.write().await.remove(&id);
+        if let Some(conn) = conn {
+            conn.cancel_token.cancel();
+            // Send a close frame best-effort.
+            let _ = conn.write_tx.send(Message::Close(None)).await;
+            drop(conn.write_tx);
+            info!("ws connection {id} closed");
+        }
+    }
+
+    pub async fn close_all(&self) {
+        let ids: Vec<ConnectionId> = self.connections.read().await.keys().copied().collect();
+        for id in ids {
+            self.close(id).await;
+        }
+    }
+
+    /// Replace the write channel for a reconnected connection.
+    async fn replace_writer(&self, id: ConnectionId, new_tx: mpsc::Sender<Message>) {
+        let mut connections = self.connections.write().await;
+        if let Some(conn) = connections.get_mut(&id) {
+            conn.write_tx = new_tx;
+        }
+    }
+}
+
+async fn open_ws_connection(config: &WsConfig) -> Result<WsStream, String> {
+    let mut request = config
+        .url
+        .as_str()
+        .into_client_request()
+        .map_err(|e| format!("invalid url: {e}"))?;
+    let headers = request.headers_mut();
+    for (key, value) in &config.headers {
+        let header_name: http::HeaderName = key
+            .parse()
+            .map_err(|e| format!("invalid header name '{key}': {e}"))?;
+        let header_value: http::HeaderValue = value
+            .parse()
+            .map_err(|e| format!("invalid header value: {e}"))?;
+        headers.insert(header_name, header_value);
+    }
+    let (stream, _response) = tokio_tungstenite::connect_async(request)
+        .await
+        .map_err(|e| format!("ws connect failed: {e}"))?;
+    Ok(stream)
+}
+
+async fn write_loop(mut sink: WsSink, mut rx: mpsc::Receiver<Message>) {
+    while let Some(msg) = rx.recv().await {
+        if let Err(e) = sink.send(msg).await {
+            trace!("ws write error: {e}");
+            break;
+        }
+    }
+    let _ = sink.close().await;
+}
+
+async fn read_loop(
+    mut source: WsSource,
+    conn_id: ConnectionId,
+    config: Arc<WsConfig>,
+    owner_binary: ComponentBinary,
+    owner_compiled: WasmtimeComponent,
+    cancel_token: CancellationToken,
+    manager: Arc<WsManager>,
+) {
+    loop {
+        match source.next().await {
+            Some(Ok(Message::Binary(data))) => {
+                dispatch_on_message(
+                    conn_id,
+                    data.to_vec(),
+                    &owner_binary,
+                    &owner_compiled,
+                    &manager,
+                )
+                .await;
+            }
+            Some(Ok(Message::Text(text))) => {
+                dispatch_on_message(
+                    conn_id,
+                    text.as_bytes().to_vec(),
+                    &owner_binary,
+                    &owner_compiled,
+                    &manager,
+                )
+                .await;
+            }
+            Some(Ok(Message::Close(frame))) => {
+                let (code, reason) = match frame {
+                    Some(f) => (f.code.into(), f.reason.to_string()),
+                    None => (1000u16, String::new()),
+                };
+                dispatch_on_close(
+                    conn_id,
+                    code,
+                    reason,
+                    &owner_binary,
+                    &owner_compiled,
+                    &manager,
+                )
+                .await;
+                if !config.auto_reconnect || cancel_token.is_cancelled() {
+                    break;
+                }
+                match reconnect(conn_id, &config, &cancel_token, &manager).await {
+                    Some(new_source) => source = new_source,
+                    None => break,
+                }
+            }
+            Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => {}
+            Some(Err(e)) => {
+                dispatch_on_error(
+                    conn_id,
+                    e.to_string(),
+                    &owner_binary,
+                    &owner_compiled,
+                    &manager,
+                )
+                .await;
+                if !config.auto_reconnect || cancel_token.is_cancelled() {
+                    break;
+                }
+                match reconnect(conn_id, &config, &cancel_token, &manager).await {
+                    Some(new_source) => source = new_source,
+                    None => break,
+                }
+            }
+            None => {
+                dispatch_on_close(
+                    conn_id,
+                    1006,
+                    "connection lost".to_owned(),
+                    &owner_binary,
+                    &owner_compiled,
+                    &manager,
+                )
+                .await;
+                if !config.auto_reconnect || cancel_token.is_cancelled() {
+                    break;
+                }
+                match reconnect(conn_id, &config, &cancel_token, &manager).await {
+                    Some(new_source) => source = new_source,
+                    None => break,
+                }
+            }
+        }
+    }
+}
+
+async fn reconnect(
+    conn_id: ConnectionId,
+    config: &WsConfig,
+    cancel_token: &CancellationToken,
+    manager: &Arc<WsManager>,
+) -> Option<WsSource> {
+    let mut delay = std::time::Duration::from_secs(1);
+    let max_delay = std::time::Duration::from_secs(30);
+    loop {
+        info!("ws connection {conn_id} reconnecting in {delay:?}");
+        tokio::select! {
+            _ = tokio::time::sleep(delay) => {}
+            _ = cancel_token.cancelled() => {
+                trace!("ws connection {conn_id} reconnect cancelled");
+                return None;
+            }
+        }
+        match open_ws_connection(config).await {
+            Ok(stream) => {
+                let (sink, source) = stream.split();
+                let (write_tx, write_rx) = mpsc::channel::<Message>(64);
+                tokio::spawn(write_loop(sink, write_rx));
+                manager.replace_writer(conn_id, write_tx).await;
+                info!("ws connection {conn_id} reconnected");
+                return Some(source);
+            }
+            Err(e) => {
+                warn!("ws connection {conn_id} reconnect failed: {e}");
+                delay = (delay * 2).min(max_delay);
+            }
+        }
+    }
+}
+
+const INCOMING_MESSAGE_EXPORT: &str = "asterai:host-ws/incoming-message@0.1.0";
+
+async fn dispatch_on_message(
+    conn_id: ConnectionId,
+    data: Vec<u8>,
+    owner_binary: &ComponentBinary,
+    owner_compiled: &WasmtimeComponent,
+    manager: &WsManager,
+) {
+    let result = dispatch_callback(owner_binary, owner_compiled, manager, |store, instance| {
+        Box::pin(async move {
+            let func: TypedFunc<(u64, Vec<u8>), ()> =
+                get_export_func(store, instance, "on-message")?;
+            func.call_async(&mut *store, (conn_id, data))
+                .await
+                .map_err(|e| eyre!("{e:#}"))?;
+            func.post_return_async(&mut *store)
+                .await
+                .map_err(|e| eyre!("{e:#}"))?;
+            Ok(())
+        })
+    })
+    .await;
+    if let Err(e) = result {
+        error!("ws on-message dispatch failed for connection {conn_id}: {e:#}");
+    }
+}
+
+async fn dispatch_on_close(
+    conn_id: ConnectionId,
+    code: u16,
+    reason: String,
+    owner_binary: &ComponentBinary,
+    owner_compiled: &WasmtimeComponent,
+    manager: &WsManager,
+) {
+    let result = dispatch_callback(owner_binary, owner_compiled, manager, |store, instance| {
+        Box::pin(async move {
+            let func: TypedFunc<(u64, u16, String), ()> =
+                get_export_func(store, instance, "on-close")?;
+            func.call_async(&mut *store, (conn_id, code, reason))
+                .await
+                .map_err(|e| eyre!("{e:#}"))?;
+            func.post_return_async(&mut *store)
+                .await
+                .map_err(|e| eyre!("{e:#}"))?;
+            Ok(())
+        })
+    })
+    .await;
+    if let Err(e) = result {
+        error!("ws on-close dispatch failed for connection {conn_id}: {e:#}");
+    }
+}
+
+async fn dispatch_on_error(
+    conn_id: ConnectionId,
+    message: String,
+    owner_binary: &ComponentBinary,
+    owner_compiled: &WasmtimeComponent,
+    manager: &WsManager,
+) {
+    let result = dispatch_callback(owner_binary, owner_compiled, manager, |store, instance| {
+        Box::pin(async move {
+            let func: TypedFunc<(u64, String), ()> = get_export_func(store, instance, "on-error")?;
+            func.call_async(&mut *store, (conn_id, message))
+                .await
+                .map_err(|e| eyre!("{e:#}"))?;
+            func.post_return_async(&mut *store)
+                .await
+                .map_err(|e| eyre!("{e:#}"))?;
+            Ok(())
+        })
+    })
+    .await;
+    if let Err(e) = result {
+        error!("ws on-error dispatch failed for connection {conn_id}: {e:#}");
+    }
+}
+
+/// Create a fresh store, instantiate the owning component, and call a callback function.
+async fn dispatch_callback<F>(
+    _owner_binary: &ComponentBinary,
+    owner_compiled: &WasmtimeComponent,
+    manager: &WsManager,
+    callback: F,
+) -> eyre::Result<()>
+where
+    F: for<'a> FnOnce(
+        &'a mut wasmtime::Store<crate::runtime::env::HostEnv>,
+        &'a wasmtime::component::Instance,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = eyre::Result<()>> + Send + 'a>,
+    >,
+{
+    let runtime_data = manager
+        .runtime_data
+        .get()
+        .ok_or_else(|| eyre!("runtime data not initialized"))?;
+    let engine = &*ENGINE;
+    let mut fresh_store =
+        create_fresh_store(engine, &runtime_data.env_vars, &runtime_data.preopened_dirs);
+    fresh_store.data_mut().runtime_data = Some(runtime_data.clone());
+    let linker = create_linker(engine)?;
+    let instance = linker
+        .instantiate_async(&mut fresh_store, owner_compiled)
+        .await
+        .map_err(|e| eyre!("failed to instantiate component: {e:#}"))?;
+    callback(&mut fresh_store, &instance).await
+}
+
+fn get_export_func<Params, Results>(
+    store: &mut wasmtime::Store<crate::runtime::env::HostEnv>,
+    instance: &wasmtime::component::Instance,
+    func_name: &str,
+) -> eyre::Result<TypedFunc<Params, Results>>
+where
+    Params: wasmtime::component::ComponentNamedList + wasmtime::component::Lower,
+    Results: wasmtime::component::ComponentNamedList + wasmtime::component::Lift,
+{
+    let (_, iface_export) = instance
+        .get_export(&mut *store, None, INCOMING_MESSAGE_EXPORT)
+        .ok_or_else(|| eyre!("export '{INCOMING_MESSAGE_EXPORT}' not found"))?;
+    let (_, func_export) = instance
+        .get_export(&mut *store, Some(&iface_export), func_name)
+        .ok_or_else(|| eyre!("function '{func_name}' not found in '{INCOMING_MESSAGE_EXPORT}'"))?;
+    instance
+        .get_typed_func::<Params, Results>(&mut *store, &func_export)
+        .map_err(|e| eyre!("failed to get typed func '{func_name}': {e:#}"))
+}
