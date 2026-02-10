@@ -295,7 +295,7 @@ async fn reconnect(
     }
 }
 
-const INCOMING_MESSAGE_EXPORT: &str = "asterai:host-ws/incoming-message@0.1.0";
+const INCOMING_HANDLER_EXPORT: &str = "asterai:host-ws/incoming-handler@0.1.0";
 
 async fn dispatch_on_message(
     conn_id: ConnectionId,
@@ -416,11 +416,11 @@ where
     Results: wasmtime::component::ComponentNamedList + wasmtime::component::Lift,
 {
     let (_, iface_export) = instance
-        .get_export(&mut *store, None, INCOMING_MESSAGE_EXPORT)
-        .ok_or_else(|| eyre!("export '{INCOMING_MESSAGE_EXPORT}' not found"))?;
+        .get_export(&mut *store, None, INCOMING_HANDLER_EXPORT)
+        .ok_or_else(|| eyre!("export '{INCOMING_HANDLER_EXPORT}' not found"))?;
     let (_, func_export) = instance
         .get_export(&mut *store, Some(&iface_export), func_name)
-        .ok_or_else(|| eyre!("function '{func_name}' not found in '{INCOMING_MESSAGE_EXPORT}'"))?;
+        .ok_or_else(|| eyre!("function '{func_name}' not found in '{INCOMING_HANDLER_EXPORT}'"))?;
     instance
         .get_typed_func::<Params, Results>(&mut *store, &func_export)
         .map_err(|e| eyre!("failed to get typed func '{func_name}': {e:#}"))

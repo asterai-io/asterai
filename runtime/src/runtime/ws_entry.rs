@@ -68,11 +68,11 @@ async fn ws_connect_inner(
     let has_export = binary
         .exported_interfaces()
         .iter()
-        .any(|e| e.name.starts_with("asterai:host-ws/incoming-message"));
+        .any(|e| e.name.starts_with("asterai:host-ws/incoming-handler"));
     if !has_export {
         return Err(format!(
             "component '{}' does not export \
-             asterai:host-ws/incoming-message@0.1.0",
+             asterai:host-ws/incoming-handler@0.1.0",
             owner.id()
         ));
     }
