@@ -186,8 +186,13 @@ fn execute_dynamic_call(
         kind: CallErrorKind::InvocationFailed,
         message: format!("failed to set up linker: {e}"),
     })?;
-    let (all_instances, target) =
-        instantiate_all_sync(&compiled_components, engine, &mut linker, &mut store, &comp_id)?;
+    let (all_instances, target) = instantiate_all_sync(
+        &compiled_components,
+        engine,
+        &mut linker,
+        &mut store,
+        &comp_id,
+    )?;
     // Store instances so nested call-component-function calls can find them.
     store.data_mut().sync_instances = all_instances;
     let func = function

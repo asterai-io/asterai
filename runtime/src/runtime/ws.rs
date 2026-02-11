@@ -186,8 +186,13 @@ async fn read_loop(
     loop {
         let disconnected = match source.next().await {
             Some(Ok(Message::Binary(data))) => {
-                dispatch_export("on-message", (conn_id, data.to_vec()), &owner_binary, &manager)
-                    .await;
+                dispatch_export(
+                    "on-message",
+                    (conn_id, data.to_vec()),
+                    &owner_binary,
+                    &manager,
+                )
+                .await;
                 false
             }
             Some(Ok(Message::Text(text))) => {
@@ -205,14 +210,18 @@ async fn read_loop(
                     Some(f) => (f.code.into(), f.reason.to_string()),
                     None => (1000u16, String::new()),
                 };
-                dispatch_export("on-close", (conn_id, code, reason), &owner_binary, &manager)
-                    .await;
+                dispatch_export("on-close", (conn_id, code, reason), &owner_binary, &manager).await;
                 true
             }
             Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => false,
             Some(Err(e)) => {
-                dispatch_export("on-error", (conn_id, e.to_string()), &owner_binary, &manager)
-                    .await;
+                dispatch_export(
+                    "on-error",
+                    (conn_id, e.to_string()),
+                    &owner_binary,
+                    &manager,
+                )
+                .await;
                 true
             }
             None => {
