@@ -191,38 +191,36 @@ async fn read_loop(
     manager: Arc<WsManager>,
 ) {
     loop {
-        match source.next().await {
+        let disconnected = match source.next().await {
             Some(Ok(Message::Binary(data))) => {
-                dispatch_export("on-message", (conn_id, data.to_vec()), &owner_binary, &manager).await;
+                dispatch_export("on-message", (conn_id, data.to_vec()), &owner_binary, &manager)
+                    .await;
+                false
             }
             Some(Ok(Message::Text(text))) => {
-                dispatch_export("on-message", (conn_id, text.as_bytes().to_vec()), &owner_binary, &manager)
-                    .await;
+                dispatch_export(
+                    "on-message",
+                    (conn_id, text.as_bytes().to_vec()),
+                    &owner_binary,
+                    &manager,
+                )
+                .await;
+                false
             }
             Some(Ok(Message::Close(frame))) => {
                 let (code, reason) = match frame {
                     Some(f) => (f.code.into(), f.reason.to_string()),
                     None => (1000u16, String::new()),
                 };
-                dispatch_export("on-close", (conn_id, code, reason), &owner_binary, &manager).await;
-                if !config.auto_reconnect || cancel_token.is_cancelled() {
-                    break;
-                }
-                match reconnect(conn_id, &config, &cancel_token, &manager).await {
-                    Some(new_source) => source = new_source,
-                    None => break,
-                }
+                dispatch_export("on-close", (conn_id, code, reason), &owner_binary, &manager)
+                    .await;
+                true
             }
-            Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => {}
+            Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => false,
             Some(Err(e)) => {
-                dispatch_export("on-error", (conn_id, e.to_string()), &owner_binary, &manager).await;
-                if !config.auto_reconnect || cancel_token.is_cancelled() {
-                    break;
-                }
-                match reconnect(conn_id, &config, &cancel_token, &manager).await {
-                    Some(new_source) => source = new_source,
-                    None => break,
-                }
+                dispatch_export("on-error", (conn_id, e.to_string()), &owner_binary, &manager)
+                    .await;
+                true
             }
             None => {
                 dispatch_export(
@@ -232,13 +230,16 @@ async fn read_loop(
                     &manager,
                 )
                 .await;
-                if !config.auto_reconnect || cancel_token.is_cancelled() {
-                    break;
-                }
-                match reconnect(conn_id, &config, &cancel_token, &manager).await {
-                    Some(new_source) => source = new_source,
-                    None => break,
-                }
+                true
+            }
+        };
+        if disconnected {
+            if !config.auto_reconnect || cancel_token.is_cancelled() {
+                break;
+            }
+            match reconnect(conn_id, &config, &cancel_token, &manager).await {
+                Some(new_source) => source = new_source,
+                None => break,
             }
         }
     }
