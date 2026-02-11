@@ -56,13 +56,14 @@ async fn ws_connect_inner(
         .unwrap()
         .clone()
         .ok_or("no calling component")?;
-    // Look up the compiled component for the owner.
-    let (binary, compiled) = runtime_data
+    // Look up the component binary for the owner.
+    let binary = runtime_data
         .compiled_components
         .iter()
         .find(|(b, _)| b.component().id() == owner.id())
+        .map(|(b, _)| b)
         .ok_or_else(|| format!("component '{}' binary not found", owner.id()))?;
-    // Validate the component exports incoming-message.
+    // Validate the component exports incoming-handler.
     let has_export = binary
         .exported_interfaces()
         .iter()
@@ -74,9 +75,7 @@ async fn ws_connect_inner(
             owner.id()
         ));
     }
-    ws_manager
-        .connect(config, binary.clone(), compiled.clone())
-        .await
+    ws_manager.connect(config, binary.clone()).await
 }
 
 fn ws_send<'a>(

@@ -57,6 +57,8 @@ pub struct ComponentRuntime {
     engine: ComponentRuntimeEngine,
     #[getter(skip)]
     http_route_table: Arc<HttpRouteTable>,
+    #[getter(skip)]
+    ws_manager: Option<Arc<WsManager>>,
 }
 
 impl ComponentRuntime {
@@ -78,12 +80,21 @@ impl ComponentRuntime {
             preopened_dirs,
         )
         .await?;
+        let ws_manager = {
+            let store = engine.store.lock().await;
+            store
+                .data()
+                .runtime_data
+                .as_ref()
+                .and_then(|r| r.ws_manager.clone())
+        };
         let http_route_table =
             build_http_route_table(&engine, env_vars, preopened_dirs, env_namespace, env_name)?;
         Ok(Self {
             app_id,
             engine,
             http_route_table: Arc::new(http_route_table),
+            ws_manager,
         })
     }
 
@@ -92,13 +103,7 @@ impl ComponentRuntime {
     }
 
     pub fn ws_manager(&self) -> Option<Arc<WsManager>> {
-        self.engine
-            .store
-            .data()
-            .runtime_data
-            .as_ref()?
-            .ws_manager
-            .clone()
+        self.ws_manager.clone()
     }
 
     pub fn component_interfaces(&self) -> Vec<ComponentBinary> {
@@ -196,6 +201,7 @@ impl ComponentRuntime {
     /// Call all the `run` functions concurrently, which is commonly defined by `wasi:cli/run`
     /// to run CLI components, on all components that implement it.
     pub async fn run(&mut self) -> eyre::Result<()> {
+        let mut store = self.engine.store.lock().await;
         let mut funcs = Vec::new();
         for instance in &self.engine.instances {
             let component = instance.component_interface.component().clone();
@@ -210,20 +216,17 @@ impl ComponentRuntime {
                 // Skip components that don't implement run.
                 continue;
             };
-            let func = run_function.get_func(&mut self.engine.store, &instance.instance)?;
+            let func = run_function.get_func(&mut *store, &instance.instance)?;
             funcs.push((func, run_function.name, component));
         }
-        let last_component = self
-            .engine
-            .store
+        let last_component = store
             .data()
             .runtime_data
             .as_ref()
             .unwrap()
             .last_component
             .clone();
-        self.engine
-            .store
+        store
             .run_concurrent(async |a| {
                 for (func, func_name, component) in funcs {
                     *last_component.lock().unwrap() = Some(component.clone());

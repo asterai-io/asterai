@@ -1,6 +1,6 @@
-use crate::component::binary::{ComponentBinary, WasmtimeComponent};
-use crate::runtime::env::{HostEnvRuntimeData, create_fresh_store, create_linker};
-use crate::runtime::wasm_instance::ENGINE;
+use crate::component::binary::ComponentBinary;
+use crate::runtime::env::HostEnvRuntimeData;
+use crate::runtime::wasm_instance::SharedStore;
 use eyre::eyre;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
@@ -36,7 +36,6 @@ struct WsConnection {
     write_tx: mpsc::Sender<Message>,
     config: Arc<WsConfig>,
     owner_binary: ComponentBinary,
-    owner_compiled: WasmtimeComponent,
     cancel_token: CancellationToken,
 }
 
@@ -44,6 +43,7 @@ pub struct WsManager {
     connections: RwLock<HashMap<ConnectionId, WsConnection>>,
     next_id: AtomicU64,
     runtime_data: OnceLock<HostEnvRuntimeData>,
+    store: OnceLock<SharedStore>,
 }
 
 impl Default for WsManager {
@@ -58,6 +58,7 @@ impl WsManager {
             connections: RwLock::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             runtime_data: OnceLock::new(),
+            store: OnceLock::new(),
         }
     }
 
@@ -65,11 +66,18 @@ impl WsManager {
         self.runtime_data.set(data).ok();
     }
 
+    pub fn set_store(&self, store: SharedStore) {
+        self.store.set(store).ok();
+    }
+
+    pub fn shared_store(&self) -> Option<&SharedStore> {
+        self.store.get()
+    }
+
     pub async fn connect(
         self: &Arc<Self>,
         config: WsConfig,
         owner_binary: ComponentBinary,
-        owner_compiled: WasmtimeComponent,
     ) -> Result<ConnectionId, String> {
         let conn_id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let config = Arc::new(config);
@@ -81,7 +89,6 @@ impl WsManager {
         let manager = Arc::clone(self);
         let read_config = Arc::clone(&config);
         let read_binary = owner_binary.clone();
-        let read_compiled = owner_compiled.clone();
         let read_cancel = cancel_token.clone();
         tokio::spawn(async move {
             read_loop(
@@ -89,7 +96,6 @@ impl WsManager {
                 conn_id,
                 read_config,
                 read_binary,
-                read_compiled,
                 read_cancel,
                 manager,
             )
@@ -99,7 +105,6 @@ impl WsManager {
             write_tx,
             config,
             owner_binary,
-            owner_compiled,
             cancel_token,
         };
         self.connections.write().await.insert(conn_id, connection);
@@ -182,46 +187,24 @@ async fn read_loop(
     conn_id: ConnectionId,
     config: Arc<WsConfig>,
     owner_binary: ComponentBinary,
-    owner_compiled: WasmtimeComponent,
     cancel_token: CancellationToken,
     manager: Arc<WsManager>,
 ) {
     loop {
         match source.next().await {
             Some(Ok(Message::Binary(data))) => {
-                dispatch_on_message(
-                    conn_id,
-                    data.to_vec(),
-                    &owner_binary,
-                    &owner_compiled,
-                    &manager,
-                )
-                .await;
+                dispatch_on_message(conn_id, data.to_vec(), &owner_binary, &manager).await;
             }
             Some(Ok(Message::Text(text))) => {
-                dispatch_on_message(
-                    conn_id,
-                    text.as_bytes().to_vec(),
-                    &owner_binary,
-                    &owner_compiled,
-                    &manager,
-                )
-                .await;
+                dispatch_on_message(conn_id, text.as_bytes().to_vec(), &owner_binary, &manager)
+                    .await;
             }
             Some(Ok(Message::Close(frame))) => {
                 let (code, reason) = match frame {
                     Some(f) => (f.code.into(), f.reason.to_string()),
                     None => (1000u16, String::new()),
                 };
-                dispatch_on_close(
-                    conn_id,
-                    code,
-                    reason,
-                    &owner_binary,
-                    &owner_compiled,
-                    &manager,
-                )
-                .await;
+                dispatch_on_close(conn_id, code, reason, &owner_binary, &manager).await;
                 if !config.auto_reconnect || cancel_token.is_cancelled() {
                     break;
                 }
@@ -232,14 +215,7 @@ async fn read_loop(
             }
             Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => {}
             Some(Err(e)) => {
-                dispatch_on_error(
-                    conn_id,
-                    e.to_string(),
-                    &owner_binary,
-                    &owner_compiled,
-                    &manager,
-                )
-                .await;
+                dispatch_on_error(conn_id, e.to_string(), &owner_binary, &manager).await;
                 if !config.auto_reconnect || cancel_token.is_cancelled() {
                     break;
                 }
@@ -254,7 +230,6 @@ async fn read_loop(
                     1006,
                     "connection lost".to_owned(),
                     &owner_binary,
-                    &owner_compiled,
                     &manager,
                 )
                 .await;
@@ -310,10 +285,9 @@ async fn dispatch_on_message(
     conn_id: ConnectionId,
     data: Vec<u8>,
     owner_binary: &ComponentBinary,
-    owner_compiled: &WasmtimeComponent,
     manager: &WsManager,
 ) {
-    let result = dispatch_callback(owner_binary, owner_compiled, manager, |store, instance| {
+    let result = dispatch_callback(owner_binary, manager, |store, instance| {
         Box::pin(async move {
             let func: TypedFunc<(u64, Vec<u8>), ()> =
                 get_export_func(store, instance, "on-message")?;
@@ -337,10 +311,9 @@ async fn dispatch_on_close(
     code: u16,
     reason: String,
     owner_binary: &ComponentBinary,
-    owner_compiled: &WasmtimeComponent,
     manager: &WsManager,
 ) {
-    let result = dispatch_callback(owner_binary, owner_compiled, manager, |store, instance| {
+    let result = dispatch_callback(owner_binary, manager, |store, instance| {
         Box::pin(async move {
             let func: TypedFunc<(u64, u16, String), ()> =
                 get_export_func(store, instance, "on-close")?;
@@ -363,10 +336,9 @@ async fn dispatch_on_error(
     conn_id: ConnectionId,
     message: String,
     owner_binary: &ComponentBinary,
-    owner_compiled: &WasmtimeComponent,
     manager: &WsManager,
 ) {
-    let result = dispatch_callback(owner_binary, owner_compiled, manager, |store, instance| {
+    let result = dispatch_callback(owner_binary, manager, |store, instance| {
         Box::pin(async move {
             let func: TypedFunc<(u64, String), ()> = get_export_func(store, instance, "on-error")?;
             func.call_async(&mut *store, (conn_id, message))
@@ -384,10 +356,11 @@ async fn dispatch_on_error(
     }
 }
 
-/// Create a fresh store, instantiate the owning component, and call a callback function.
+/// Lock the shared store, find the existing instance for the owning component,
+/// and call a callback function.
+/// This preserves component state across calls.
 async fn dispatch_callback<F>(
-    _owner_binary: &ComponentBinary,
-    owner_compiled: &WasmtimeComponent,
+    owner_binary: &ComponentBinary,
     manager: &WsManager,
     callback: F,
 ) -> eyre::Result<()>
@@ -399,20 +372,36 @@ where
         Box<dyn std::future::Future<Output = eyre::Result<()>> + Send + 'a>,
     >,
 {
-    let runtime_data = manager
+    let shared_store = manager
+        .shared_store()
+        .ok_or_else(|| eyre!("shared store not set"))?;
+    let mut store = shared_store.lock().await;
+    let owner_id = owner_binary.component().id();
+    // Extract the instance handle before borrowing store mutably.
+    let instance = {
+        let runtime_data = store
+            .data()
+            .runtime_data
+            .as_ref()
+            .ok_or_else(|| eyre!("runtime data not initialized"))?;
+        runtime_data
+            .instances
+            .iter()
+            .find(|i| i.component_interface.component().id() == owner_id)
+            .ok_or_else(|| eyre!("instance not found for {}", owner_id))?
+            .instance
+    };
+    // Set the calling component for host functions.
+    let component = owner_binary.component().clone();
+    *store
+        .data_mut()
         .runtime_data
-        .get()
-        .ok_or_else(|| eyre!("runtime data not initialized"))?;
-    let engine = &*ENGINE;
-    let mut fresh_store =
-        create_fresh_store(engine, &runtime_data.env_vars, &runtime_data.preopened_dirs);
-    fresh_store.data_mut().runtime_data = Some(runtime_data.clone());
-    let linker = create_linker(engine)?;
-    let instance = linker
-        .instantiate_async(&mut fresh_store, owner_compiled)
-        .await
-        .map_err(|e| eyre!("failed to instantiate component: {e:#}"))?;
-    callback(&mut fresh_store, &instance).await
+        .as_mut()
+        .unwrap()
+        .last_component
+        .lock()
+        .unwrap() = Some(component);
+    callback(&mut store, &instance).await
 }
 
 fn get_export_func<Params, Results>(

@@ -29,8 +29,10 @@ pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
     Engine::new(&config).unwrap()
 });
 
+pub type SharedStore = Arc<tokio::sync::Mutex<Store<StoreState>>>;
+
 pub struct ComponentRuntimeEngine {
-    pub(super) store: Store<StoreState>,
+    pub(super) store: SharedStore,
     pub(super) instances: Vec<ComponentRuntimeInstance>,
     pub(super) linker: Linker<StoreState>,
     pub(super) compiled_components: Vec<CompiledComponentEntry>,
@@ -105,21 +107,14 @@ impl ComponentRuntimeEngine {
             };
             instances.push(instance);
         }
-        let mut runtime_engine = Self {
-            store,
-            instances: instances.clone(),
-            linker,
-            compiled_components,
-        };
-        let compiled_for_dynamic_calls = runtime_engine
-            .compiled_components
+        let compiled_for_dynamic_calls = compiled_components
             .iter()
             .map(|e| (e.component_binary.clone(), e.component.clone()))
             .collect();
         let ws_manager = Arc::new(WsManager::new());
         let runtime_data = HostEnvRuntimeData {
             app_id,
-            instances,
+            instances: instances.clone(),
             last_component,
             component_response_to_agent: None,
             compiled_components: compiled_for_dynamic_calls,
@@ -128,8 +123,15 @@ impl ComponentRuntimeEngine {
             ws_manager: Some(Arc::clone(&ws_manager)),
         };
         ws_manager.set_runtime_data(runtime_data.clone());
-        runtime_engine.store.data_mut().runtime_data = Some(runtime_data);
-        Ok(runtime_engine)
+        store.data_mut().runtime_data = Some(runtime_data);
+        let store = Arc::new(tokio::sync::Mutex::new(store));
+        ws_manager.set_store(store.clone());
+        Ok(Self {
+            store,
+            instances,
+            linker,
+            compiled_components,
+        })
     }
 
     pub fn instances(&self) -> &[ComponentRuntimeInstance] {
@@ -141,12 +143,11 @@ impl ComponentRuntimeEngine {
         function_interface: ComponentFunctionInterface,
         inputs: &[Val],
     ) -> eyre::Result<Option<ComponentOutput>> {
-        // This is an uninitialised vec of the results.
         let mut results = function_interface.new_results_vec();
         self.call_raw(&function_interface, inputs, &mut results)
             .await?;
-        let output_opt =
-            parse_component_output(self.store.as_context(), results, function_interface);
+        let store = self.store.lock().await;
+        let output_opt = parse_component_output(store.as_context(), results, function_interface);
         Ok(output_opt)
     }
 
@@ -173,12 +174,13 @@ impl ComponentRuntimeEngine {
         let Some(function) = function_opt else {
             return Err(eyre!("function not found in instance"));
         };
-        let func = function.get_func(&mut self.store, &instance.instance)?;
+        let mut store = self.store.lock().await;
+        let func = function.get_func(&mut *store, &instance.instance)?;
         let component = function.component.clone();
         call_wasm_component_function(
             &func,
             &function.name,
-            self.store.as_context_mut(),
+            store.as_context_mut(),
             args,
             results,
             component,
