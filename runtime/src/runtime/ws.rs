@@ -14,7 +14,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tokio_util::sync::CancellationToken;
-use wasmtime::component::TypedFunc;
+use wasmtime::component::{ComponentNamedList, Lower, TypedFunc};
 
 pub type ConnectionId = u64;
 
@@ -193,10 +193,10 @@ async fn read_loop(
     loop {
         match source.next().await {
             Some(Ok(Message::Binary(data))) => {
-                dispatch_on_message(conn_id, data.to_vec(), &owner_binary, &manager).await;
+                dispatch_export("on-message", (conn_id, data.to_vec()), &owner_binary, &manager).await;
             }
             Some(Ok(Message::Text(text))) => {
-                dispatch_on_message(conn_id, text.as_bytes().to_vec(), &owner_binary, &manager)
+                dispatch_export("on-message", (conn_id, text.as_bytes().to_vec()), &owner_binary, &manager)
                     .await;
             }
             Some(Ok(Message::Close(frame))) => {
@@ -204,7 +204,7 @@ async fn read_loop(
                     Some(f) => (f.code.into(), f.reason.to_string()),
                     None => (1000u16, String::new()),
                 };
-                dispatch_on_close(conn_id, code, reason, &owner_binary, &manager).await;
+                dispatch_export("on-close", (conn_id, code, reason), &owner_binary, &manager).await;
                 if !config.auto_reconnect || cancel_token.is_cancelled() {
                     break;
                 }
@@ -215,7 +215,7 @@ async fn read_loop(
             }
             Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => {}
             Some(Err(e)) => {
-                dispatch_on_error(conn_id, e.to_string(), &owner_binary, &manager).await;
+                dispatch_export("on-error", (conn_id, e.to_string()), &owner_binary, &manager).await;
                 if !config.auto_reconnect || cancel_token.is_cancelled() {
                     break;
                 }
@@ -225,10 +225,9 @@ async fn read_loop(
                 }
             }
             None => {
-                dispatch_on_close(
-                    conn_id,
-                    1006,
-                    "connection lost".to_owned(),
+                dispatch_export(
+                    "on-close",
+                    (conn_id, 1006u16, "connection lost".to_owned()),
                     &owner_binary,
                     &manager,
                 )
@@ -281,17 +280,19 @@ async fn reconnect(
 
 const INCOMING_HANDLER_EXPORT: &str = "asterai:host-ws/incoming-handler@0.1.0";
 
-async fn dispatch_on_message(
-    conn_id: ConnectionId,
-    data: Vec<u8>,
+/// Dispatches a call to a typed export on the owning component's instance.
+async fn dispatch_export<Params>(
+    func_name: &'static str,
+    params: Params,
     owner_binary: &ComponentBinary,
     manager: &WsManager,
-) {
+) where
+    Params: ComponentNamedList + Lower + Send + Sync + 'static,
+{
     let result = dispatch_callback(owner_binary, manager, |store, instance| {
         Box::pin(async move {
-            let func: TypedFunc<(u64, Vec<u8>), ()> =
-                get_export_func(store, instance, "on-message")?;
-            func.call_async(&mut *store, (conn_id, data))
+            let func: TypedFunc<Params, ()> = get_export_func(store, instance, func_name)?;
+            func.call_async(&mut *store, params)
                 .await
                 .map_err(|e| eyre!("{e:#}"))?;
             func.post_return_async(&mut *store)
@@ -302,57 +303,7 @@ async fn dispatch_on_message(
     })
     .await;
     if let Err(e) = result {
-        error!("ws on-message dispatch failed for connection {conn_id}: {e:#}");
-    }
-}
-
-async fn dispatch_on_close(
-    conn_id: ConnectionId,
-    code: u16,
-    reason: String,
-    owner_binary: &ComponentBinary,
-    manager: &WsManager,
-) {
-    let result = dispatch_callback(owner_binary, manager, |store, instance| {
-        Box::pin(async move {
-            let func: TypedFunc<(u64, u16, String), ()> =
-                get_export_func(store, instance, "on-close")?;
-            func.call_async(&mut *store, (conn_id, code, reason))
-                .await
-                .map_err(|e| eyre!("{e:#}"))?;
-            func.post_return_async(&mut *store)
-                .await
-                .map_err(|e| eyre!("{e:#}"))?;
-            Ok(())
-        })
-    })
-    .await;
-    if let Err(e) = result {
-        error!("ws on-close dispatch failed for connection {conn_id}: {e:#}");
-    }
-}
-
-async fn dispatch_on_error(
-    conn_id: ConnectionId,
-    message: String,
-    owner_binary: &ComponentBinary,
-    manager: &WsManager,
-) {
-    let result = dispatch_callback(owner_binary, manager, |store, instance| {
-        Box::pin(async move {
-            let func: TypedFunc<(u64, String), ()> = get_export_func(store, instance, "on-error")?;
-            func.call_async(&mut *store, (conn_id, message))
-                .await
-                .map_err(|e| eyre!("{e:#}"))?;
-            func.post_return_async(&mut *store)
-                .await
-                .map_err(|e| eyre!("{e:#}"))?;
-            Ok(())
-        })
-    })
-    .await;
-    if let Err(e) = result {
-        error!("ws on-error dispatch failed for connection {conn_id}: {e:#}");
+        error!("ws {func_name} dispatch failed: {e:#}");
     }
 }
 
