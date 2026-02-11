@@ -54,14 +54,14 @@ pub fn register_component_stubs(
                         resolved.component.clone(),
                     )
                     .await
-                    .unwrap();
+                    .map_err(|e| wasmtime::Error::msg(format!("{e:#}")))?;
                     let output_opt = parse_component_output(
                         store.as_context(),
                         results.to_vec(),
                         resolved.function_info.clone(),
                     );
                     if let Some(output) = output_opt {
-                        store.data().component_output_tx.send(output).await.unwrap();
+                        let _ = store.data().component_output_tx.send(output).await;
                     }
                     Ok(())
                 })
