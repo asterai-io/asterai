@@ -46,6 +46,10 @@ pub fn extract_common_flags(args: Vec<String>) -> eyre::Result<CommonFlags> {
                     .ok_or_eyre("missing value for --allow-dir flag")?;
                 allow_dirs.push(expand_tilde(&dir, home.as_deref()));
             }
+            s if s.starts_with("--allow-dir=") => {
+                let dir = s.strip_prefix("--allow-dir=").unwrap();
+                allow_dirs.push(expand_tilde(dir, home.as_deref()));
+            }
             _ => filtered.push(arg),
         }
     }
