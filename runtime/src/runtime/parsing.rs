@@ -1,7 +1,7 @@
 use eyre::bail;
 use serde_json::Value;
 use wasmtime::component::Val;
-use wit_parser::{Type, TypeDef, TypeDefKind};
+use wit_parser::{Resolve, Type, TypeDef, TypeDefKind};
 
 pub trait ValExt {
     fn try_into_json_value(self) -> Option<Value>;
@@ -55,7 +55,8 @@ impl ValExt for Val {
 }
 
 /// Converts a serde_json Value to a wasmtime Val based on the expected WIT type.
-pub fn json_value_to_val(value: &Value, ty: &Type) -> eyre::Result<Val> {
+/// The `resolve` is needed to look up `Type::Id` references for nested types.
+pub fn json_value_to_val(value: &Value, ty: &Type, resolve: &Resolve) -> eyre::Result<Val> {
     match ty {
         Type::String => match value {
             Value::String(s) => Ok(Val::String(s.clone())),
@@ -86,7 +87,13 @@ pub fn json_value_to_val(value: &Value, ty: &Type) -> eyre::Result<Val> {
             }
             _ => bail!("expected string for char"),
         },
-        Type::Id(_) => bail!("unresolved type reference in JSON"),
+        Type::Id(type_id) => {
+            let type_def = resolve
+                .types
+                .get(*type_id)
+                .ok_or_else(|| eyre::eyre!("unknown type id"))?;
+            json_value_to_val_typedef(value, type_def, resolve)
+        }
         Type::ErrorContext => bail!("error-context not supported in JSON"),
     }
 }
@@ -139,9 +146,14 @@ fn json_to_f64(value: &Value) -> eyre::Result<f64> {
 }
 
 /// Converts a JSON value to a wasmtime Val based on the expected WIT TypeDef.
-pub fn json_value_to_val_typedef(value: &Value, type_def: &TypeDef) -> eyre::Result<Val> {
+/// The `resolve` is needed to look up `Type::Id` references for nested types.
+pub fn json_value_to_val_typedef(
+    value: &Value,
+    type_def: &TypeDef,
+    resolve: &Resolve,
+) -> eyre::Result<Val> {
     match &type_def.kind {
-        TypeDefKind::Type(ty) => json_value_to_val(value, ty),
+        TypeDefKind::Type(ty) => json_value_to_val(value, ty, resolve),
         TypeDefKind::Record(record) => {
             let Value::Object(map) = value else {
                 bail!("expected JSON object for record");
@@ -153,7 +165,7 @@ pub fn json_value_to_val_typedef(value: &Value, type_def: &TypeDef) -> eyre::Res
                     let v = map
                         .get(&field.name)
                         .ok_or_else(|| eyre::eyre!("missing field '{}'", field.name))?;
-                    let val = json_value_to_val(v, &field.ty)?;
+                    let val = json_value_to_val(v, &field.ty, resolve)?;
                     Ok((field.name.clone(), val))
                 })
                 .collect::<eyre::Result<Vec<_>>>()?;
@@ -165,7 +177,7 @@ pub fn json_value_to_val_typedef(value: &Value, type_def: &TypeDef) -> eyre::Res
             };
             let vals = arr
                 .iter()
-                .map(|v| json_value_to_val(v, ty))
+                .map(|v| json_value_to_val(v, ty, resolve))
                 .collect::<eyre::Result<Vec<_>>>()?;
             Ok(Val::List(vals))
         }
@@ -183,7 +195,7 @@ pub fn json_value_to_val_typedef(value: &Value, type_def: &TypeDef) -> eyre::Res
             let vals = arr
                 .iter()
                 .zip(tuple.types.iter())
-                .map(|(v, ty)| json_value_to_val(v, ty))
+                .map(|(v, ty)| json_value_to_val(v, ty, resolve))
                 .collect::<eyre::Result<Vec<_>>>()?;
             Ok(Val::Tuple(vals))
         }
@@ -201,7 +213,7 @@ pub fn json_value_to_val_typedef(value: &Value, type_def: &TypeDef) -> eyre::Res
             if value.is_null() {
                 return Ok(Val::Option(None));
             }
-            let inner = json_value_to_val(value, ty)?;
+            let inner = json_value_to_val(value, ty, resolve)?;
             Ok(Val::Option(Some(Box::new(inner))))
         }
         TypeDefKind::Flags(flags) => {

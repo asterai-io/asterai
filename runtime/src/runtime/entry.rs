@@ -130,7 +130,7 @@ async fn call_component_function_inner(
     })?;
     let function_name = ComponentFunctionName::from_str(function_name_str).unwrap();
     // Extract compiled component, function info, and env vars from caller's store.
-    let (compiled_component, _component_binary, function, env_vars, preopened_dirs) = {
+    let (compiled_component, resolve, function, env_vars, preopened_dirs) = {
         let runtime_data = store.data().runtime_data.as_ref().ok_or(CallError {
             kind: CallErrorKind::InvocationFailed,
             message: "runtime not initialized".to_owned(),
@@ -153,7 +153,7 @@ async fn call_component_function_inner(
             })?;
         (
             component.clone(),
-            binary.clone(),
+            binary.wit().resolve().clone(),
             func,
             runtime_data.env_vars.clone(),
             runtime_data.preopened_dirs.clone(),
@@ -178,7 +178,7 @@ async fn call_component_function_inner(
     let inputs: Vec<Val> = json_args
         .iter()
         .zip(function.inputs.iter())
-        .map(|(arg, (_name, type_def))| json_value_to_val_typedef(arg, type_def))
+        .map(|(arg, (_name, type_def))| json_value_to_val_typedef(arg, type_def, &resolve))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| CallError {
             kind: CallErrorKind::InvalidArgs,

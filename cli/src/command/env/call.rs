@@ -7,7 +7,7 @@ use asterai_runtime::runtime::Val;
 use asterai_runtime::runtime::parsing::{ValExt, json_value_to_val, parse_primitive};
 use eyre::{OptionExt, bail};
 use std::str::FromStr;
-use wit_parser::{TypeDef, TypeDefKind};
+use wit_parser::{Resolve, TypeDef, TypeDefKind};
 
 impl EnvArgs {
     pub async fn call(&self) -> eyre::Result<()> {
@@ -28,7 +28,14 @@ impl EnvArgs {
         let function = runtime
             .find_function(&comp_id, &function_name, package_name_opt)?
             .ok_or_eyre("function not found")?;
-        let inputs = parse_inputs_from_string_args(&self.function_args, &function.inputs)?;
+        let resolve = runtime
+            .component_interfaces()
+            .iter()
+            .find(|b| b.component().id() == comp_id)
+            .map(|b| b.wit().resolve().clone())
+            .ok_or_eyre("component not found")?;
+        let inputs =
+            parse_inputs_from_string_args(&self.function_args, &function.inputs, &resolve)?;
         let output_opt = runtime.call_function(function, &inputs).await?;
         if let Some(output) = output_opt
             && let Some(function_output) = output.function_output_opt
@@ -82,6 +89,7 @@ fn parse_function_string_into_parts(
 fn parse_inputs_from_string_args(
     args: &[String],
     expected_inputs: &[(String, TypeDef)],
+    resolve: &Resolve,
 ) -> eyre::Result<Vec<Val>> {
     if args.len() != expected_inputs.len() {
         bail!(
@@ -93,13 +101,13 @@ fn parse_inputs_from_string_args(
     args.iter()
         .zip(expected_inputs.iter())
         .map(|(arg, (name, type_def))| {
-            parse_arg(arg, type_def)
+            parse_arg(arg, type_def, resolve)
                 .map_err(|e| eyre::eyre!("failed to parse argument '{name}': {e}"))
         })
         .collect()
 }
 
-fn parse_arg(arg: &str, type_def: &TypeDef) -> eyre::Result<Val> {
+fn parse_arg(arg: &str, type_def: &TypeDef, resolve: &Resolve) -> eyre::Result<Val> {
     match &type_def.kind {
         TypeDefKind::Type(ty) => parse_primitive(strip_quotes(arg), ty),
         TypeDefKind::Record(record) => {
@@ -115,7 +123,7 @@ fn parse_arg(arg: &str, type_def: &TypeDef) -> eyre::Result<Val> {
                     let value = map
                         .get(&field.name)
                         .ok_or_else(|| eyre::eyre!("missing field '{}'", field.name))?;
-                    let val = json_value_to_val(value, &field.ty)?;
+                    let val = json_value_to_val(value, &field.ty, resolve)?;
                     Ok((field.name.clone(), val))
                 })
                 .collect::<eyre::Result<Vec<_>>>()?;
@@ -129,7 +137,7 @@ fn parse_arg(arg: &str, type_def: &TypeDef) -> eyre::Result<Val> {
             };
             let vals = arr
                 .iter()
-                .map(|v| json_value_to_val(v, ty))
+                .map(|v| json_value_to_val(v, ty, resolve))
                 .collect::<eyre::Result<Vec<_>>>()?;
             Ok(Val::List(vals))
         }
@@ -149,7 +157,7 @@ fn parse_arg(arg: &str, type_def: &TypeDef) -> eyre::Result<Val> {
             let vals = arr
                 .iter()
                 .zip(tuple.types.iter())
-                .map(|(v, ty)| json_value_to_val(v, ty))
+                .map(|(v, ty)| json_value_to_val(v, ty, resolve))
                 .collect::<eyre::Result<Vec<_>>>()?;
             Ok(Val::Tuple(vals))
         }
@@ -167,7 +175,7 @@ fn parse_arg(arg: &str, type_def: &TypeDef) -> eyre::Result<Val> {
             if arg_stripped == "null" || arg_stripped == "none" {
                 return Ok(Val::Option(None));
             }
-            let inner = json_value_to_val(&serde_json::from_str(arg)?, ty)?;
+            let inner = json_value_to_val(&serde_json::from_str(arg)?, ty, resolve)?;
             Ok(Val::Option(Some(Box::new(inner))))
         }
         TypeDefKind::Flags(flags) => {
