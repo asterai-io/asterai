@@ -114,6 +114,15 @@ impl ComponentRuntime {
             .collect()
     }
 
+    /// Returns the WIT `Resolve` for the given component.
+    pub fn resolve_for(&self, comp_id: &ComponentId) -> Option<wit_parser::Resolve> {
+        self.engine
+            .instances()
+            .iter()
+            .find(|i| i.component_interface.component().id() == *comp_id)
+            .map(|i| i.component_interface.wit().resolve().clone())
+    }
+
     pub async fn call_function(
         &mut self,
         component_manifest_function: ComponentFunctionInterface,

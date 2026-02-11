@@ -29,10 +29,7 @@ impl EnvArgs {
             .find_function(&comp_id, &function_name, package_name_opt)?
             .ok_or_eyre("function not found")?;
         let resolve = runtime
-            .component_interfaces()
-            .iter()
-            .find(|b| b.component().id() == comp_id)
-            .map(|b| b.wit().resolve().clone())
+            .resolve_for(&comp_id)
             .ok_or_eyre("component not found")?;
         let inputs =
             parse_inputs_from_string_args(&self.function_args, &function.inputs, &resolve)?;

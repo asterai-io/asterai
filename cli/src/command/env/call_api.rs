@@ -81,10 +81,7 @@ async fn handle_call_inner(
             )
         })?;
     let resolve = runtime
-        .component_interfaces()
-        .iter()
-        .find(|b| b.component().id() == comp_id)
-        .map(|b| b.wit().resolve().clone())
+        .resolve_for(&comp_id)
         .ok_or_else(|| eyre::eyre!("component '{}' not found", body.component))?;
     if body.args.len() != function.inputs.len() {
         eyre::bail!(
