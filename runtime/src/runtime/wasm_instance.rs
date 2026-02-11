@@ -29,6 +29,12 @@ pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
     Engine::new(&config).unwrap()
 });
 
+/// Sync engine for dynamic calls (`call-component-function`).
+/// Using a sync engine avoids the nested `run_concurrent` assertion
+/// that occurs when forwarding stubs call `Func::call_async` inside
+/// an active guest thread.
+pub(crate) static SYNC_ENGINE: Lazy<Engine> = Lazy::new(|| Engine::new(&Config::new()).unwrap());
+
 pub type SharedStore = Arc<tokio::sync::Mutex<Store<StoreState>>>;
 
 pub struct ComponentRuntimeEngine {

@@ -89,6 +89,46 @@ pub fn register_component_stubs(
     Ok(ComponentStubs { slots })
 }
 
+/// Sync variant of [`register_component_stubs`] for the sync engine.
+/// Stubs use `Func::call` (sync) instead of `call_async`, avoiding
+/// the nested `run_concurrent` assertion.
+pub fn register_component_stubs_sync(
+    components: &[ComponentBinary],
+    linker: &mut Linker<HostEnv>,
+) -> eyre::Result<ComponentStubs> {
+    let mut slots: HashMap<SlotKey, FuncSlot> = HashMap::new();
+    for comp in components {
+        let functions = comp.get_functions();
+        let mut by_instance: HashMap<String, Vec<ComponentFunctionInterface>> = HashMap::new();
+        for f in functions {
+            let Some(inst) = f.get_instance_export_name() else {
+                continue;
+            };
+            by_instance.entry(inst).or_default().push(f);
+        }
+        for (inst_name, funcs) in by_instance {
+            let mut inst_builder = linker.instance(&inst_name).map_err(|e| eyre!("{e:#?}"))?;
+            for f in funcs {
+                let key = (inst_name.clone(), f.name.name.clone());
+                let slot: FuncSlot = Arc::new(OnceLock::new());
+                let slot_ref = slot.clone();
+                inst_builder
+                    .func_new(&f.name.name, move |mut store, _, params, results| {
+                        let resolved = slot_ref
+                            .get()
+                            .ok_or_else(|| wasmtime::Error::msg("unresolved component function"))?;
+                        resolved.func.call(&mut store, params, results)?;
+                        resolved.func.post_return(&mut store)?;
+                        Ok(())
+                    })
+                    .map_err(|e| eyre!("{e:#?}"))?;
+                slots.insert(key, slot);
+            }
+        }
+    }
+    Ok(ComponentStubs { slots })
+}
+
 /// Fills the `OnceLock` slots for a freshly instantiated component.
 pub fn resolve_component_stubs(
     binary: &ComponentBinary,

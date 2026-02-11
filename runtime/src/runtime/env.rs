@@ -1,11 +1,11 @@
 use crate::component::Component;
 use crate::component::binary::{ComponentBinary, WasmtimeComponent};
-use crate::runtime::entry::add_asterai_host_to_linker;
+use crate::runtime::entry::{add_asterai_host_to_linker, add_asterai_host_to_sync_linker};
 use crate::runtime::output::ComponentOutput;
 use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
 use crate::runtime::wasm_instance::ComponentRuntimeInstance;
 use crate::runtime::ws::WsManager;
-use crate::runtime::ws_entry::add_asterai_ws_to_linker;
+use crate::runtime::ws_entry::{add_asterai_ws_to_linker, add_asterai_ws_to_sync_linker};
 use eyre::eyre;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -14,9 +14,11 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::{Engine, Store};
-use wasmtime_wasi::p2::add_to_linker_async;
+use wasmtime_wasi::p2::{add_to_linker_async, add_to_linker_sync};
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
-use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView, add_only_http_to_linker_async};
+use wasmtime_wasi_http::{
+    WasiHttpCtx, WasiHttpView, add_only_http_to_linker_async, add_only_http_to_linker_sync,
+};
 
 /// The component host env data.
 /// Data held here is accessible as a function argument
@@ -28,6 +30,9 @@ pub struct HostEnv {
     pub http_ctx: WasiHttpCtx,
     pub runtime_data: Option<HostEnvRuntimeData>,
     pub component_output_tx: mpsc::Sender<ComponentOutput>,
+    /// Instances in the sync engine context for dynamic calls.
+    /// Populated by `execute_dynamic_call` before calling the target.
+    pub sync_instances: Vec<(ComponentBinary, wasmtime::component::Instance)>,
 }
 
 #[derive(Clone)]
@@ -92,6 +97,7 @@ pub fn create_store(
         http_ctx: WasiHttpCtx::new(),
         table: ResourceTable::new(),
         component_output_tx,
+        sync_instances: Vec::new(),
     };
     Store::new(engine, host_env)
 }
@@ -115,6 +121,19 @@ pub fn create_linker(engine: &Engine) -> eyre::Result<Linker<HostEnv>> {
     add_only_http_to_linker_async(&mut linker).map_err(|e| eyre!("{e}"))?;
     add_asterai_host_to_linker(&mut linker)?;
     add_asterai_ws_to_linker(&mut linker)?;
+    Ok(linker)
+}
+
+/// Create a sync Linker with WASI and HTTP bindings for dynamic calls.
+/// Does not include asterai host/WS bindings (those are registered
+/// separately as sync stubs).
+pub fn create_sync_linker(engine: &Engine) -> eyre::Result<Linker<HostEnv>> {
+    let mut linker = Linker::new(engine);
+    linker.allow_shadowing(true);
+    add_to_linker_sync(&mut linker).map_err(|e| eyre!("{e}"))?;
+    add_only_http_to_linker_sync(&mut linker).map_err(|e| eyre!("{e}"))?;
+    add_asterai_host_to_sync_linker(&mut linker)?;
+    add_asterai_ws_to_sync_linker(&mut linker)?;
     Ok(linker)
 }
 

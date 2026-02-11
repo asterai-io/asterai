@@ -38,7 +38,7 @@ pub struct ComponentBinary {
 
 enum WasmtimeComponentBinary {
     Raw(Vec<u8>),
-    Compiled(WasmtimeComponent),
+    Compiled(Vec<u8>, WasmtimeComponent),
 }
 
 #[derive(Deserialize, Getters, Debug)]
@@ -104,18 +104,28 @@ impl ComponentBinary {
         &self,
         engine: &Engine,
     ) -> eyre::Result<WasmtimeComponent> {
-        let component_cache: &mut WasmtimeComponentBinary =
-            &mut *self.wasmtime_component.lock().await;
-        let uncached_bytes = match component_cache {
-            WasmtimeComponentBinary::Raw(bytes) => bytes,
-            WasmtimeComponentBinary::Compiled(component) => {
-                return Ok(component.clone());
-            }
+        let component_cache = &mut *self.wasmtime_component.lock().await;
+        if let WasmtimeComponentBinary::Compiled(_, component) = component_cache {
+            return Ok(component.clone());
+        }
+        let raw = std::mem::replace(component_cache, WasmtimeComponentBinary::Raw(Vec::new()));
+        let WasmtimeComponentBinary::Raw(bytes) = raw else {
+            unreachable!()
         };
-        let component = WasmtimeComponent::from_binary(engine, uncached_bytes.as_slice())
-            .map_err(|e| eyre!(e))?;
-        *component_cache = WasmtimeComponentBinary::Compiled(component.clone());
+        let component = WasmtimeComponent::from_binary(engine, &bytes).map_err(|e| eyre!(e))?;
+        *component_cache = WasmtimeComponentBinary::Compiled(bytes, component.clone());
         Ok(component)
+    }
+
+    /// Compiles this component for the given engine synchronously.
+    /// Does not use or update the internal cache.
+    pub fn compile_for_engine_sync(&self, engine: &Engine) -> eyre::Result<WasmtimeComponent> {
+        let component_cache = self.wasmtime_component.blocking_lock();
+        let bytes = match &*component_cache {
+            WasmtimeComponentBinary::Raw(bytes) => bytes,
+            WasmtimeComponentBinary::Compiled(bytes, _) => bytes,
+        };
+        WasmtimeComponent::from_binary(engine, bytes).map_err(|e| eyre!(e))
     }
 
     pub fn component(&self) -> &Component {

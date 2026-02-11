@@ -109,3 +109,38 @@ fn get_ws_manager(store: &StoreContextMut<HostEnv>) -> Result<Arc<WsManager>, St
         .and_then(|rd| rd.ws_manager.clone())
         .ok_or_else(|| "ws manager not available".to_owned())
 }
+
+/// Registers sync WS stubs for the sync engine used by dynamic calls.
+/// WS operations are not supported in the dynamic call context.
+pub fn add_asterai_ws_to_sync_linker(linker: &mut Linker<HostEnv>) -> eyre::Result<()> {
+    let mut instance = linker
+        .instance("asterai:host-ws/connection@0.1.0")
+        .map_err(|e| eyre::eyre!("{e:#?}"))?;
+    instance
+        .func_wrap(
+            "connect",
+            |_store: StoreContextMut<HostEnv>, (_config,): (WsConfig,)| {
+                Ok((Err::<u64, String>(
+                    "ws not available in dynamic call context".to_owned(),
+                ),))
+            },
+        )
+        .map_err(|e| eyre::eyre!("{e:#?}"))?;
+    instance
+        .func_wrap(
+            "send",
+            |_store: StoreContextMut<HostEnv>, (_id, _data): (u64, Vec<u8>)| {
+                Ok((Err::<(), String>(
+                    "ws not available in dynamic call context".to_owned(),
+                ),))
+            },
+        )
+        .map_err(|e| eyre::eyre!("{e:#?}"))?;
+    instance
+        .func_wrap(
+            "close",
+            |_store: StoreContextMut<HostEnv>, (_id,): (u64,)| Ok(()),
+        )
+        .map_err(|e| eyre::eyre!("{e:#?}"))?;
+    Ok(())
+}
