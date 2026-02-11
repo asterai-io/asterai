@@ -20,29 +20,38 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Portable in-place sed (macOS requires -i '', Linux requires -i).
+sedi() {
+  if [[ "$OSTYPE" == darwin* ]]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
+  fi
+}
+
 echo "Updating version to $VERSION..."
 
 # Update Cargo.toml files.
 echo "  cli/Cargo.toml"
-sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/cli/Cargo.toml"
+sedi "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/cli/Cargo.toml"
 
 echo "  runtime/Cargo.toml"
-sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/runtime/Cargo.toml"
+sedi "s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/runtime/Cargo.toml"
 
 # Update npm package.json files.
 for pkg in "$ROOT_DIR"/npm/*/package.json; do
   rel_path="${pkg#$ROOT_DIR/}"
   echo "  $rel_path"
-  sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" "$pkg"
+  sedi "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" "$pkg"
 done
 
 # Update optionalDependencies in main package.
 echo "  npm/asterai/package.json (optionalDependencies)"
-sed -i "s/\"@asterai\/cli-linux-x64\": \".*\"/\"@asterai\/cli-linux-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
-sed -i "s/\"@asterai\/cli-linux-arm64\": \".*\"/\"@asterai\/cli-linux-arm64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
-sed -i "s/\"@asterai\/cli-darwin-x64\": \".*\"/\"@asterai\/cli-darwin-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
-sed -i "s/\"@asterai\/cli-darwin-arm64\": \".*\"/\"@asterai\/cli-darwin-arm64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
-sed -i "s/\"@asterai\/cli-win32-x64\": \".*\"/\"@asterai\/cli-win32-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sedi "s/\"@asterai\/cli-linux-x64\": \".*\"/\"@asterai\/cli-linux-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sedi "s/\"@asterai\/cli-linux-arm64\": \".*\"/\"@asterai\/cli-linux-arm64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sedi "s/\"@asterai\/cli-darwin-x64\": \".*\"/\"@asterai\/cli-darwin-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sedi "s/\"@asterai\/cli-darwin-arm64\": \".*\"/\"@asterai\/cli-darwin-arm64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
+sedi "s/\"@asterai\/cli-win32-x64\": \".*\"/\"@asterai\/cli-win32-x64\": \"$VERSION\"/" "$ROOT_DIR/npm/asterai/package.json"
 
 echo ""
 echo "Done. Updated to version $VERSION"
