@@ -208,46 +208,12 @@ fn execute_dynamic_call(
         kind: CallErrorKind::InvocationFailed,
         message: format!("failed to set up linker: {e}"),
     })?;
-    let binaries: Vec<_> = compiled_components.iter().map(|(b, _)| b.clone()).collect();
-    let stubs = register_component_stubs_sync(&binaries, &mut linker).map_err(|e| CallError {
-        kind: CallErrorKind::InvocationFailed,
-        message: format!("failed to register stubs: {e}"),
-    })?;
-    let mut all_instances = Vec::new();
-    let mut target_instance = None;
-    for (binary, _) in &compiled_components {
-        let compiled = binary
-            .compile_for_engine_sync(engine)
-            .map_err(|e| CallError {
-                kind: CallErrorKind::InvocationFailed,
-                message: format!("failed to compile '{}': {e}", binary.component().id()),
-            })?;
-        let instance = linker
-            .instantiate(&mut store, &compiled)
-            .map_err(|e| CallError {
-                kind: CallErrorKind::InvocationFailed,
-                message: format!(
-                    "failed to instantiate component '{}': {e}",
-                    binary.component().id()
-                ),
-            })?;
-        resolve_component_stubs(binary, &instance, &mut store, &stubs).map_err(|e| CallError {
-            kind: CallErrorKind::InvocationFailed,
-            message: format!("failed to resolve stubs: {e}"),
-        })?;
-        if binary.component().id() == comp_id {
-            target_instance = Some(instance);
-        }
-        all_instances.push((binary.clone(), instance));
-    }
+    let (all_instances, target) =
+        instantiate_all_sync(&compiled_components, engine, &mut linker, &mut store, &comp_id)?;
     // Store instances so nested call-component-function calls can find them.
     store.data_mut().sync_instances = all_instances;
-    let instance = target_instance.ok_or(CallError {
-        kind: CallErrorKind::ComponentNotFound,
-        message: format!("component '{}' not found", comp_id),
-    })?;
     let func = function
-        .get_func(&mut store, &instance)
+        .get_func(&mut store, &target)
         .map_err(|e| CallError {
             kind: CallErrorKind::InvocationFailed,
             message: format!("failed to get function: {e}"),
@@ -263,6 +229,60 @@ fn execute_dynamic_call(
         message: format!("{e:#}"),
     })?;
     serialize_call_results(results)
+}
+
+/// Compiles, instantiates, and links all components with the sync engine.
+/// Returns (all instances, target instance for `target_id`).
+fn instantiate_all_sync(
+    compiled_components: &[(ComponentBinary, WasmtimeComponent)],
+    engine: &wasmtime::Engine,
+    linker: &mut Linker<HostEnv>,
+    store: &mut wasmtime::Store<HostEnv>,
+    target_id: &ComponentId,
+) -> Result<
+    (
+        Vec<(ComponentBinary, wasmtime::component::Instance)>,
+        wasmtime::component::Instance,
+    ),
+    CallError,
+> {
+    let binaries: Vec<_> = compiled_components.iter().map(|(b, _)| b.clone()).collect();
+    let stubs = register_component_stubs_sync(&binaries, linker).map_err(|e| CallError {
+        kind: CallErrorKind::InvocationFailed,
+        message: format!("failed to register stubs: {e}"),
+    })?;
+    let mut all_instances = Vec::new();
+    let mut target_instance = None;
+    for (binary, _) in compiled_components {
+        let compiled = binary
+            .compile_for_engine_sync(engine)
+            .map_err(|e| CallError {
+                kind: CallErrorKind::InvocationFailed,
+                message: format!("failed to compile '{}': {e}", binary.component().id()),
+            })?;
+        let instance = linker
+            .instantiate(&mut *store, &compiled)
+            .map_err(|e| CallError {
+                kind: CallErrorKind::InvocationFailed,
+                message: format!(
+                    "failed to instantiate component '{}': {e}",
+                    binary.component().id()
+                ),
+            })?;
+        resolve_component_stubs(binary, &instance, store, &stubs).map_err(|e| CallError {
+            kind: CallErrorKind::InvocationFailed,
+            message: format!("failed to resolve stubs: {e}"),
+        })?;
+        if binary.component().id() == *target_id {
+            target_instance = Some(instance);
+        }
+        all_instances.push((binary.clone(), instance));
+    }
+    let target = target_instance.ok_or(CallError {
+        kind: CallErrorKind::ComponentNotFound,
+        message: format!("component '{}' not found", target_id),
+    })?;
+    Ok((all_instances, target))
 }
 
 fn get_runtime_info_sync(
