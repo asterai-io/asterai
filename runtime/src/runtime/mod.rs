@@ -207,8 +207,24 @@ impl ComponentRuntime {
         filter.version.is_none() || filter.version == package_name.version
     }
 
-    /// Call all the `run` functions concurrently, which is commonly defined by `wasi:cli/run`
-    /// to run CLI components, on all components that implement it.
+    /// Call all the `run` functions, which is commonly defined by `wasi:cli/run`,
+    /// on all components that implement it.
+    ///
+    /// **Limitation:** Components are run sequentially, not concurrently.
+    /// Each component's `run` must complete before the next one starts.
+    /// This means a long-lived `run` (e.g. a server loop) will block
+    /// subsequent components from ever executing.
+    ///
+    /// The sequential design exists because `run_concurrent` holds
+    /// `&mut Store` (locking the shared `Arc<Mutex<Store>>`), which
+    /// prevents WS callbacks from acquiring the store. Running each
+    /// component separately releases the lock between calls.
+    ///
+    /// To restore true concurrency, all concurrent guest execution
+    /// (component runs + WS callbacks) would need to share a single
+    /// `run_concurrent` scope via the `Accessor`, with WS dispatch
+    /// routed through a channel into that scope.
+    /// See: https://github.com/asterai-io/asterai/issues/67
     pub async fn run(&mut self) -> eyre::Result<()> {
         let funcs = {
             let mut store = self.engine.store.lock().await;
