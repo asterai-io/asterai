@@ -30,11 +30,8 @@ pub struct WsConfig {
     pub auto_reconnect: bool,
 }
 
-#[allow(dead_code)]
 struct WsConnection {
     write_tx: mpsc::Sender<Message>,
-    config: Arc<WsConfig>,
-    owner_binary: ComponentBinary,
     cancel_token: CancellationToken,
 }
 
@@ -95,8 +92,6 @@ impl WsManager {
         });
         let connection = WsConnection {
             write_tx,
-            config,
-            owner_binary,
             cancel_token,
         };
         self.connections.write().await.insert(conn_id, connection);
