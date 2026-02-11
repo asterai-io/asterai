@@ -73,64 +73,38 @@ pub fn add_asterai_host_to_linker(linker: &mut Linker<HostEnv>) -> eyre::Result<
 }
 
 fn get_runtime_info<'a>(
-    _store: StoreContextMut<'a, HostEnv>,
-    _params: (),
+    store: StoreContextMut<'a, HostEnv>,
+    params: (),
 ) -> HostFuture<'a, (RuntimeInfo,)> {
-    Box::new(async move {
-        let runtime_info = RuntimeInfo {
-            version: env!("CARGO_PKG_VERSION").to_owned(),
-        };
-        Ok((runtime_info,))
-    })
+    Box::new(async move { get_runtime_info_sync(store, params) })
 }
 
 fn list_components<'a>(
     store: StoreContextMut<'a, HostEnv>,
-    _params: (),
+    params: (),
 ) -> HostFuture<'a, (Vec<ComponentInfo>,)> {
-    Box::new(async move {
-        let infos = build_all_component_infos(&store);
-        Ok((infos,))
-    })
+    Box::new(async move { list_components_sync(store, params) })
 }
 
 fn list_other_components<'a>(
     store: StoreContextMut<'a, HostEnv>,
-    _params: (),
+    params: (),
 ) -> HostFuture<'a, (Vec<ComponentInfo>,)> {
-    Box::new(async move {
-        let caller_id = get_last_component_id(&store);
-        let infos = build_all_component_infos(&store)
-            .into_iter()
-            .filter(|info| Some(&info.name) != caller_id.as_ref())
-            .collect();
-        Ok((infos,))
-    })
+    Box::new(async move { list_other_components_sync(store, params) })
 }
 
 fn get_component<'a>(
     store: StoreContextMut<'a, HostEnv>,
-    (name,): (String,),
+    params: (String,),
 ) -> HostFuture<'a, (Option<ComponentInfo>,)> {
-    Box::new(async move {
-        let info = build_all_component_infos(&store)
-            .into_iter()
-            .find(|info| info.name == name);
-        Ok((info,))
-    })
+    Box::new(async move { get_component_sync(store, params) })
 }
 
 fn component_implements<'a>(
     store: StoreContextMut<'a, HostEnv>,
-    (component_name, interface_name): (String, String),
+    params: (String, String),
 ) -> HostFuture<'a, (bool,)> {
-    Box::new(async move {
-        let found = build_all_component_infos(&store)
-            .into_iter()
-            .find(|info| info.name == component_name)
-            .is_some_and(|info| info.interfaces.contains(&interface_name));
-        Ok((found,))
-    })
+    Box::new(async move { component_implements_sync(store, params) })
 }
 
 fn call_component_function<'a>(
