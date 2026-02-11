@@ -12,6 +12,7 @@ pub mod version_resolver;
 
 #[tokio::main]
 async fn main() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tracing_subscriber::fmt::init();
     let args = std::env::args().skip(1);
     let command = match Command::parse(args) {

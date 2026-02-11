@@ -39,3 +39,4 @@ hyper = { workspace = true }
 tokio-util = { workspace = true }
 http-body-util = { workspace = true }
 bytes = { workspace = true }
+rustls = { workspace = true }
