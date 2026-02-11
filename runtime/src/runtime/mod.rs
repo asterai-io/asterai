@@ -201,35 +201,41 @@ impl ComponentRuntime {
     /// Call all the `run` functions concurrently, which is commonly defined by `wasi:cli/run`
     /// to run CLI components, on all components that implement it.
     pub async fn run(&mut self) -> eyre::Result<()> {
-        let mut store = self.engine.store.lock().await;
-        let mut funcs = Vec::new();
-        for instance in &self.engine.instances {
-            let component = instance.component_interface.component().clone();
-            let run_function_opt = self.find_function(
-                &component.id(),
-                &CLI_RUN_FUNCTION_NAME,
-                // Do not specify a package, as usually this is only implemented once.
-                // e.g. a common target would be wasi:cli@0.2.0
-                None,
-            )?;
-            let Some(run_function) = run_function_opt else {
-                // Skip components that don't implement run.
-                continue;
-            };
-            let func = run_function.get_func(&mut *store, &instance.instance)?;
-            funcs.push((func, run_function.name, component));
-        }
-        let last_component = store
-            .data()
-            .runtime_data
-            .as_ref()
-            .unwrap()
-            .last_component
-            .clone();
-        store
-            .run_concurrent(async |a| {
-                for (func, func_name, component) in funcs {
-                    *last_component.lock().unwrap() = Some(component.clone());
+        let funcs = {
+            let mut store = self.engine.store.lock().await;
+            let mut funcs = Vec::new();
+            for instance in &self.engine.instances {
+                let component = instance.component_interface.component().clone();
+                let run_function_opt = self.find_function(
+                    &component.id(),
+                    &CLI_RUN_FUNCTION_NAME,
+                    // Do not specify a package, as usually this is only implemented once.
+                    // e.g. a common target would be wasi:cli@0.2.0
+                    None,
+                )?;
+                let Some(run_function) = run_function_opt else {
+                    // Skip components that don't implement run.
+                    continue;
+                };
+                let func = run_function.get_func(&mut *store, &instance.instance)?;
+                funcs.push((func, run_function.name, component));
+            }
+            funcs
+        };
+        // Run each component separately so the store lock is released between
+        // calls, allowing WS callbacks to proceed while other components run.
+        for (func, func_name, component) in funcs {
+            let mut store = self.engine.store.lock().await;
+            let last_component = store
+                .data()
+                .runtime_data
+                .as_ref()
+                .unwrap()
+                .last_component
+                .clone();
+            *last_component.lock().unwrap() = Some(component.clone());
+            store
+                .run_concurrent(async |a| {
                     let result = call_wasm_component_function_concurrent(
                         &func,
                         &func_name,
@@ -242,10 +248,10 @@ impl ComponentRuntime {
                     if let Err(e) = result {
                         error!("{e:#?}");
                     }
-                }
-            })
-            .await
-            .map_err(|e| eyre!(e))?;
+                })
+                .await
+                .map_err(|e| eyre!(e))?;
+        }
         Ok(())
     }
 }
