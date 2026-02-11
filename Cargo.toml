@@ -53,4 +53,4 @@ tokio-util = "0.7"
 http-body = "1"
 http-body-util = "0.1"
 anyhow = "1"
-tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
