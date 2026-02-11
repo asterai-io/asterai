@@ -1,5 +1,4 @@
 use crate::component::binary::ComponentBinary;
-use crate::runtime::env::HostEnvRuntimeData;
 use crate::runtime::wasm_instance::SharedStore;
 use eyre::eyre;
 use futures::stream::{SplitSink, SplitStream};
@@ -39,17 +38,15 @@ struct WsConnection {
     cancel_token: CancellationToken,
 }
 
+/// Manages WebSocket connections for WASM components.
+///
+/// The store is set after construction via [`set_store`](Self::set_store)
+/// because of a circular dependency: WsManager is referenced by the
+/// store's runtime data, so the store cannot exist before the manager.
 pub struct WsManager {
     connections: RwLock<HashMap<ConnectionId, WsConnection>>,
     next_id: AtomicU64,
-    runtime_data: OnceLock<HostEnvRuntimeData>,
     store: OnceLock<SharedStore>,
-}
-
-impl Default for WsManager {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl WsManager {
@@ -57,13 +54,8 @@ impl WsManager {
         Self {
             connections: RwLock::new(HashMap::new()),
             next_id: AtomicU64::new(1),
-            runtime_data: OnceLock::new(),
             store: OnceLock::new(),
         }
-    }
-
-    pub fn set_runtime_data(&self, data: HostEnvRuntimeData) {
-        self.runtime_data.set(data).ok();
     }
 
     pub fn set_store(&self, store: SharedStore) {

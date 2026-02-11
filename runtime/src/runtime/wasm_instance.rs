@@ -128,7 +128,6 @@ impl ComponentRuntimeEngine {
             preopened_dirs: preopened_dirs.to_vec(),
             ws_manager: Some(Arc::clone(&ws_manager)),
         };
-        ws_manager.set_runtime_data(runtime_data.clone());
         store.data_mut().runtime_data = Some(runtime_data);
         let store = Arc::new(tokio::sync::Mutex::new(store));
         ws_manager.set_store(store.clone());
