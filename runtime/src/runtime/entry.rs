@@ -129,46 +129,24 @@ async fn call_component_function_inner(
     function_name_str: &str,
     args_json: &str,
 ) -> Result<String, CallError> {
-    let comp_id = ComponentId::from_str(component_name).map_err(|e| CallError {
-        kind: CallErrorKind::ComponentNotFound,
-        message: format!("invalid component name: {e}"),
-    })?;
-    let function_name = ComponentFunctionName::from_str(function_name_str).unwrap();
-    // Extract everything we need from the caller's store.
-    let (compiled_components, resolve, function, env_vars, preopened_dirs, runtime_data) = {
-        let runtime_data = store.data().runtime_data.as_ref().ok_or(CallError {
+    let (compiled_components, env_vars, preopened_dirs, runtime_data) = {
+        let rd = store.data().runtime_data.as_ref().ok_or(CallError {
             kind: CallErrorKind::InvocationFailed,
             message: "runtime not initialized".to_owned(),
         })?;
-        let (binary, _) = runtime_data
-            .compiled_components
-            .iter()
-            .find(|(cb, _)| cb.component().id() == comp_id)
-            .ok_or(CallError {
-                kind: CallErrorKind::ComponentNotFound,
-                message: format!("component '{component_name}' not found"),
-            })?;
-        let func = binary
-            .get_functions()
-            .into_iter()
-            .find(|f| f.name == function_name)
-            .ok_or(CallError {
-                kind: CallErrorKind::FunctionNotFound,
-                message: format!(
-                    "function '{function_name_str}' not found \
-                     on '{component_name}'"
-                ),
-            })?;
         (
-            runtime_data.compiled_components.clone(),
-            binary.wit().resolve().clone(),
-            func,
-            runtime_data.env_vars.clone(),
-            runtime_data.preopened_dirs.clone(),
-            runtime_data.clone(),
+            rd.compiled_components.clone(),
+            rd.env_vars.clone(),
+            rd.preopened_dirs.clone(),
+            rd.clone(),
         )
     };
-    let inputs = parse_call_args(args_json, &function, &resolve)?;
+    let (comp_id, function, inputs) = resolve_call(
+        component_name,
+        function_name_str,
+        args_json,
+        compiled_components.iter().map(|(b, _)| b),
+    )?;
     // Run on a blocking thread with a sync engine to avoid the nested
     // `run_concurrent` assertion. The sync engine's `Func::call` bypasses
     // wasmtime's concurrent module entirely, so forwarding stubs can
@@ -356,13 +334,13 @@ fn call_component_function_sync_inner(
     function_name_str: &str,
     args_json: &str,
 ) -> Result<String, CallError> {
-    let comp_id = ComponentId::from_str(component_name).map_err(|e| CallError {
-        kind: CallErrorKind::ComponentNotFound,
-        message: format!("invalid component name: {e}"),
-    })?;
-    let function_name = ComponentFunctionName::from_str(function_name_str).unwrap();
-    // Find the instance and function from the sync store.
-    let (binary, instance) = store
+    let (comp_id, function, inputs) = resolve_call(
+        component_name,
+        function_name_str,
+        args_json,
+        store.data().sync_instances.iter().map(|(b, _)| b),
+    )?;
+    let (_, instance) = store
         .data()
         .sync_instances
         .iter()
@@ -372,19 +350,6 @@ fn call_component_function_sync_inner(
             message: format!("component '{component_name}' not found"),
         })?
         .clone();
-    let resolve = binary.wit().resolve().clone();
-    let function = binary
-        .get_functions()
-        .into_iter()
-        .find(|f| f.name == function_name)
-        .ok_or(CallError {
-            kind: CallErrorKind::FunctionNotFound,
-            message: format!(
-                "function '{function_name_str}' not found \
-                 on '{component_name}'"
-            ),
-        })?;
-    let inputs = parse_call_args(args_json, &function, &resolve)?;
     let func = function
         .get_func(&mut *store, &instance)
         .map_err(|e| CallError {
@@ -402,6 +367,41 @@ fn call_component_function_sync_inner(
         message: format!("{e:#}"),
     })?;
     serialize_call_results(results)
+}
+
+/// Resolves a component call: parses the target, finds the function,
+/// and converts args to wasmtime Vals.
+fn resolve_call<'a>(
+    component_name: &str,
+    function_name_str: &str,
+    args_json: &str,
+    mut binaries: impl Iterator<Item = &'a ComponentBinary>,
+) -> Result<(ComponentId, ComponentFunctionInterface, Vec<Val>), CallError> {
+    let comp_id = ComponentId::from_str(component_name).map_err(|e| CallError {
+        kind: CallErrorKind::ComponentNotFound,
+        message: format!("invalid component name: {e}"),
+    })?;
+    let function_name = ComponentFunctionName::from_str(function_name_str).unwrap();
+    let binary = binaries
+        .find(|b| b.component().id() == comp_id)
+        .ok_or(CallError {
+            kind: CallErrorKind::ComponentNotFound,
+            message: format!("component '{component_name}' not found"),
+        })?;
+    let function = binary
+        .get_functions()
+        .into_iter()
+        .find(|f| f.name == function_name)
+        .ok_or(CallError {
+            kind: CallErrorKind::FunctionNotFound,
+            message: format!(
+                "function '{function_name_str}' not found \
+                 on '{component_name}'"
+            ),
+        })?;
+    let resolve = binary.wit().resolve().clone();
+    let inputs = parse_call_args(args_json, &function, &resolve)?;
+    Ok((comp_id, function, inputs))
 }
 
 /// Parses a JSON args string, validates the count against the function
