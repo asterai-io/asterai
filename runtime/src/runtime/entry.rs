@@ -168,31 +168,7 @@ async fn call_component_function_inner(
             runtime_data.clone(),
         )
     };
-    // Parse and validate JSON args.
-    let json_args: Vec<serde_json::Value> =
-        serde_json::from_str(args_json).map_err(|e| CallError {
-            kind: CallErrorKind::InvalidArgs,
-            message: format!("invalid JSON args: {e}"),
-        })?;
-    if json_args.len() != function.inputs.len() {
-        return Err(CallError {
-            kind: CallErrorKind::InvalidArgs,
-            message: format!(
-                "expected {} arg(s), got {}",
-                function.inputs.len(),
-                json_args.len()
-            ),
-        });
-    }
-    let inputs: Vec<Val> = json_args
-        .iter()
-        .zip(function.inputs.iter())
-        .map(|(arg, (_name, type_def))| json_value_to_val_typedef(arg, type_def, &resolve))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| CallError {
-            kind: CallErrorKind::InvalidArgs,
-            message: format!("failed to convert args: {e}"),
-        })?;
+    let inputs = parse_call_args(args_json, &function, &resolve)?;
     // Run on a blocking thread with a sync engine to avoid the nested
     // `run_concurrent` assertion. The sync engine's `Func::call` bypasses
     // wasmtime's concurrent module entirely, so forwarding stubs can
@@ -286,14 +262,7 @@ fn execute_dynamic_call(
         kind: CallErrorKind::InvocationFailed,
         message: format!("{e:#}"),
     })?;
-    let output_val = results.into_iter().next();
-    let json_output = output_val
-        .and_then(|v| v.try_into_json_value())
-        .unwrap_or(serde_json::Value::Null);
-    serde_json::to_string(&json_output).map_err(|e| CallError {
-        kind: CallErrorKind::SerializationFailed,
-        message: format!("{e}"),
-    })
+    serialize_call_results(results)
 }
 
 fn get_runtime_info_sync(
@@ -395,31 +364,7 @@ fn call_component_function_sync_inner(
                  on '{component_name}'"
             ),
         })?;
-    // Parse and validate JSON args.
-    let json_args: Vec<serde_json::Value> =
-        serde_json::from_str(args_json).map_err(|e| CallError {
-            kind: CallErrorKind::InvalidArgs,
-            message: format!("invalid JSON args: {e}"),
-        })?;
-    if json_args.len() != function.inputs.len() {
-        return Err(CallError {
-            kind: CallErrorKind::InvalidArgs,
-            message: format!(
-                "expected {} arg(s), got {}",
-                function.inputs.len(),
-                json_args.len()
-            ),
-        });
-    }
-    let inputs: Vec<Val> = json_args
-        .iter()
-        .zip(function.inputs.iter())
-        .map(|(arg, (_name, type_def))| json_value_to_val_typedef(arg, type_def, &resolve))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| CallError {
-            kind: CallErrorKind::InvalidArgs,
-            message: format!("failed to convert args: {e}"),
-        })?;
+    let inputs = parse_call_args(args_json, &function, &resolve)?;
     let func = function
         .get_func(&mut *store, &instance)
         .map_err(|e| CallError {
@@ -436,6 +381,44 @@ fn call_component_function_sync_inner(
         kind: CallErrorKind::InvocationFailed,
         message: format!("{e:#}"),
     })?;
+    serialize_call_results(results)
+}
+
+/// Parses a JSON args string, validates the count against the function
+/// signature, and converts each arg to a wasmtime Val.
+fn parse_call_args(
+    args_json: &str,
+    function: &ComponentFunctionInterface,
+    resolve: &wit_parser::Resolve,
+) -> Result<Vec<Val>, CallError> {
+    let json_args: Vec<serde_json::Value> =
+        serde_json::from_str(args_json).map_err(|e| CallError {
+            kind: CallErrorKind::InvalidArgs,
+            message: format!("invalid JSON args: {e}"),
+        })?;
+    if json_args.len() != function.inputs.len() {
+        return Err(CallError {
+            kind: CallErrorKind::InvalidArgs,
+            message: format!(
+                "expected {} arg(s), got {}",
+                function.inputs.len(),
+                json_args.len()
+            ),
+        });
+    }
+    json_args
+        .iter()
+        .zip(function.inputs.iter())
+        .map(|(arg, (_name, type_def))| json_value_to_val_typedef(arg, type_def, resolve))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| CallError {
+            kind: CallErrorKind::InvalidArgs,
+            message: format!("failed to convert args: {e}"),
+        })
+}
+
+/// Serializes call results to a JSON string.
+fn serialize_call_results(results: Vec<Val>) -> Result<String, CallError> {
     let output_val = results.into_iter().next();
     let json_output = output_val
         .and_then(|v| v.try_into_json_value())
