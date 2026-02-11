@@ -64,12 +64,14 @@ pub type StoreState = HostEnv;
 
 impl ComponentRuntimeEngine {
     pub async fn new(
-        components: Vec<ComponentBinary>,
+        mut components: Vec<ComponentBinary>,
         app_id: Uuid,
         component_output_tx: mpsc::Sender<ComponentOutput>,
         env_vars: &HashMap<String, String>,
         preopened_dirs: &[PathBuf],
     ) -> eyre::Result<Self> {
+        // Sort for deterministic instantiation order (source is a HashMap).
+        components.sort_by(|a, b| a.component().to_string().cmp(&b.component().to_string()));
         let engine = &ENGINE;
         let last_component = Arc::new(Mutex::new(None));
         let mut store = create_store(
