@@ -80,6 +80,9 @@ async fn handle_call_inner(
                 body.component
             )
         })?;
+    let resolve = runtime
+        .resolve_for(&comp_id)
+        .ok_or_else(|| eyre::eyre!("component '{}' not found", body.component))?;
     if body.args.len() != function.inputs.len() {
         eyre::bail!(
             "expected {} argument(s), got {}",
@@ -91,7 +94,7 @@ async fn handle_call_inner(
         .args
         .iter()
         .zip(function.inputs.iter())
-        .map(|(arg, (_name, type_def))| json_value_to_val_typedef(arg, type_def))
+        .map(|(arg, (_name, type_def))| json_value_to_val_typedef(arg, type_def, &resolve))
         .collect::<eyre::Result<Vec<_>>>()?;
     let output_opt = runtime.call_function(function, &inputs).await?;
     let output = output_opt

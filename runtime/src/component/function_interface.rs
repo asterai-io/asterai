@@ -95,13 +95,8 @@ impl ComponentFunctionInterface {
                 .with_context(|| "(typed) function not found")?;
             return Ok(func);
         };
-        let version_string = self.component.version().to_string();
         // Export name example: asterai:hello/greet@0.2.0
-        let export_name = format!(
-            "{}/{}@{version_string}",
-            self.component.id(),
-            interface_name
-        );
+        let export_name = self.format_interface_export(interface_name);
         trace!("interface export name: {}", export_name);
         let (_, interface_export) = instance
             .get_export(&mut store, None, &export_name)
@@ -126,13 +121,20 @@ impl ComponentFunctionInterface {
         let Some(interface_name) = &self.name.interface else {
             return None;
         };
-        let version_string = format!("@{}", self.component.version());
-        let export_name = format!(
-            "{}/{}{}",
-            self.component.id(),
-            interface_name,
-            version_string
-        );
-        Some(export_name)
+        Some(self.format_interface_export(interface_name))
+    }
+
+    /// Formats a versioned interface export name, e.g. `asterai:hello/greet@0.2.0`.
+    fn format_interface_export(&self, interface_name: &str) -> String {
+        let version_string = self
+            .package_name
+            .version
+            .as_ref()
+            .map(|v| format!("@{v}"))
+            .unwrap_or_default();
+        format!(
+            "{}:{}/{interface_name}{version_string}",
+            self.package_name.namespace, self.package_name.name
+        )
     }
 }

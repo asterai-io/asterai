@@ -1,0 +1,23 @@
+package asterai:host-ws@0.1.0;
+
+interface connection {
+    type connection-id = u64;
+
+    record config {
+        url: string,
+        headers: list<tuple<string, string>>,
+        auto-reconnect: bool,
+    }
+
+    connect: func(config: config) -> result<connection-id, string>;
+    send: func(id: connection-id, data: list<u8>) -> result<_, string>;
+    close: func(id: connection-id);
+}
+
+interface incoming-handler {
+    use connection.{connection-id};
+
+    on-message: func(id: connection-id, data: list<u8>);
+    on-close: func(id: connection-id, code: u16, reason: string);
+    on-error: func(id: connection-id, message: string);
+}

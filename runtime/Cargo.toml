@@ -1,6 +1,6 @@
 [package]
 name = "asterai_runtime"
-version = "1.0.0-alpha.5"
+version = "1.0.0-alpha.6"
 edition = { workspace = true }
 description = "Runtime library for asterai - the portable AI compute platform"
 license = "Apache-2.0"
@@ -51,3 +51,5 @@ http = { workspace = true }
 http-body = { workspace = true }
 http-body-util = { workspace = true }
 anyhow = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }

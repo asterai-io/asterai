@@ -8,6 +8,7 @@ use crate::runtime::output::{ComponentFunctionOutput, ComponentOutput};
 use crate::runtime::wasm_instance::{
     ComponentRuntimeEngine, call_wasm_component_function_concurrent,
 };
+use crate::runtime::ws::WsManager;
 use derive_getters::Getters;
 use eyre::eyre;
 use log::{error, trace};
@@ -25,11 +26,14 @@ use wit_parser::PackageName;
 mod entry;
 pub mod env;
 pub mod http;
+mod link_components;
 pub mod output;
 pub mod parsing;
 pub(crate) mod std_out_err;
 mod wasm_instance;
 mod wit_bindings;
+pub mod ws;
+mod ws_entry;
 
 // The `run/run` function, commonly defined by `wasi:cli`.
 static CLI_RUN_FUNCTION_NAME: Lazy<ComponentFunctionName> = Lazy::new(|| ComponentFunctionName {
@@ -53,6 +57,8 @@ pub struct ComponentRuntime {
     engine: ComponentRuntimeEngine,
     #[getter(skip)]
     http_route_table: Arc<HttpRouteTable>,
+    #[getter(skip)]
+    ws_manager: Option<Arc<WsManager>>,
 }
 
 impl ComponentRuntime {
@@ -74,17 +80,30 @@ impl ComponentRuntime {
             preopened_dirs,
         )
         .await?;
+        let ws_manager = {
+            let store = engine.store.lock().await;
+            store
+                .data()
+                .runtime_data
+                .as_ref()
+                .and_then(|r| r.ws_manager.clone())
+        };
         let http_route_table =
             build_http_route_table(&engine, env_vars, preopened_dirs, env_namespace, env_name)?;
         Ok(Self {
             app_id,
             engine,
             http_route_table: Arc::new(http_route_table),
+            ws_manager,
         })
     }
 
     pub fn http_route_table(&self) -> Arc<HttpRouteTable> {
         self.http_route_table.clone()
+    }
+
+    pub fn ws_manager(&self) -> Option<Arc<WsManager>> {
+        self.ws_manager.clone()
     }
 
     pub fn component_interfaces(&self) -> Vec<ComponentBinary> {
@@ -93,6 +112,15 @@ impl ComponentRuntime {
             .iter()
             .map(|i| i.component_interface.clone())
             .collect()
+    }
+
+    /// Returns the WIT `Resolve` for the given component.
+    pub fn resolve_for(&self, comp_id: &ComponentId) -> Option<wit_parser::Resolve> {
+        self.engine
+            .instances()
+            .iter()
+            .find(|i| i.component_interface.component().id() == *comp_id)
+            .map(|i| i.component_interface.wit().resolve().clone())
     }
 
     pub async fn call_function(
@@ -179,30 +207,60 @@ impl ComponentRuntime {
         filter.version.is_none() || filter.version == package_name.version
     }
 
-    /// Call all the `run` functions concurrently, which is commonly defined by `wasi:cli/run`
-    /// to run CLI components, on all components that implement it.
+    /// Call all the `run` functions, which is commonly defined by `wasi:cli/run`,
+    /// on all components that implement it.
+    ///
+    /// **Limitation:** Components are run sequentially, not concurrently.
+    /// Each component's `run` must complete before the next one starts.
+    /// This means a long-lived `run` (e.g. a server loop) will block
+    /// subsequent components from ever executing.
+    ///
+    /// The sequential design exists because `run_concurrent` holds
+    /// `&mut Store` (locking the shared `Arc<Mutex<Store>>`), which
+    /// prevents WS callbacks from acquiring the store. Running each
+    /// component separately releases the lock between calls.
+    ///
+    /// To restore true concurrency, all concurrent guest execution
+    /// (component runs + WS callbacks) would need to share a single
+    /// `run_concurrent` scope via the `Accessor`, with WS dispatch
+    /// routed through a channel into that scope.
+    /// See: https://github.com/asterai-io/asterai/issues/67
     pub async fn run(&mut self) -> eyre::Result<()> {
-        let mut funcs = Vec::new();
-        for instance in &self.engine.instances {
-            let component = instance.component_interface.component().clone();
-            let run_function_opt = self.find_function(
-                &component.id(),
-                &CLI_RUN_FUNCTION_NAME,
-                // Do not specify a package, as usually this is only implemented once.
-                // e.g. a common target would be wasi:cli@0.2.0
-                None,
-            )?;
-            let Some(run_function) = run_function_opt else {
-                // Skip components that don't implement run.
-                continue;
-            };
-            let func = run_function.get_func(&mut self.engine.store, &instance.instance)?;
-            funcs.push((func, run_function.name, component));
-        }
-        self.engine
-            .store
-            .run_concurrent(async |a| {
-                for (func, func_name, component) in funcs {
+        let funcs = {
+            let mut store = self.engine.store.lock().await;
+            let mut funcs = Vec::new();
+            for instance in &self.engine.instances {
+                let component = instance.component_interface.component().clone();
+                let run_function_opt = self.find_function(
+                    &component.id(),
+                    &CLI_RUN_FUNCTION_NAME,
+                    // Do not specify a package, as usually this is only implemented once.
+                    // e.g. a common target would be wasi:cli@0.2.0
+                    None,
+                )?;
+                let Some(run_function) = run_function_opt else {
+                    // Skip components that don't implement run.
+                    continue;
+                };
+                let func = run_function.get_func(&mut *store, &instance.instance)?;
+                funcs.push((func, run_function.name, component));
+            }
+            funcs
+        };
+        // Run each component separately so the store lock is released between
+        // calls, allowing WS callbacks to proceed while other components run.
+        for (func, func_name, component) in funcs {
+            let mut store = self.engine.store.lock().await;
+            let last_component = store
+                .data()
+                .runtime_data
+                .as_ref()
+                .unwrap()
+                .last_component
+                .clone();
+            *last_component.lock().unwrap() = Some(component.clone());
+            store
+                .run_concurrent(async |a| {
                     let result = call_wasm_component_function_concurrent(
                         &func,
                         &func_name,
@@ -215,10 +273,10 @@ impl ComponentRuntime {
                     if let Err(e) = result {
                         error!("{e:#?}");
                     }
-                }
-            })
-            .await
-            .map_err(|e| eyre!(e))?;
+                })
+                .await
+                .map_err(|e| eyre!(e))?;
+        }
         Ok(())
     }
 }

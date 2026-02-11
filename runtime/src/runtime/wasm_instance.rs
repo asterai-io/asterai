@@ -3,7 +3,9 @@ use crate::component::binary::ComponentBinary;
 use crate::component::function_interface::ComponentFunctionInterface;
 use crate::component::function_name::ComponentFunctionName;
 use crate::runtime::env::{HostEnv, HostEnvRuntimeData, create_linker, create_store};
+use crate::runtime::link_components::{register_component_stubs, resolve_component_stubs};
 use crate::runtime::output::ComponentOutput;
+use crate::runtime::ws::WsManager;
 use eyre::{Context, eyre};
 use log::trace;
 use once_cell::sync::Lazy;
@@ -27,8 +29,16 @@ pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
     Engine::new(&config).unwrap()
 });
 
+/// Sync engine for dynamic calls (`call-component-function`).
+/// Using a sync engine avoids the nested `run_concurrent` assertion
+/// that occurs when forwarding stubs call `Func::call_async` inside
+/// an active guest thread.
+pub(crate) static SYNC_ENGINE: Lazy<Engine> = Lazy::new(|| Engine::new(&Config::new()).unwrap());
+
+pub type SharedStore = Arc<tokio::sync::Mutex<Store<StoreState>>>;
+
 pub struct ComponentRuntimeEngine {
-    pub(super) store: Store<StoreState>,
+    pub(super) store: SharedStore,
     pub(super) instances: Vec<ComponentRuntimeInstance>,
     pub(super) linker: Linker<StoreState>,
     pub(super) compiled_components: Vec<CompiledComponentEntry>,
@@ -60,6 +70,8 @@ impl ComponentRuntimeEngine {
         env_vars: &HashMap<String, String>,
         preopened_dirs: &[PathBuf],
     ) -> eyre::Result<Self> {
+        // Sort for deterministic instantiation order (source is a HashMap).
+        components.sort_by_key(|c| c.component().to_string());
         let engine = &ENGINE;
         let last_component = Arc::new(Mutex::new(None));
         let mut store = create_store(
@@ -72,14 +84,13 @@ impl ComponentRuntimeEngine {
         let mut linker = create_linker(engine)?;
         let mut instances = Vec::new();
         let mut compiled_components = Vec::new();
-        // Sort by ascending order of imports count,
-        // so that components with no dependencies are added first.
-        components.sort_by_key(|b| std::cmp::Reverse(b.get_imports_count()));
-        // TODO fix this up. See if possible to link before instantiation,
-        // using Linker::define or Linker::define_instance -- or maybe Grok hallucinated it?
+        // Pre-register forwarding stubs for all component exports.
+        // Each stub holds an Arc<OnceLock<Func>> that gets filled after
+        // instantiation. This allows components to import each other's
+        // interfaces regardless of instantiation order (including cycles).
+        let func_slots = register_component_stubs(&components, &mut linker)?;
         for interface in components.into_iter() {
             trace!("@ interface {}", interface.component().id());
-            trace!("imports count: {}", interface.get_imports_count());
             print!("compiling {}...", interface.component());
             std::io::stdout().flush().ok();
             let component = interface.fetch_compiled_component(engine).await?;
@@ -92,36 +103,42 @@ impl ComponentRuntimeEngine {
                 .instantiate_async(&mut store, &component)
                 .await
                 .map_err(|e| eyre!("{e:#?}"))
-                .with_context(|| "failed to initiate component")?;
+                .with_context(|| {
+                    format!("failed to initiate component: {}", interface.component())
+                })?;
+            // Resolve stubs: fill the OnceLock slots with real Func handles.
+            resolve_component_stubs(&interface, &instance, &mut store, &func_slots)?;
             let instance = ComponentRuntimeInstance {
                 component_interface: interface,
                 app_id,
                 instance,
             };
-            instance.add_to_linker(&mut linker, &mut store)?;
             instances.push(instance);
         }
-        let mut runtime_engine = Self {
-            store,
-            instances: instances.clone(),
-            linker,
-            compiled_components,
-        };
-        let compiled_for_dynamic_calls = runtime_engine
-            .compiled_components
+        let compiled_for_dynamic_calls = compiled_components
             .iter()
             .map(|e| (e.component_binary.clone(), e.component.clone()))
             .collect();
-        runtime_engine.store.data_mut().runtime_data = Some(HostEnvRuntimeData {
+        let ws_manager = Arc::new(WsManager::new());
+        let runtime_data = HostEnvRuntimeData {
             app_id,
-            instances,
+            instances: instances.clone(),
             last_component,
             component_response_to_agent: None,
             compiled_components: compiled_for_dynamic_calls,
             env_vars: env_vars.clone(),
             preopened_dirs: preopened_dirs.to_vec(),
-        });
-        Ok(runtime_engine)
+            ws_manager: Some(Arc::clone(&ws_manager)),
+        };
+        store.data_mut().runtime_data = Some(runtime_data);
+        let store = Arc::new(tokio::sync::Mutex::new(store));
+        ws_manager.set_store(store.clone());
+        Ok(Self {
+            store,
+            instances,
+            linker,
+            compiled_components,
+        })
     }
 
     pub fn instances(&self) -> &[ComponentRuntimeInstance] {
@@ -133,12 +150,11 @@ impl ComponentRuntimeEngine {
         function_interface: ComponentFunctionInterface,
         inputs: &[Val],
     ) -> eyre::Result<Option<ComponentOutput>> {
-        // This is an uninitialised vec of the results.
         let mut results = function_interface.new_results_vec();
         self.call_raw(&function_interface, inputs, &mut results)
             .await?;
-        let output_opt =
-            parse_component_output(self.store.as_context(), results, function_interface);
+        let store = self.store.lock().await;
+        let output_opt = parse_component_output(store.as_context(), results, function_interface);
         Ok(output_opt)
     }
 
@@ -165,12 +181,13 @@ impl ComponentRuntimeEngine {
         let Some(function) = function_opt else {
             return Err(eyre!("function not found in instance"));
         };
-        let func = function.get_func(&mut self.store, &instance.instance)?;
+        let mut store = self.store.lock().await;
+        let func = function.get_func(&mut *store, &instance.instance)?;
         let component = function.component.clone();
         call_wasm_component_function(
             &func,
             &function.name,
-            self.store.as_context_mut(),
+            store.as_context_mut(),
             args,
             results,
             component,
@@ -180,91 +197,7 @@ impl ComponentRuntimeEngine {
     }
 }
 
-impl ComponentRuntimeInstance {
-    /// Add all plugin exports to the linker.
-    pub fn add_to_linker(
-        &self,
-        linker: &mut Linker<HostEnv>,
-        mut store: impl AsContextMut,
-    ) -> eyre::Result<()> {
-        trace!(
-            "adding component to linker: {}",
-            self.component_interface.component()
-        );
-        let functions = self.component_interface.get_functions();
-        let mut functions_by_instance: HashMap<String, Vec<ComponentFunctionInterface>> =
-            HashMap::new();
-        for function in functions {
-            let Some(instance_export_name) = function.get_instance_export_name() else {
-                // Functions at the world level do not need to be
-                // declared here, as they are available directly
-                // though the root instance via `get_func`.
-                trace!("skipping root function '{}'", function.name);
-                continue;
-            };
-            trace!("aggregating export function {instance_export_name}: {function:#?}");
-            let instance_functions = functions_by_instance
-                .entry(instance_export_name)
-                .or_default();
-            instance_functions.push(function);
-        }
-        for (instance_name, functions) in functions_by_instance {
-            // Instances need to only be fetched once, otherwise if they are
-            // fetched multiple times it will override all functions previously
-            // registered, which is why the export name and functions are
-            // aggregated into the hashmap above.
-            let mut exported_instance = linker
-                .instance(&instance_name)
-                .map_err(|e| eyre!("{e:#?}"))?;
-            for function in functions {
-                let func = function
-                    .get_func(&mut store, &self.instance)
-                    .map_err(|e| eyre!("{e:#?}"))?;
-                let component = self.component_interface.component().clone();
-                let func_name_cloned = function.name.clone();
-                let func_name = function.name.clone();
-                trace!("adding function to linker (export {instance_name}): '{func_name_cloned}'");
-                exported_instance
-                    .func_new_async(
-                        &func_name_cloned.name,
-                        move |mut store, _, params, results| {
-                            let component_cloned = component.clone();
-                            let func_name = func_name.clone();
-                            let function_cloned = function.clone();
-                            Box::new(async move {
-                                call_wasm_component_function(
-                                    &func,
-                                    &func_name,
-                                    store.as_context_mut(),
-                                    params,
-                                    results,
-                                    component_cloned,
-                                )
-                                .await
-                                .unwrap();
-                                let output_opt = parse_component_output(
-                                    store.as_context(),
-                                    results.to_vec(),
-                                    function_cloned,
-                                );
-                                if let Some(output) = output_opt {
-                                    // Forward output to channel.
-                                    // This output is not from the directly called function,
-                                    // but from an internal function call somewhere in the stack.
-                                    store.data().component_output_tx.send(output).await.unwrap();
-                                }
-                                Ok(())
-                            })
-                        },
-                    )
-                    .map_err(|e| eyre!("{e:#?}"))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-async fn call_wasm_component_function<'a>(
+pub(super) async fn call_wasm_component_function<'a>(
     func: &Func,
     _func_name: &ComponentFunctionName,
     mut store: StoreContextMut<'a, HostEnv>,
@@ -325,7 +258,7 @@ pub(super) fn set_last_component(component: Component, store: &mut StoreContextM
         .unwrap() = Some(component);
 }
 
-fn parse_component_output(
+pub(super) fn parse_component_output(
     store: StoreContext<HostEnv>,
     results: Vec<Val>,
     interface: ComponentFunctionInterface,
