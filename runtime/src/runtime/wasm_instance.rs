@@ -71,7 +71,7 @@ impl ComponentRuntimeEngine {
         preopened_dirs: &[PathBuf],
     ) -> eyre::Result<Self> {
         // Sort for deterministic instantiation order (source is a HashMap).
-        components.sort_by(|a, b| a.component().to_string().cmp(&b.component().to_string()));
+        components.sort_by_key(|c| c.component().to_string());
         let engine = &ENGINE;
         let last_component = Arc::new(Mutex::new(None));
         let mut store = create_store(
