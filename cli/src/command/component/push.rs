@@ -1,11 +1,14 @@
 use crate::auth::Auth;
 use crate::command::component::ComponentArgs;
+use crate::config::ARTIFACTS_DIR;
 use crate::language;
+use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{Context, OptionExt, bail};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
+use wit_parser::PackageName;
 const RETRY_FIND_FILE_DIR: &str = "build/";
 const COMPONENT_PUSH_HELP: &str = include_str!("../../../help/component_push.txt");
 
@@ -114,22 +117,22 @@ impl PushArgs {
         let api_key = Auth::read_stored_api_key().ok_or_eyre("API key not found")?;
         let client = reqwest::Client::new();
         let pkg_bytes = read_file(&self.pkg)?;
+        let is_interface_only = self.interface_only || self.component.is_none();
+        let component_bytes = match &self.component {
+            Some(path) if !self.interface_only => Some(read_file(path)?),
+            _ => None,
+        };
         // Build multipart form.
         let mut form = reqwest::multipart::Form::new().part(
             "package.wasm",
-            reqwest::multipart::Part::bytes(pkg_bytes)
+            reqwest::multipart::Part::bytes(pkg_bytes.clone())
                 .file_name("package.wasm")
                 .mime_str("application/octet-stream")?,
         );
-        // Add component if provided and not interface-only.
-        let is_interface_only = self.interface_only || self.component.is_none();
-        if let Some(ref component_path) = self.component
-            && !self.interface_only
-        {
-            let component_bytes = read_file(component_path)?;
+        if let Some(ref bytes) = component_bytes {
             form = form.part(
                 "component.wasm",
-                reqwest::multipart::Part::bytes(component_bytes)
+                reqwest::multipart::Part::bytes(bytes.clone())
                     .file_name("component.wasm")
                     .mime_str("application/octet-stream")?,
             );
@@ -160,10 +163,8 @@ impl PushArgs {
                 && err.error == "version_exists"
             {
                 if err.can_auto_bump {
-                    // Public immutable version: auto-bump and instruct to rebuild.
                     return self.handle_version_conflict(&err.version);
                 } else {
-                    // Mutable version or private: just show the error message.
                     bail!("{}", err.message);
                 }
             }
@@ -176,7 +177,35 @@ impl PushArgs {
                 .unwrap_or_else(|_| "unknown error".to_string());
             bail!("push failed ({}): {}", status, error_text);
         }
+        self.cache_locally(&pkg_bytes, component_bytes.as_deref())?;
         println!("done");
+        Ok(())
+    }
+
+    /// Cache the pushed artifacts locally so a subsequent pull is not needed.
+    fn cache_locally(&self, pkg_bytes: &[u8], component_bytes: Option<&[u8]>) -> eyre::Result<()> {
+        let package_name = parse_package_name(pkg_bytes)?;
+        let version = package_name
+            .version
+            .as_ref()
+            .ok_or_eyre("package.wasm has no version")?;
+        let output_dir = ARTIFACTS_DIR
+            .join(&package_name.namespace)
+            .join(format!("{}@{}", package_name.name, version));
+        fs::create_dir_all(&output_dir)?;
+        fs::write(output_dir.join("package.wasm"), pkg_bytes)?;
+        if let Some(bytes) = component_bytes {
+            fs::write(output_dir.join("component.wasm"), bytes)?;
+        }
+        let repo_name = format!("{}/{}", package_name.namespace, package_name.name);
+        let metadata = serde_json::json!({
+            "kind": ResourceKind::Component.to_string(),
+            "pulled_from": format!("{}@{}", repo_name, version),
+        });
+        fs::write(
+            output_dir.join("metadata.json"),
+            serde_json::to_string_pretty(&metadata)?,
+        )?;
         Ok(())
     }
 
@@ -245,6 +274,22 @@ fn bump_patch_version(version: &str) -> eyre::Result<String> {
         semver.minor,
         semver.patch + 1
     ))
+}
+
+fn parse_package_name(pkg_bytes: &[u8]) -> eyre::Result<PackageName> {
+    let decoded = wit_parser::decoding::decode(pkg_bytes)
+        .map_err(|e| eyre::eyre!(e))
+        .wrap_err("failed to decode package.wasm")?;
+    let (resolve, pkg_id) = match decoded {
+        wit_parser::decoding::DecodedWasm::WitPackage(r, p) => (r, p),
+        wit_parser::decoding::DecodedWasm::Component(r, world_id) => {
+            let pkg_id = r.worlds[world_id]
+                .package
+                .ok_or_eyre("component has no package")?;
+            (r, pkg_id)
+        }
+    };
+    Ok(resolve.packages[pkg_id].name.clone())
 }
 
 fn check_does_file_exist(relative_path: &str) -> bool {
