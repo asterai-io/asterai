@@ -17,6 +17,7 @@ interface connection {
 interface incoming-handler {
     use connection.{connection-id};
 
+    on-open: func(id: connection-id);
     on-message: func(id: connection-id, data: list<u8>);
     on-close: func(id: connection-id, code: u16, reason: string);
     on-error: func(id: connection-id, message: string);

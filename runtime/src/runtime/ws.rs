@@ -183,6 +183,7 @@ async fn read_loop(
     cancel_token: CancellationToken,
     manager: Arc<WsManager>,
 ) {
+    dispatch_export("on-open", (conn_id,), &owner_binary, &manager).await;
     loop {
         let disconnected = match source.next().await {
             Some(Ok(Message::Binary(data))) => {
@@ -240,7 +241,10 @@ async fn read_loop(
                 break;
             }
             match reconnect(conn_id, &config, &cancel_token, &manager).await {
-                Some(new_source) => source = new_source,
+                Some(new_source) => {
+                    source = new_source;
+                    dispatch_export("on-open", (conn_id,), &owner_binary, &manager).await;
+                }
                 None => break,
             }
         }
