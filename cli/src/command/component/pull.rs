@@ -82,10 +82,9 @@ impl PullArgs {
             println!("  saved to {}", file_path.display());
         }
         // Fetch WIT package via referrers API.
-        if !output_dir.join("package.wasm").exists()
-            && let Ok(Some(wit_bytes)) = registry
-                .fetch_wit_referrer(&repo_name, &manifest_digest, &token)
-                .await
+        if let Ok(Some(wit_bytes)) = registry
+            .fetch_wit_referrer(&repo_name, &manifest_digest, &token)
+            .await
         {
             let file_path = output_dir.join("package.wasm");
             fs::write(&file_path, &wit_bytes).wrap_err("failed to write package.wasm")?;

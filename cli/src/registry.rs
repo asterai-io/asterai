@@ -360,10 +360,9 @@ impl<'a> RegistryClient<'a> {
             fs::write(&file_path, &blob_bytes)?;
         }
         // Fetch WIT package via referrers API.
-        if !output_dir.join("package.wasm").exists()
-            && let Ok(Some(wit_bytes)) = self
-                .fetch_wit_referrer(&repo_name, &manifest_digest, &token)
-                .await
+        if let Ok(Some(wit_bytes)) = self
+            .fetch_wit_referrer(&repo_name, &manifest_digest, &token)
+            .await
         {
             fs::write(output_dir.join("package.wasm"), &wit_bytes)?;
         }
