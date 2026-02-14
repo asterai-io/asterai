@@ -20,7 +20,7 @@ Environment commands:
   asterai env set-var <name> --var NAME=VALUE      Set an env var (NAME= to clear)
   asterai env ls                                   List all environments you have write access to
   asterai env cp <source> <dest>                   Copy an environment to a new namespace:name
-  asterai env delete <namespace:name>              Delete local environment (-r for registry)
+  asterai env rm <namespace:name>                  Delete local environment (-r for registry)
 
 Component commands:
   asterai component init [name] [-l <language>]    Scaffold a new local WASM component project.
@@ -30,7 +30,7 @@ Component commands:
   asterai component pull <name>                    Pull the component <name> from the registry
   asterai component push                           Push the current component (from project dir) to the registry
   asterai component ls                             List all components you have write access to
-  asterai component delete <namespace:name>        Delete a local component and all its versions
+  asterai component rm <namespace:name>            Delete a local component and all its versions
 
 Meta commands:
   -v, -V, --version                                Show version

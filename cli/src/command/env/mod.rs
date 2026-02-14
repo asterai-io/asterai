@@ -59,7 +59,7 @@ pub enum EnvAction {
     SetVar,
     Push,
     Pull,
-    Delete,
+    Rm,
     Edit,
     Cp,
 }
@@ -295,7 +295,7 @@ impl EnvArgs {
                 registry_endpoint,
                 allow_dirs: allow_dirs.clone(),
             },
-            EnvAction::Delete => Self {
+            EnvAction::Rm => Self {
                 action,
                 env_resource_or_id: None,
                 component_arg: None,
@@ -372,7 +372,7 @@ impl EnvArgs {
             EnvAction::Pull => {
                 self.pull().await?;
             }
-            EnvAction::Delete => {
+            EnvAction::Rm => {
                 self.delete().await?;
             }
             EnvAction::Edit => {

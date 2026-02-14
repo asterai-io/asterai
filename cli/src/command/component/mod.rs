@@ -41,7 +41,7 @@ pub enum ComponentAction {
     Pkg,
     Pull,
     Push,
-    Delete,
+    Rm,
 }
 
 impl ComponentArgs {
@@ -90,7 +90,7 @@ impl ComponentArgs {
                 push_args: Some(PushArgs::parse(args)?),
                 ..none_args
             },
-            ComponentAction::Delete => Self {
+            ComponentAction::Rm => Self {
                 delete_args: Some(DeleteArgs::parse(args)?),
                 ..none_args
             },
@@ -118,7 +118,7 @@ impl ComponentArgs {
             ComponentAction::Push => {
                 self.push().await?;
             }
-            ComponentAction::Delete => {
+            ComponentAction::Rm => {
                 self.delete()?;
             }
         }
