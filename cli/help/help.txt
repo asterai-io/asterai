@@ -14,11 +14,11 @@ Environment commands:
   asterai env call <name> <component> <fn> [args]  Call a function in the given environment
   asterai env pull <name>                          Pull the environment <name> from the registry
   asterai env push <name>                          Push the local environment <name> to the registry
-  asterai env list                                 List all environments you have write access to
   asterai env inspect <name>                       Show components, env vars, and metadata
   asterai env add-component <env> <component>      Add a component to an environment
   asterai env remove-component <env> <component>   Remove a component from an environment
   asterai env set-var <name> --var NAME=VALUE      Set an env var (NAME= to clear)
+  asterai env ls                                   List all environments you have write access to
   asterai env cp <source> <dest>                   Copy an environment to a new namespace:name
   asterai env delete <namespace:name>              Delete local environment (-r for registry)
 
@@ -29,7 +29,7 @@ Component commands:
   asterai component pkg                            Package the component's WIT into a WASM package
   asterai component pull <name>                    Pull the component <name> from the registry
   asterai component push                           Push the current component (from project dir) to the registry
-  asterai component list                           List all components you have write access to
+  asterai component ls                             List all components you have write access to
   asterai component delete <namespace:name>        Delete a local component and all its versions
 
 Meta commands:

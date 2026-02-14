@@ -53,7 +53,7 @@ pub enum EnvAction {
     Call,
     Init,
     Inspect,
-    List,
+    Ls,
     AddComponent,
     RemoveComponent,
     SetVar,
@@ -223,7 +223,7 @@ impl EnvArgs {
                     allow_dirs: allow_dirs.clone(),
                 }
             }
-            EnvAction::List => Self {
+            EnvAction::Ls => Self {
                 action,
                 env_resource_or_id: None,
                 component_arg: None,
@@ -351,7 +351,7 @@ impl EnvArgs {
             EnvAction::Inspect => {
                 self.inspect()?;
             }
-            EnvAction::List => {
+            EnvAction::Ls => {
                 self.list().await?;
             }
             EnvAction::Call => {

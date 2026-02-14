@@ -37,7 +37,7 @@ pub struct ComponentArgs {
 pub enum ComponentAction {
     Build,
     Init,
-    List,
+    Ls,
     Pkg,
     Pull,
     Push,
@@ -77,7 +77,7 @@ impl ComponentArgs {
                 init_args: Some(InitArgs::parse(args)?),
                 ..none_args
             },
-            ComponentAction::List => none_args,
+            ComponentAction::Ls => none_args,
             ComponentAction::Pkg => Self {
                 pkg_args: Some(PkgArgs::parse(args)?),
                 ..none_args
@@ -106,7 +106,7 @@ impl ComponentArgs {
             ComponentAction::Init => {
                 self.init()?;
             }
-            ComponentAction::List => {
+            ComponentAction::Ls => {
                 self.list().await?;
             }
             ComponentAction::Pkg => {
