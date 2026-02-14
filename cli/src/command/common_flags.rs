@@ -23,7 +23,9 @@ pub fn extract_common_flags(args: Vec<String>) -> eyre::Result<CommonFlags> {
     let mut staging = false;
     let mut allow_dirs = Vec::new();
     let mut filtered = Vec::new();
-    let home = std::env::var("HOME").ok();
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok();
     let mut iter = args.into_iter().peekable();
     while let Some(arg) = iter.next() {
         match arg.as_str() {

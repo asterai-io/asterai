@@ -71,11 +71,15 @@ pub fn create_store(
         wasi_ctx.env(key, value);
     }
     if !preopened_dirs.is_empty() {
+        let separator = match cfg!(windows) {
+            true => ";",
+            false => ":",
+        };
         let dirs_value = preopened_dirs
             .iter()
             .map(|d| d.to_string_lossy().into_owned())
             .collect::<Vec<_>>()
-            .join(":");
+            .join(separator);
         wasi_ctx.env("ASTERAI_ALLOWED_DIRS", &dirs_value);
     }
     for dir in preopened_dirs {
@@ -85,8 +89,9 @@ pub fn create_store(
             eprintln!("warning: failed to create {}: {e}", dir.display());
             continue;
         }
-        let guest_path = dir.to_string_lossy();
-        if let Err(e) = wasi_ctx.preopened_dir(dir, &*guest_path, DirPerms::all(), FilePerms::all())
+        // WASI uses forward slashes for paths.
+        let guest_path = dir.to_string_lossy().replace('\\', "/");
+        if let Err(e) = wasi_ctx.preopened_dir(dir, &guest_path, DirPerms::all(), FilePerms::all())
         {
             eprintln!("warning: failed to preopen {}: {e}", dir.display());
         }
