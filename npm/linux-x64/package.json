@@ -1,6 +1,6 @@
 {
   "name": "@asterai/cli-linux-x64",
-  "version": "1.0.0-alpha.7",
+  "version": "1.0.0-alpha.8",
   "description": "Linux x64 binary for asterai CLI",
   "author": "asterai <support@asterai.io>",
   "repository": {

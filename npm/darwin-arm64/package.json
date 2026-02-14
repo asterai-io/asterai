@@ -1,6 +1,6 @@
 {
   "name": "@asterai/cli-darwin-arm64",
-  "version": "1.0.0-alpha.7",
+  "version": "1.0.0-alpha.8",
   "description": "macOS ARM64 (Apple Silicon) binary for asterai CLI",
   "author": "asterai <support@asterai.io>",
   "repository": {

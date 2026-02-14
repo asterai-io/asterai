@@ -1,6 +1,6 @@
 {
   "name": "@asterai/cli",
-  "version": "1.0.0-alpha.7",
+  "version": "1.0.0-alpha.8",
   "description": "CLI for asterai - the portable AI compute platform",
   "author": "asterai <support@asterai.io>",
   "repository": {
@@ -18,11 +18,11 @@
     "lib/"
   ],
   "optionalDependencies": {
-    "@asterai/cli-linux-x64": "1.0.0-alpha.7",
-    "@asterai/cli-linux-arm64": "1.0.0-alpha.7",
-    "@asterai/cli-darwin-x64": "1.0.0-alpha.7",
-    "@asterai/cli-darwin-arm64": "1.0.0-alpha.7",
-    "@asterai/cli-win32-x64": "1.0.0-alpha.7"
+    "@asterai/cli-linux-x64": "1.0.0-alpha.8",
+    "@asterai/cli-linux-arm64": "1.0.0-alpha.8",
+    "@asterai/cli-darwin-x64": "1.0.0-alpha.8",
+    "@asterai/cli-darwin-arm64": "1.0.0-alpha.8",
+    "@asterai/cli-win32-x64": "1.0.0-alpha.8"
   },
   "engines": {
     "node": ">=18.0.0"
