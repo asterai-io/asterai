@@ -1,5 +1,5 @@
 use crate::component::Component;
-use crate::runtime::env::{HostEnv, create_fresh_store};
+use crate::runtime::env::{HostEnv, HostEnvRuntimeData, create_fresh_store};
 use crate::runtime::wasm_instance::ENGINE;
 use bytes::Bytes;
 use eyre::eyre;
@@ -23,6 +23,7 @@ pub struct HttpRouteTable {
     preopened_dirs: Vec<PathBuf>,
     env_namespace: String,
     env_name: String,
+    runtime_data: Option<HostEnvRuntimeData>,
 }
 
 impl HttpRouteTable {
@@ -32,6 +33,7 @@ impl HttpRouteTable {
         preopened_dirs: Vec<PathBuf>,
         env_namespace: String,
         env_name: String,
+        runtime_data: Option<HostEnvRuntimeData>,
     ) -> Self {
         Self {
             routes,
@@ -39,6 +41,7 @@ impl HttpRouteTable {
             preopened_dirs,
             env_namespace,
             env_name,
+            runtime_data,
         }
     }
 
@@ -70,12 +73,17 @@ impl HttpRouteTable {
     pub fn env_name(&self) -> &str {
         &self.env_name
     }
+
+    pub fn runtime_data(&self) -> Option<&HostEnvRuntimeData> {
+        self.runtime_data.as_ref()
+    }
 }
 
 pub async fn handle_http_request<B>(
     route: &HttpRoute,
     env_vars: &HashMap<String, String>,
     preopened_dirs: &[PathBuf],
+    runtime_data: Option<&HostEnvRuntimeData>,
     req: hyper::Request<B>,
 ) -> eyre::Result<hyper::Response<HyperOutgoingBody>>
 where
@@ -83,6 +91,10 @@ where
 {
     let engine = &*ENGINE;
     let mut store = create_fresh_store(engine, env_vars, preopened_dirs);
+    // Populate runtime data in the new store.
+    if let Some(rd) = runtime_data {
+        store.data_mut().runtime_data = Some(rd.clone());
+    }
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let req = store
         .data_mut()
