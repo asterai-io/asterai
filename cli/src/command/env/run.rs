@@ -366,6 +366,7 @@ async fn handle_request(
         &route,
         route_table.env_vars(),
         route_table.preopened_dirs(),
+        route_table.runtime_data(),
         hyper_req,
     )
     .await
