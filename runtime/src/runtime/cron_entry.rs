@@ -104,8 +104,6 @@ fn get_caller_name(store: &StoreContextMut<HostEnv>) -> Result<String, String> {
         .ok_or_else(|| "unknown caller component".to_owned())
 }
 
-/// Registers sync cron stubs for the sync engine used by dynamic calls.
-/// Cron operations are not supported in the dynamic call context.
 pub fn add_asterai_cron_to_sync_linker(linker: &mut Linker<HostEnv>) -> eyre::Result<()> {
     let mut instance = linker
         .instance("asterai:host-cron/scheduler@0.1.0")
@@ -113,28 +111,71 @@ pub fn add_asterai_cron_to_sync_linker(linker: &mut Linker<HostEnv>) -> eyre::Re
     instance
         .func_wrap(
             "create-schedule",
-            |_store: StoreContextMut<HostEnv>,
-             (_cron, _comp, _func, _args): (String, String, String, String)| {
-                Ok((Err::<u64, String>(
-                    "cron not available in dynamic call context".to_owned(),
-                ),))
+            |store: StoreContextMut<HostEnv>,
+             (cron_expr, component_name, function_name, args_json): (
+                String,
+                String,
+                String,
+                String,
+            )| {
+                let mgr = match get_cron_manager(&store) {
+                    Ok(m) => m,
+                    Err(e) => return Ok((Err(e),)),
+                };
+                let owner = match get_caller_name(&store) {
+                    Ok(n) => n,
+                    Err(e) => return Ok((Err(e),)),
+                };
+                let handle = tokio::runtime::Handle::current();
+                let result = handle.block_on(mgr.schedule(
+                    cron_expr,
+                    component_name,
+                    function_name,
+                    args_json,
+                    owner,
+                ));
+                Ok((result,))
             },
         )
         .map_err(|e| eyre::eyre!("{e:#?}"))?;
     instance
         .func_wrap(
             "cancel-schedule",
-            |_store: StoreContextMut<HostEnv>, (_id,): (u64,)| {
-                Ok((Err::<(), String>(
-                    "cron not available in dynamic call context".to_owned(),
-                ),))
+            |store: StoreContextMut<HostEnv>, (id,): (u64,)| {
+                let mgr = match get_cron_manager(&store) {
+                    Ok(m) => m,
+                    Err(e) => return Ok((Err(e),)),
+                };
+                let owner = match get_caller_name(&store) {
+                    Ok(n) => n,
+                    Err(e) => return Ok((Err(e),)),
+                };
+                let handle = tokio::runtime::Handle::current();
+                let result = handle.block_on(mgr.cancel(id, &owner));
+                Ok((result,))
             },
         )
         .map_err(|e| eyre::eyre!("{e:#?}"))?;
     instance
         .func_wrap(
             "list-schedules",
-            |_store: StoreContextMut<HostEnv>, _params: ()| Ok((Vec::<WitScheduleInfo>::new(),)),
+            |store: StoreContextMut<HostEnv>, _params: ()| {
+                let mgr = match get_cron_manager(&store) {
+                    Ok(m) => m,
+                    Err(_) => return Ok((Vec::<WitScheduleInfo>::new(),)),
+                };
+                let owner = match get_caller_name(&store) {
+                    Ok(n) => n,
+                    Err(_) => return Ok((Vec::<WitScheduleInfo>::new(),)),
+                };
+                let handle = tokio::runtime::Handle::current();
+                let infos: Vec<WitScheduleInfo> = handle
+                    .block_on(mgr.list(&owner))
+                    .into_iter()
+                    .map(WitScheduleInfo::from)
+                    .collect();
+                Ok((infos,))
+            },
         )
         .map_err(|e| eyre::eyre!("{e:#?}"))?;
     Ok(())

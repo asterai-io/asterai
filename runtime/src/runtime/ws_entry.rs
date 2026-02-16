@@ -110,8 +110,6 @@ fn get_ws_manager(store: &StoreContextMut<HostEnv>) -> Result<Arc<WsManager>, St
         .ok_or_else(|| "ws manager not available".to_owned())
 }
 
-/// Registers sync WS stubs for the sync engine used by dynamic calls.
-/// WS operations are not supported in the dynamic call context.
 pub fn add_asterai_ws_to_sync_linker(linker: &mut Linker<HostEnv>) -> eyre::Result<()> {
     let mut instance = linker
         .instance("asterai:host-ws/connection@0.1.0")
@@ -119,28 +117,77 @@ pub fn add_asterai_ws_to_sync_linker(linker: &mut Linker<HostEnv>) -> eyre::Resu
     instance
         .func_wrap(
             "connect",
-            |_store: StoreContextMut<HostEnv>, (_config,): (WsConfig,)| {
-                Ok((Err::<u64, String>(
-                    "ws not available in dynamic call context".to_owned(),
-                ),))
+            |store: StoreContextMut<HostEnv>, (config,): (WsConfig,)| {
+                let mgr = match get_ws_manager(&store) {
+                    Ok(m) => m,
+                    Err(e) => return Ok((Err(e),)),
+                };
+                let binary = match get_caller_binary(&store) {
+                    Ok(b) => b,
+                    Err(e) => return Ok((Err(e),)),
+                };
+                let handle = tokio::runtime::Handle::current();
+                let result = handle.block_on(mgr.connect(config, binary));
+                Ok((result,))
             },
         )
         .map_err(|e| eyre::eyre!("{e:#?}"))?;
     instance
         .func_wrap(
             "send",
-            |_store: StoreContextMut<HostEnv>, (_id, _data): (u64, Vec<u8>)| {
-                Ok((Err::<(), String>(
-                    "ws not available in dynamic call context".to_owned(),
-                ),))
+            |store: StoreContextMut<HostEnv>, (id, data): (u64, Vec<u8>)| {
+                let mgr = match get_ws_manager(&store) {
+                    Ok(m) => m,
+                    Err(e) => return Ok((Err(e),)),
+                };
+                let handle = tokio::runtime::Handle::current();
+                let result = handle.block_on(mgr.send(id, data));
+                Ok((result,))
             },
         )
         .map_err(|e| eyre::eyre!("{e:#?}"))?;
     instance
-        .func_wrap(
-            "close",
-            |_store: StoreContextMut<HostEnv>, (_id,): (u64,)| Ok(()),
-        )
+        .func_wrap("close", |store: StoreContextMut<HostEnv>, (id,): (u64,)| {
+            if let Ok(mgr) = get_ws_manager(&store) {
+                let handle = tokio::runtime::Handle::current();
+                handle.block_on(mgr.close(id));
+            }
+            Ok(())
+        })
         .map_err(|e| eyre::eyre!("{e:#?}"))?;
     Ok(())
+}
+
+fn get_caller_binary(
+    store: &StoreContextMut<HostEnv>,
+) -> Result<crate::component::binary::ComponentBinary, String> {
+    let rd = store
+        .data()
+        .runtime_data
+        .as_ref()
+        .ok_or("runtime not initialized")?;
+    let owner = rd
+        .last_component
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("no calling component")?;
+    let binary = rd
+        .compiled_components
+        .iter()
+        .find(|(b, _)| b.component().id() == owner.id())
+        .map(|(b, _)| b.clone())
+        .ok_or_else(|| format!("component '{}' binary not found", owner.id()))?;
+    let has_export = binary
+        .exported_interfaces()
+        .iter()
+        .any(|e| e.name.starts_with("asterai:host-ws/incoming-handler"));
+    if !has_export {
+        return Err(format!(
+            "component '{}' does not export \
+             asterai:host-ws/incoming-handler@0.1.0",
+            owner.id()
+        ));
+    }
+    Ok(binary)
 }
