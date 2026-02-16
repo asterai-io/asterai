@@ -45,8 +45,8 @@ impl LocalStore {
         paths
     }
 
-    /// Find all local versions of a resource by namespace and name.
-    pub fn find_all_versions(namespace: &str, name: &str) -> Vec<PathBuf> {
+    /// Find all local versions of a resource by namespace, name, and kind.
+    pub fn find_all_versions(namespace: &str, name: &str, kind: ResourceKind) -> Vec<PathBuf> {
         let namespace_dir = ARTIFACTS_DIR.join(namespace);
         if !namespace_dir.exists() {
             return Vec::new();
@@ -58,11 +58,18 @@ impl LocalStore {
         entries
             .flatten()
             .filter(|entry| {
-                entry
+                let matches_name = entry
                     .file_name()
                     .to_str()
                     .map(|s| s.starts_with(&prefix))
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                if !matches_name {
+                    return false;
+                }
+                let Ok(metadata) = Self::parse_metadata(&entry.path()) else {
+                    return false;
+                };
+                metadata.kind == kind
             })
             .map(|entry| entry.path())
             .collect()
