@@ -45,8 +45,8 @@ impl LocalStore {
         paths
     }
 
-    /// Find all local versions of a resource by namespace and name.
-    pub fn find_all_versions(namespace: &str, name: &str) -> Vec<PathBuf> {
+    /// Find all local versions of a resource by namespace, name, and kind.
+    pub fn find_all_versions(namespace: &str, name: &str, kind: ResourceKind) -> Vec<PathBuf> {
         let namespace_dir = ARTIFACTS_DIR.join(namespace);
         if !namespace_dir.exists() {
             return Vec::new();
@@ -58,22 +58,37 @@ impl LocalStore {
         entries
             .flatten()
             .filter(|entry| {
-                entry
+                let matches_name = entry
                     .file_name()
                     .to_str()
                     .map(|s| s.starts_with(&prefix))
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                if !matches_name {
+                    return false;
+                }
+                let Ok(metadata) = Self::parse_metadata(&entry.path()) else {
+                    return false;
+                };
+                metadata.kind == kind
             })
             .map(|entry| entry.path())
             .collect()
     }
 
-    /// Find the path to a resource by ID (returns the most recent version).
-    pub fn find_path(id: &ResourceId) -> eyre::Result<PathBuf> {
+    /// Find the path to a resource by ID and kind (returns the most recent version).
+    pub fn find_path(id: &ResourceId, kind: ResourceKind) -> eyre::Result<PathBuf> {
         let local_resources = Self::list_all_paths();
         let mut selected: Option<(Resource, PathBuf)> = None;
         for resource_path in local_resources {
-            let resource = Self::resource_from_path(&resource_path)?;
+            let Ok(metadata) = Self::parse_metadata(&resource_path) else {
+                continue;
+            };
+            if metadata.kind != kind {
+                continue;
+            }
+            let Ok(resource) = Self::resource_from_path(&resource_path) else {
+                continue;
+            };
             if resource.id() != *id {
                 continue;
             }
@@ -165,7 +180,7 @@ impl LocalStore {
 
     /// Fetch an environment by ID (returns the most recent version).
     pub fn fetch_environment(id: &ResourceId) -> eyre::Result<Environment> {
-        let path = Self::find_path(id)?;
+        let path = Self::find_path(id, ResourceKind::Environment)?;
         Self::parse_environment(&path)
     }
 
@@ -234,7 +249,7 @@ impl LocalStore {
 
     /// Fetch a component by ID (returns the most recent version).
     pub fn fetch_component(id: &ResourceId) -> eyre::Result<ComponentBinary> {
-        let path = Self::find_path(id)?;
+        let path = Self::find_path(id, ResourceKind::Component)?;
         Self::parse_component(&path)
     }
 

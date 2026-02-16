@@ -1,4 +1,5 @@
 use crate::local_store::LocalStore;
+use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{OptionExt, bail};
 use std::fs;
 
@@ -48,13 +49,8 @@ impl DeleteArgs {
     pub fn execute(&self) -> eyre::Result<()> {
         let (namespace, name) = parse_component_reference(&self.component_ref)?;
         // Find all versions of this component.
-        let versions_to_delete: Vec<_> = LocalStore::find_all_versions(&namespace, &name)
-            .into_iter()
-            .filter(|path| {
-                // Verify it's actually a component (has component.wasm or package.wasm).
-                path.join("component.wasm").exists() || path.join("package.wasm").exists()
-            })
-            .collect();
+        let versions_to_delete =
+            LocalStore::find_all_versions(&namespace, &name, ResourceKind::Component);
         if versions_to_delete.is_empty() {
             bail!("component '{}:{}' not found locally", namespace, name);
         }

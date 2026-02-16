@@ -3,6 +3,7 @@ use crate::component::binary::ComponentBinary;
 use crate::component::function_interface::ComponentFunctionInterface;
 use crate::component::function_name::ComponentFunctionName;
 use crate::component::wit::ComponentInterface;
+use crate::runtime::cron::CronManager;
 use crate::runtime::env::HostEnvRuntimeData;
 use crate::runtime::http::{HttpRoute, HttpRouteTable};
 use crate::runtime::output::{ComponentFunctionOutput, ComponentOutput};
@@ -24,6 +25,8 @@ pub use wasmtime::component::Val;
 use wasmtime_wasi_http::bindings::ProxyPre;
 use wit_parser::PackageName;
 
+pub mod cron;
+mod cron_entry;
 mod entry;
 pub mod env;
 pub mod http;
@@ -60,6 +63,8 @@ pub struct ComponentRuntime {
     http_route_table: Arc<HttpRouteTable>,
     #[getter(skip)]
     ws_manager: Option<Arc<WsManager>>,
+    #[getter(skip)]
+    cron_manager: Option<Arc<CronManager>>,
 }
 
 impl ComponentRuntime {
@@ -81,10 +86,14 @@ impl ComponentRuntime {
             preopened_dirs,
         )
         .await?;
-        let (ws_manager, runtime_data) = {
+        let (ws_manager, cron_manager, runtime_data) = {
             let store = engine.store.lock().await;
             let rd = store.data().runtime_data.as_ref();
-            (rd.and_then(|r| r.ws_manager.clone()), rd.cloned())
+            (
+                rd.and_then(|r| r.ws_manager.clone()),
+                rd.and_then(|r| r.cron_manager.clone()),
+                rd.cloned(),
+            )
         };
         let http_route_table = build_http_route_table(
             &engine,
@@ -99,6 +108,7 @@ impl ComponentRuntime {
             engine,
             http_route_table: Arc::new(http_route_table),
             ws_manager,
+            cron_manager,
         })
     }
 
@@ -108,6 +118,10 @@ impl ComponentRuntime {
 
     pub fn ws_manager(&self) -> Option<Arc<WsManager>> {
         self.ws_manager.clone()
+    }
+
+    pub fn cron_manager(&self) -> Option<Arc<CronManager>> {
+        self.cron_manager.clone()
     }
 
     pub fn component_interfaces(&self) -> Vec<ComponentBinary> {

@@ -1,5 +1,7 @@
 use crate::component::Component;
 use crate::component::binary::{ComponentBinary, WasmtimeComponent};
+use crate::runtime::cron::CronManager;
+use crate::runtime::cron_entry::{add_asterai_cron_to_linker, add_asterai_cron_to_sync_linker};
 use crate::runtime::entry::{add_asterai_host_to_linker, add_asterai_host_to_sync_linker};
 use crate::runtime::output::ComponentOutput;
 use crate::runtime::std_out_err::{ComponentStderr, ComponentStdout};
@@ -52,6 +54,8 @@ pub struct HostEnvRuntimeData {
     pub preopened_dirs: Vec<PathBuf>,
     /// Shared WebSocket connection manager.
     pub ws_manager: Option<Arc<WsManager>>,
+    /// Shared cron schedule manager.
+    pub cron_manager: Option<Arc<CronManager>>,
 }
 
 /// Create a Store with an externally provided app ID and output channel.
@@ -126,6 +130,7 @@ pub fn create_linker(engine: &Engine) -> eyre::Result<Linker<HostEnv>> {
     add_only_http_to_linker_async(&mut linker).map_err(|e| eyre!("{e}"))?;
     add_asterai_host_to_linker(&mut linker)?;
     add_asterai_ws_to_linker(&mut linker)?;
+    add_asterai_cron_to_linker(&mut linker)?;
     Ok(linker)
 }
 
@@ -139,6 +144,7 @@ pub fn create_sync_linker(engine: &Engine) -> eyre::Result<Linker<HostEnv>> {
     add_only_http_to_linker_sync(&mut linker).map_err(|e| eyre!("{e}"))?;
     add_asterai_host_to_sync_linker(&mut linker)?;
     add_asterai_ws_to_sync_linker(&mut linker)?;
+    add_asterai_cron_to_sync_linker(&mut linker)?;
     Ok(linker)
 }
 

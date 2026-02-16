@@ -47,9 +47,13 @@ impl CpArgs {
     }
 
     pub fn execute(&self) -> eyre::Result<()> {
-        // Parse source, falling back to local namespace.
+        // Parse source, falling back to user namespace.
         let source_id = ResourceId::from_str(&self.source).or_else(|_| {
-            let with_namespace = format!("local:{}", self.source);
+            let with_namespace = format!(
+                "{}:{}",
+                Auth::read_user_or_fallback_namespace(),
+                self.source
+            );
             ResourceId::from_str(&with_namespace)
         })?;
         // Parse destination, falling back to user namespace.
@@ -58,12 +62,7 @@ impl CpArgs {
                 format!("{}:{}", Auth::read_user_or_fallback_namespace(), self.dest);
             ResourceId::from_str(&with_namespace)
         })?;
-        // Fetch source environment (try exact match, then local namespace).
-        let source_env = LocalStore::fetch_environment(&source_id).or_else(|_| {
-            let local_id =
-                ResourceId::new_from_parts("local".to_string(), source_id.name().to_string())?;
-            LocalStore::fetch_environment(&local_id)
-        });
+        let source_env = LocalStore::fetch_environment(&source_id);
         let source_env = source_env
             .map_err(|_| eyre::eyre!("source environment '{}' not found", self.source))?;
         // Check if destination already exists.

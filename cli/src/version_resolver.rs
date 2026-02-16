@@ -6,6 +6,7 @@
 use crate::auth::Auth;
 use crate::local_store::LocalStore;
 use crate::registry::RegistryClient;
+use asterai_runtime::resource::metadata::ResourceKind;
 use eyre::{bail, eyre};
 use semver::Version;
 use serde::Deserialize;
@@ -27,7 +28,7 @@ struct ComponentSummary {
 
 /// Find the latest local version of a component.
 pub fn find_latest_local_version(namespace: &str, name: &str) -> Option<Version> {
-    let paths = LocalStore::find_all_versions(namespace, name);
+    let paths = LocalStore::find_all_versions(namespace, name, ResourceKind::Component);
     let mut latest: Option<Version> = None;
     for path in paths {
         let Ok(resource) = LocalStore::resource_from_path(&path) else {
