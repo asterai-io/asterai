@@ -1,9 +1,7 @@
-use crate::component::binary::{ComponentBinary, WasmtimeComponent};
 use crate::runtime::entry::{execute_dynamic_call, resolve_call};
 use crate::runtime::env::HostEnvRuntimeData;
 use log::{error, info};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,14 +10,6 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::{ComponentType, Lower};
 
 pub type ScheduleId = u64;
-
-#[derive(Clone)]
-pub struct CronContext {
-    pub compiled_components: Vec<(ComponentBinary, WasmtimeComponent)>,
-    pub env_vars: HashMap<String, String>,
-    pub preopened_dirs: Vec<PathBuf>,
-    pub runtime_data: HostEnvRuntimeData,
-}
 
 struct CronSchedule {
     info: ScheduleInfo,
@@ -66,7 +56,7 @@ impl From<ScheduleInfo> for WitScheduleInfo {
 pub struct CronManager {
     schedules: RwLock<HashMap<ScheduleId, CronSchedule>>,
     next_id: AtomicU64,
-    context: OnceLock<CronContext>,
+    runtime_data: OnceLock<HostEnvRuntimeData>,
 }
 
 impl Default for CronManager {
@@ -80,12 +70,12 @@ impl CronManager {
         Self {
             schedules: RwLock::new(HashMap::new()),
             next_id: AtomicU64::new(1),
-            context: OnceLock::new(),
+            runtime_data: OnceLock::new(),
         }
     }
 
-    pub fn set_context(&self, context: CronContext) {
-        self.context.set(context).ok();
+    pub fn set_runtime_data(&self, runtime_data: HostEnvRuntimeData) {
+        self.runtime_data.set(runtime_data).ok();
     }
 
     pub async fn schedule(
@@ -96,7 +86,10 @@ impl CronManager {
         args_json: String,
         owner: String,
     ) -> Result<ScheduleId, String> {
-        let ctx = self.context.get().ok_or("cron context not initialized")?;
+        let rd = self
+            .runtime_data
+            .get()
+            .ok_or("cron runtime data not initialized")?;
         let normalized = normalize_cron_expr(&cron_expr)?;
         let schedule = cron::Schedule::from_str(&normalized)
             .map_err(|e| format!("invalid cron expression: {e}"))?;
@@ -105,7 +98,7 @@ impl CronManager {
             &component_name,
             &function_name,
             &args_json,
-            ctx.compiled_components.iter().map(|(b, _)| b),
+            rd.compiled_components.iter().map(|(b, _)| b),
         )
         .map_err(|e| e.message)?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -123,8 +116,8 @@ impl CronManager {
             cancel_token: cancel_token.clone(),
         };
         self.schedules.write().await.insert(id, entry);
-        let ctx = ctx.clone();
-        tokio::spawn(tick_loop(schedule, info, cancel_token, ctx));
+        let rd = rd.clone();
+        tokio::spawn(tick_loop(schedule, info, cancel_token, rd));
         Ok(id)
     }
 
@@ -165,7 +158,7 @@ async fn tick_loop(
     schedule: cron::Schedule,
     info: ScheduleInfo,
     cancel_token: CancellationToken,
-    ctx: CronContext,
+    rd: HostEnvRuntimeData,
 ) {
     info!(
         "cron schedule {} started: '{}' -> {}/{}",
@@ -188,15 +181,15 @@ async fn tick_loop(
         if cancel_token.is_cancelled() {
             break;
         }
-        execute_cron_call(&info, &ctx).await;
+        execute_cron_call(&info, &rd).await;
     }
 }
 
-async fn execute_cron_call(info: &ScheduleInfo, ctx: &CronContext) {
-    let compiled_components = ctx.compiled_components.clone();
-    let env_vars = ctx.env_vars.clone();
-    let preopened_dirs = ctx.preopened_dirs.clone();
-    let runtime_data = ctx.runtime_data.clone();
+async fn execute_cron_call(info: &ScheduleInfo, rd: &HostEnvRuntimeData) {
+    let compiled_components = rd.compiled_components.clone();
+    let env_vars = rd.env_vars.clone();
+    let preopened_dirs = rd.preopened_dirs.clone();
+    let runtime_data = rd.clone();
     let component_name = info.component_name.clone();
     let function_name = info.function_name.clone();
     let args_json = info.args_json.clone();

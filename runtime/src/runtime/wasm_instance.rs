@@ -2,7 +2,7 @@ use crate::component::Component;
 use crate::component::binary::ComponentBinary;
 use crate::component::function_interface::ComponentFunctionInterface;
 use crate::component::function_name::ComponentFunctionName;
-use crate::runtime::cron::{CronContext, CronManager};
+use crate::runtime::cron::CronManager;
 use crate::runtime::env::{HostEnv, HostEnvRuntimeData, create_linker, create_store};
 use crate::runtime::link_components::{register_component_stubs, resolve_component_stubs};
 use crate::runtime::output::ComponentOutput;
@@ -136,12 +136,7 @@ impl ComponentRuntimeEngine {
         store.data_mut().runtime_data = Some(runtime_data.clone());
         let store = Arc::new(tokio::sync::Mutex::new(store));
         ws_manager.set_store(store.clone());
-        cron_manager.set_context(CronContext {
-            compiled_components: compiled_for_dynamic_calls,
-            env_vars: env_vars.clone(),
-            preopened_dirs: preopened_dirs.to_vec(),
-            runtime_data,
-        });
+        cron_manager.set_runtime_data(runtime_data);
         Ok(Self {
             store,
             instances,
