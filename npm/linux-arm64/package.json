@@ -1,6 +1,6 @@
 {
   "name": "@asterai/cli-linux-arm64",
-  "version": "1.0.0-alpha.9",
+  "version": "1.0.0-alpha.10",
   "description": "Linux ARM64 binary for asterai CLI",
   "author": "asterai <support@asterai.io>",
   "repository": {
