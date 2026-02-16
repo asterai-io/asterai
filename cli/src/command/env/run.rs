@@ -362,15 +362,7 @@ async fn handle_request(
     };
     let full_body = http_body_util::Full::new(body_bytes).map_err(|never| match never {});
     let hyper_req = hyper::Request::from_parts(parts, full_body);
-    match http::handle_http_request(
-        &route,
-        route_table.env_vars(),
-        route_table.preopened_dirs(),
-        route_table.runtime_data(),
-        hyper_req,
-    )
-    .await
-    {
+    match http::handle_http_request(&route, route_table.runtime_data(), hyper_req).await {
         Ok(resp) => resp.into_response(),
         Err(e) => {
             eprintln!("error handling request: {e:#}");

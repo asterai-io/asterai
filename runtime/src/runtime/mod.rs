@@ -95,14 +95,9 @@ impl ComponentRuntime {
                 rd.cloned(),
             )
         };
-        let http_route_table = build_http_route_table(
-            &engine,
-            env_vars,
-            preopened_dirs,
-            env_namespace,
-            env_name,
-            runtime_data,
-        )?;
+        let runtime_data = runtime_data.expect("runtime data not initialized");
+        let http_route_table =
+            build_http_route_table(&engine, env_namespace, env_name, runtime_data)?;
         Ok(Self {
             app_id,
             engine,
@@ -334,11 +329,9 @@ fn has_incoming_handler(component_binary: &ComponentBinary) -> bool {
 
 fn build_http_route_table(
     engine: &ComponentRuntimeEngine,
-    env_vars: &HashMap<String, String>,
-    preopened_dirs: &[PathBuf],
     env_namespace: &str,
     env_name: &str,
-    runtime_data: Option<HostEnvRuntimeData>,
+    runtime_data: HostEnvRuntimeData,
 ) -> eyre::Result<HttpRouteTable> {
     let mut routes = HashMap::new();
     for entry in &engine.compiled_components {
@@ -365,8 +358,6 @@ fn build_http_route_table(
     }
     Ok(HttpRouteTable::new(
         routes,
-        env_vars.clone(),
-        preopened_dirs.to_vec(),
         env_namespace.to_string(),
         env_name.to_string(),
         runtime_data,
