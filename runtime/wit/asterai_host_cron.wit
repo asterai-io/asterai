@@ -1,0 +1,17 @@
+package asterai:host-cron@0.1.0;
+
+interface scheduler {
+    type schedule-id = u64;
+
+    record schedule-info {
+        id: schedule-id,
+        cron: string,
+        component-name: string,
+        function-name: string,
+        args-json: string,
+    }
+
+    create-schedule: func(cron: string, component-name: string, function-name: string, args-json: string) -> result<schedule-id, string>;
+    cancel-schedule: func(id: schedule-id) -> result<_, string>;
+    list-schedules: func() -> list<schedule-info>;
+}

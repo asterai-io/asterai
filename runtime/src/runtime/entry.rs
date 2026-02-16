@@ -170,7 +170,7 @@ async fn call_component_function_inner(
 }
 
 /// Runs on a blocking thread with a sync engine.
-fn execute_dynamic_call(
+pub(super) fn execute_dynamic_call(
     compiled_components: Vec<(ComponentBinary, WasmtimeComponent)>,
     comp_id: ComponentId,
     function: ComponentFunctionInterface,
@@ -216,7 +216,7 @@ fn execute_dynamic_call(
 
 /// Compiles, instantiates, and links all components with the sync engine.
 /// Returns (all instances, target instance for `target_id`).
-fn instantiate_all_sync(
+pub(super) fn instantiate_all_sync(
     compiled_components: &[(ComponentBinary, WasmtimeComponent)],
     engine: &wasmtime::Engine,
     linker: &mut Linker<HostEnv>,
@@ -376,7 +376,7 @@ fn call_component_function_sync_inner(
 
 /// Resolves a component call: parses the target, finds the function,
 /// and converts args to wasmtime Vals.
-fn resolve_call<'a>(
+pub(super) fn resolve_call<'a>(
     component_name: &str,
     function_name_str: &str,
     args_json: &str,
@@ -411,7 +411,7 @@ fn resolve_call<'a>(
 
 /// Parses a JSON args string, validates the count against the function
 /// signature, and converts each arg to a wasmtime Val.
-fn parse_call_args(
+pub(super) fn parse_call_args(
     args_json: &str,
     function: &ComponentFunctionInterface,
     resolve: &wit_parser::Resolve,
@@ -443,7 +443,7 @@ fn parse_call_args(
 }
 
 /// Serializes call results to a JSON string.
-fn serialize_call_results(results: Vec<Val>) -> Result<String, CallError> {
+pub(super) fn serialize_call_results(results: Vec<Val>) -> Result<String, CallError> {
     let output_val = results.into_iter().next();
     let json_output = output_val
         .and_then(|v| v.try_into_json_value())
