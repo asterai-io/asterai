@@ -5,7 +5,6 @@ use bytes::Bytes;
 use eyre::eyre;
 use http_body::Body;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use wasmtime_wasi_http::WasiHttpView;
 use wasmtime_wasi_http::bindings::ProxyPre;
@@ -19,26 +18,20 @@ pub struct HttpRoute {
 
 pub struct HttpRouteTable {
     routes: HashMap<String, Arc<HttpRoute>>,
-    env_vars: HashMap<String, String>,
-    preopened_dirs: Vec<PathBuf>,
     env_namespace: String,
     env_name: String,
-    runtime_data: Option<HostEnvRuntimeData>,
+    runtime_data: HostEnvRuntimeData,
 }
 
 impl HttpRouteTable {
     pub fn new(
         routes: HashMap<String, Arc<HttpRoute>>,
-        env_vars: HashMap<String, String>,
-        preopened_dirs: Vec<PathBuf>,
         env_namespace: String,
         env_name: String,
-        runtime_data: Option<HostEnvRuntimeData>,
+        runtime_data: HostEnvRuntimeData,
     ) -> Self {
         Self {
             routes,
-            env_vars,
-            preopened_dirs,
             env_namespace,
             env_name,
             runtime_data,
@@ -58,14 +51,6 @@ impl HttpRouteTable {
         self.routes.is_empty()
     }
 
-    pub fn env_vars(&self) -> &HashMap<String, String> {
-        &self.env_vars
-    }
-
-    pub fn preopened_dirs(&self) -> &[PathBuf] {
-        &self.preopened_dirs
-    }
-
     pub fn env_namespace(&self) -> &str {
         &self.env_namespace
     }
@@ -74,27 +59,23 @@ impl HttpRouteTable {
         &self.env_name
     }
 
-    pub fn runtime_data(&self) -> Option<&HostEnvRuntimeData> {
-        self.runtime_data.as_ref()
+    pub fn runtime_data(&self) -> &HostEnvRuntimeData {
+        &self.runtime_data
     }
 }
 
 pub async fn handle_http_request<B>(
     route: &HttpRoute,
-    env_vars: &HashMap<String, String>,
-    preopened_dirs: &[PathBuf],
-    runtime_data: Option<&HostEnvRuntimeData>,
+    runtime_data: &HostEnvRuntimeData,
     req: hyper::Request<B>,
 ) -> eyre::Result<hyper::Response<HyperOutgoingBody>>
 where
     B: Body<Data = Bytes, Error = hyper::Error> + Send + 'static,
 {
     let engine = &*ENGINE;
-    let mut store = create_fresh_store(engine, env_vars, preopened_dirs);
-    // Populate runtime data in the new store.
-    if let Some(rd) = runtime_data {
-        store.data_mut().runtime_data = Some(rd.clone());
-    }
+    let mut store =
+        create_fresh_store(engine, &runtime_data.env_vars, &runtime_data.preopened_dirs);
+    store.data_mut().runtime_data = Some(runtime_data.clone());
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let req = store
         .data_mut()
