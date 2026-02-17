@@ -216,7 +216,7 @@ pub(super) fn execute_dynamic_call(
 
 /// Compiles, instantiates, and links all components with the sync engine.
 /// Returns (all instances, target instance for `target_id`).
-pub(super) fn instantiate_all_sync(
+pub(crate) fn instantiate_all_sync(
     compiled_components: &[(ComponentBinary, WasmtimeComponent)],
     engine: &wasmtime::Engine,
     linker: &mut Linker<HostEnv>,
