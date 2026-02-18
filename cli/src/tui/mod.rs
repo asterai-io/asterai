@@ -177,7 +177,7 @@ fn restore_stdio(saved: SavedStdio) {
 }
 
 #[cfg(windows)]
-extern "C" {
+unsafe extern "C" {
     fn _dup(fd: i32) -> i32;
     fn _dup2(fd1: i32, fd2: i32) -> i32;
     fn _close(fd: i32) -> i32;
@@ -186,7 +186,7 @@ extern "C" {
 }
 
 #[cfg(windows)]
-extern "system" {
+unsafe extern "system" {
     fn GetCurrentProcess() -> isize;
     fn DuplicateHandle(
         source_process: isize,
