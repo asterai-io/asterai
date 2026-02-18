@@ -32,5 +32,8 @@ Component commands:
   asterai component ls                             List all components you have write access to
   asterai component rm <namespace:name>            Delete a local component and all its versions
 
+Interactive terminal UIs (TUIs):
+  asterai agents                                   Launch the agents TUI
+
 Meta commands:
   -v, -V, --version                                Show version
