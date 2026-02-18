@@ -75,6 +75,13 @@ pub async fn add_component(env_name: &str, component: &str) -> eyre::Result<()> 
     args.add_component().await
 }
 
+/// Remove a component from an environment.
+pub async fn remove_component(env_name: &str, component: &str) -> eyre::Result<()> {
+    let (api, registry) = endpoints();
+    let args = EnvArgs::for_remove_component(env_name, component, api, registry)?;
+    args.remove_component().await
+}
+
 /// Set a variable on an environment.
 pub fn set_var(env_name: &str, key: &str, value: &str) -> eyre::Result<()> {
     let args_vec = vec![

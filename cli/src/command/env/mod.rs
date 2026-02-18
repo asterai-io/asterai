@@ -523,6 +523,33 @@ impl EnvArgs {
         }
     }
 
+    /// Create EnvArgs for a remove-component operation.
+    pub(crate) fn for_remove_component(
+        env_name: &str,
+        component_ref_str: &str,
+        api_endpoint: String,
+        registry_endpoint: String,
+    ) -> eyre::Result<Self> {
+        Ok(Self {
+            action: EnvAction::RemoveComponent,
+            env_resource_or_id: Some(ResourceOrIdArg::from_str(env_name).unwrap()),
+            component_arg: None,
+            component_ref: Some(ComponentRef::parse(component_ref_str)?),
+            function: None,
+            function_args: vec![],
+            run_args: None,
+            set_var_args: None,
+            push_args: None,
+            pull_args: None,
+            delete_args: None,
+            cp_args: None,
+            should_open_editor: false,
+            api_endpoint,
+            registry_endpoint,
+            allow_dirs: vec![],
+        })
+    }
+
     /// Create EnvArgs for an add-component operation.
     pub(crate) fn for_add_component(
         env_name: &str,

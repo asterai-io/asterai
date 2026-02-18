@@ -364,7 +364,7 @@ async fn dispatch_slash(app: &mut App, input: &str) -> eyre::Result<()> {
     let args = &parts[1..];
     match cmd.as_str() {
         "help" | "h" | "?" => cmd_help(app),
-        "tools" | "t" => cmd_tools(app, args),
+        "tools" | "t" => cmd_tools(app, args).await,
         "clear" | "c" => cmd_clear(app),
         "model" | "m" => cmd_model(app, args),
         "name" | "rename" => cmd_name(app, args),
@@ -417,7 +417,7 @@ fn cmd_help(app: &mut App) -> eyre::Result<()> {
     Ok(())
 }
 
-fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
+async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     let tools = app
         .agent
         .as_ref()
@@ -440,10 +440,44 @@ fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
         push_system(app, &msg);
         return Ok(());
     }
-    push_system(
-        app,
-        "Tool add/remove via TUI not yet implemented. Use the CLI directly.",
-    );
+    let Some(agent) = &app.agent else {
+        push_system(app, "No active agent.");
+        return Ok(());
+    };
+    let env_name = agent.env_name.clone();
+    if args[0] == "add" && args.len() > 1 {
+        let component = args[1];
+        match ops::add_component(&env_name, component).await {
+            Ok(_) => {
+                if let Some(agent) = &mut app.agent {
+                    let base = component.split('@').next().unwrap_or(component);
+                    if !agent.tools.contains(&base.to_string()) {
+                        agent.tools.push(base.to_string());
+                    }
+                }
+                save_tools(app);
+                push_system(app, &format!("+ {component}"));
+            }
+            Err(e) => push_system(app, &format!("Failed to add: {e:#}")),
+        }
+        return Ok(());
+    }
+    if (args[0] == "remove" || args[0] == "rm") && args.len() > 1 {
+        let component = args[1];
+        match ops::remove_component(&env_name, component).await {
+            Ok(_) => {
+                let base = component.split('@').next().unwrap_or(component);
+                if let Some(agent) = &mut app.agent {
+                    agent.tools.retain(|t| t != base);
+                }
+                save_tools(app);
+                push_system(app, &format!("- {component}"));
+            }
+            Err(e) => push_system(app, &format!("Failed to remove: {e:#}")),
+        }
+        return Ok(());
+    }
+    push_system(app, "Usage: /tools [add|remove] <namespace:component>");
     Ok(())
 }
 
@@ -661,6 +695,12 @@ async fn cmd_config(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     }
     push_system(app, "Usage: /config [list|set KEY=VALUE]");
     Ok(())
+}
+
+fn save_tools(app: &App) {
+    let Some(agent) = &app.agent else { return };
+    let value = agent.tools.join(",");
+    let _ = ops::set_var(&agent.env_name, "ASTERBOT_TOOLS", &value);
 }
 
 fn save_allowed_dirs(app: &App) {
