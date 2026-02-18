@@ -46,6 +46,7 @@ async fn run_app(
                 agents: Vec::new(),
                 selected: 0,
                 loading: true,
+                error: None,
             });
             terminal.draw(|f| views::render(f, app))?;
             views::picker::discover_agents(app).await;

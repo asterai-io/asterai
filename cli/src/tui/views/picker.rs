@@ -1,3 +1,4 @@
+use crate::artifact::ArtifactSyncTag;
 use crate::tui::Tty;
 use crate::tui::app::{
     AgentConfig, AgentEntry, App, CORE_COMPONENTS, ChatState, PickerState, Screen, SetupState,
@@ -46,13 +47,16 @@ pub fn render(f: &mut Frame, state: &PickerState) {
             true => "▸ ",
             false => "  ",
         };
-        let model_str = agent
-            .model
-            .as_deref()
-            .unwrap_or_else(|| match agent.component_count {
-                0 => "remote",
-                n => Box::leak(format!("{n} components").into_boxed_str()),
-            });
+        let model_str = match agent.is_remote {
+            true => "remote",
+            false => agent
+                .model
+                .as_deref()
+                .unwrap_or_else(|| match agent.component_count {
+                    0 => "",
+                    n => Box::leak(format!("{n} components").into_boxed_str()),
+                }),
+        };
         let line = Line::from(vec![
             Span::raw(pointer),
             Span::styled(format!("{}. ", i + 1), Style::default().fg(Color::DarkGray)),
@@ -91,11 +95,14 @@ pub fn render(f: &mut Frame, state: &PickerState) {
     items.push(ListItem::new(line));
     let list = List::new(items);
     f.render_widget(list, chunks[1]);
-    let footer = Paragraph::new(Span::styled(
-        "↑↓ navigate · enter select · esc quit",
-        Style::default().fg(Color::DarkGray),
-    ));
-    f.render_widget(footer, chunks[2]);
+    let footer_text = match &state.error {
+        Some(err) => Line::from(Span::styled(err.as_str(), Style::default().fg(Color::Red))),
+        None => Line::from(Span::styled(
+            "↑↓ navigate · enter select · esc quit",
+            Style::default().fg(Color::DarkGray),
+        )),
+    };
+    f.render_widget(Paragraph::new(footer_text), chunks[2]);
 }
 
 pub async fn handle_event(
@@ -109,6 +116,7 @@ pub async fn handle_event(
     let Screen::Picker(state) = &mut app.screen else {
         return Ok(());
     };
+    state.error = None;
     let total = state.agents.len() + 1;
     match code {
         KeyCode::Up | KeyCode::Char('k') => {
@@ -159,6 +167,20 @@ pub async fn discover_agents(app: &mut App) {
     let mut agents = Vec::new();
     for entry in &entries {
         let env_name = &entry.name;
+        let is_remote = entry.sync_tag == ArtifactSyncTag::Remote;
+        // Remote-only envs can't be inspected locally. Show them as-is
+        // and pull on selection.
+        if is_remote {
+            agents.push(AgentEntry {
+                name: env_name.clone(),
+                namespace: entry.namespace.clone(),
+                component_count: 0,
+                bot_name: env_name.clone(),
+                model: None,
+                is_remote: true,
+            });
+            continue;
+        }
         let data = ops::inspect_environment(env_name).await.ok().flatten();
         let Some(data) = data else {
             continue;
@@ -182,12 +204,14 @@ pub async fn discover_agents(app: &mut App) {
             component_count: entry.component_count,
             bot_name,
             model,
+            is_remote: false,
         });
     }
     app.screen = Screen::Picker(PickerState {
         agents,
         selected: 0,
         loading: false,
+        error: None,
     });
 }
 
@@ -196,10 +220,34 @@ async fn resolve_and_enter_chat(
     agent: AgentEntry,
     _terminal: &mut Terminal<CrosstermBackend<Tty>>,
 ) -> eyre::Result<()> {
-    let data = ops::inspect_environment(&agent.name).await?;
-    let Some(data) = data else {
+    if agent.is_remote
+        && let Err(e) = ops::pull_env(&agent.name).await
+    {
+        set_picker_error(app, format!("Failed to pull: {e}"));
         return Ok(());
+    }
+    let data = match ops::inspect_environment(&agent.name).await {
+        Ok(Some(d)) => d,
+        Ok(None) => {
+            set_picker_error(app, "Environment not found.".to_string());
+            return Ok(());
+        }
+        Err(e) => {
+            set_picker_error(app, format!("Failed to inspect: {e}"));
+            return Ok(());
+        }
     };
+    let has_agent = data.components.iter().any(|c| {
+        let base = c.split('@').next().unwrap_or(c);
+        base == "asterbot:agent"
+    });
+    if !has_agent {
+        set_picker_error(
+            app,
+            "Not an agent (missing asterbot:agent component).".to_string(),
+        );
+        return Ok(());
+    }
     let provider = if data.vars.contains(&"ANTHROPIC_KEY".to_string()) {
         "anthropic"
     } else if data.vars.contains(&"OPENAI_KEY".to_string()) {
@@ -251,4 +299,10 @@ async fn resolve_and_enter_chat(
     app.agent = Some(config);
     app.screen = Screen::Chat(ChatState::default());
     Ok(())
+}
+
+fn set_picker_error(app: &mut App, msg: String) {
+    if let Screen::Picker(state) = &mut app.screen {
+        state.error = Some(msg);
+    }
 }

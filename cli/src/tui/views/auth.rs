@@ -98,6 +98,7 @@ pub async fn handle_event(
                 match ops::login(&key).await {
                     Ok(_) => {
                         app.screen = Screen::Picker(PickerState {
+                            error: None,
                             agents: Vec::new(),
                             selected: 0,
                             loading: true,

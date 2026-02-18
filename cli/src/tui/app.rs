@@ -154,6 +154,7 @@ pub struct AgentEntry {
     pub component_count: usize,
     pub bot_name: String,
     pub model: Option<String>,
+    pub is_remote: bool,
 }
 
 pub struct App {
@@ -186,6 +187,7 @@ pub struct PickerState {
     pub agents: Vec<AgentEntry>,
     pub selected: usize,
     pub loading: bool,
+    pub error: Option<String>,
 }
 
 pub struct SetupState {
