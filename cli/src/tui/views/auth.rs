@@ -35,10 +35,17 @@ pub fn render(f: &mut Frame, state: &AuthState) {
                     Style::default().bold(),
                 )),
                 Line::from(""),
-                Line::from(Span::styled(
-                    "Sign up: https://asterai.io/login",
-                    Style::default().fg(Color::Cyan),
-                )),
+                Line::from(vec![
+                    Span::styled("Sign up:   ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("https://asterai.io/login", Style::default().fg(Color::Cyan)),
+                ]),
+                Line::from(vec![
+                    Span::styled("API keys:  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        "https://asterai.io/settings/api-keys",
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ]),
                 Line::from(""),
             ];
             if let Some(err) = error {
