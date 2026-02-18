@@ -4,12 +4,12 @@ use crate::command::env::EnvArgs;
 use crate::command::help::Help;
 use crate::command::version::Version;
 
-mod auth;
+pub(crate) mod auth;
 mod common_flags;
 pub(crate) mod component;
-mod env;
+pub(crate) mod env;
 mod help;
-mod resource_or_id;
+pub(crate) mod resource_or_id;
 mod version;
 
 #[allow(clippy::large_enum_variant)]
@@ -17,6 +17,7 @@ pub enum Command {
     Auth(AuthArgs),
     Env(EnvArgs),
     Component(ComponentArgs),
+    Agents,
     Help,
     Version,
 }
@@ -30,6 +31,7 @@ impl Command {
             "auth" => AuthArgs::parse(args).map(Self::Auth),
             "env" => EnvArgs::parse(args).map(Self::Env),
             "component" => ComponentArgs::parse(args).map(Self::Component),
+            "agents" => Ok(Self::Agents),
             "-v" | "-V" | "--version" => Ok(Self::Version),
             _ => Ok(Self::Help),
         }
@@ -40,6 +42,7 @@ impl Command {
             Command::Auth(args) => args.execute().await,
             Command::Env(args) => args.execute().await,
             Command::Component(args) => args.execute().await,
+            Command::Agents => crate::tui::run().await,
             Command::Version => Version::execute(),
             Command::Help => Help::execute(),
         }

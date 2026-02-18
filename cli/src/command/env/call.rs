@@ -13,14 +13,28 @@ impl EnvArgs {
     pub async fn call(&self) -> eyre::Result<()> {
         let resource_id = self.resource_id()?;
         let comp_arg = self.component_arg.as_ref().unwrap();
+        println!(
+            "calling env {resource_id}'s {}:{} \
+             component function {}",
+            comp_arg.resolved_namespace(),
+            comp_arg.name(),
+            self.function.as_ref().unwrap()
+        );
+        let result = self.call_returning().await?;
+        if let Some(output) = result {
+            println!("{output}");
+        }
+        Ok(())
+    }
+
+    /// Call a function and return the output as a string.
+    pub async fn call_returning(&self) -> eyre::Result<Option<String>> {
+        let resource_id = self.resource_id()?;
+        let comp_arg = self.component_arg.as_ref().unwrap();
         let comp_ns = comp_arg.resolved_namespace();
         let comp_name = comp_arg.name();
         let comp_id = ComponentId::from_str(&format!("{comp_ns}:{comp_name}"))?;
         let function_string = self.function.clone().unwrap();
-        println!(
-            "calling env {resource_id}'s {comp_ns}:{comp_name} \
-             component function {function_string}"
-        );
         let environment = LocalStore::fetch_environment(&resource_id)
             .map_err(|_| eyre::eyre!("environment '{}' not found locally", resource_id))?;
         let mut runtime = build_runtime(environment, &self.allow_dirs).await?;
@@ -37,9 +51,13 @@ impl EnvArgs {
         if let Some(output) = output_opt
             && let Some(function_output) = output.function_output_opt
         {
-            print_val(function_output.value.val);
+            let json = function_output.value.val.try_into_json_value();
+            return Ok(json.map(|j| match j {
+                serde_json::Value::String(s) => s,
+                other => other.to_string(),
+            }));
         }
-        Ok(())
+        Ok(None)
     }
 }
 
@@ -207,16 +225,6 @@ fn strip_quotes(s: &str) -> &str {
     s.strip_prefix('"')
         .and_then(|s| s.strip_suffix('"'))
         .unwrap_or(s)
-}
-
-fn print_val(val: Val) {
-    let Some(json) = val.try_into_json_value() else {
-        return;
-    };
-    match json {
-        serde_json::Value::String(s) => println!("{s}"),
-        other => println!("{other}"),
-    }
 }
 
 fn package_name_from_str(package_name_str: &str) -> eyre::Result<PackageName> {

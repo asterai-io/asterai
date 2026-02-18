@@ -1,6 +1,6 @@
 [package]
 name = "asterai"
-version = "1.0.0-alpha.11"
+version = "1.0.0-alpha.12"
 edition = { workspace = true }
 description = "CLI for asterai - the portable AI compute platform"
 license = "Apache-2.0"
@@ -40,3 +40,7 @@ tokio-util = { workspace = true }
 http-body-util = { workspace = true }
 bytes = { workspace = true }
 rustls = { workspace = true }
+ratatui = "0.29"
+crossterm = "0.28"
+dirs = "6"
+libc = "0.2"

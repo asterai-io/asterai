@@ -12,20 +12,20 @@ use eyre::{OptionExt, bail, eyre};
 use std::str::FromStr;
 use strum_macros::EnumString;
 
-mod add_component;
-mod call;
+pub(crate) mod add_component;
+pub(crate) mod call;
 pub(crate) mod call_api;
 mod cp;
 mod delete;
 mod edit;
-mod init;
-mod inspect;
-mod list;
-mod pull;
-mod push;
-mod remove_component;
+pub(crate) mod init;
+pub(crate) mod inspect;
+pub(crate) mod list;
+pub(crate) mod pull;
+pub(crate) mod push;
+pub(crate) mod remove_component;
 mod run;
-mod set_var;
+pub(crate) mod set_var;
 
 pub struct EnvArgs {
     action: EnvAction,
@@ -417,5 +417,163 @@ impl EnvArgs {
     pub fn cp(&self) -> eyre::Result<()> {
         let args = self.cp_args.as_ref().ok_or_eyre("no cp args")?;
         args.execute()
+    }
+
+    /// Create EnvArgs for a list operation.
+    pub(crate) fn for_list(api_endpoint: String, registry_endpoint: String) -> Self {
+        Self {
+            action: EnvAction::Ls,
+            env_resource_or_id: None,
+            component_arg: None,
+            component_ref: None,
+            function: None,
+            function_args: vec![],
+            run_args: None,
+            set_var_args: None,
+            push_args: None,
+            pull_args: None,
+            delete_args: None,
+            cp_args: None,
+            should_open_editor: false,
+            api_endpoint,
+            registry_endpoint,
+            allow_dirs: vec![],
+        }
+    }
+
+    /// Create EnvArgs for an inspect operation.
+    pub(crate) fn for_inspect(
+        env_name: &str,
+        api_endpoint: String,
+        registry_endpoint: String,
+    ) -> Self {
+        Self {
+            action: EnvAction::Inspect,
+            env_resource_or_id: Some(ResourceOrIdArg::from_str(env_name).unwrap()),
+            component_arg: None,
+            component_ref: None,
+            function: None,
+            function_args: vec![],
+            run_args: None,
+            set_var_args: None,
+            push_args: None,
+            pull_args: None,
+            delete_args: None,
+            cp_args: None,
+            should_open_editor: false,
+            api_endpoint,
+            registry_endpoint,
+            allow_dirs: vec![],
+        }
+    }
+
+    /// Create EnvArgs for a call operation.
+    pub(crate) fn for_call(
+        env_name: &str,
+        component: &str,
+        function: &str,
+        args: Vec<String>,
+        allow_dirs: Vec<std::path::PathBuf>,
+        api_endpoint: String,
+        registry_endpoint: String,
+    ) -> Self {
+        Self {
+            action: EnvAction::Call,
+            env_resource_or_id: Some(ResourceOrIdArg::from_str(env_name).unwrap()),
+            component_arg: Some(ResourceOrIdArg::from_str(component).unwrap()),
+            component_ref: None,
+            function: Some(function.to_string()),
+            function_args: args,
+            run_args: None,
+            set_var_args: None,
+            push_args: None,
+            pull_args: None,
+            delete_args: None,
+            cp_args: None,
+            should_open_editor: false,
+            api_endpoint,
+            registry_endpoint,
+            allow_dirs,
+        }
+    }
+
+    /// Create EnvArgs for an init operation.
+    pub(crate) fn for_init(
+        env_name: &str,
+        api_endpoint: String,
+        registry_endpoint: String,
+    ) -> Self {
+        Self {
+            action: EnvAction::Init,
+            env_resource_or_id: Some(ResourceOrIdArg::from_str(env_name).unwrap()),
+            component_arg: None,
+            component_ref: None,
+            function: None,
+            function_args: vec![],
+            run_args: None,
+            set_var_args: None,
+            push_args: None,
+            pull_args: None,
+            delete_args: None,
+            cp_args: None,
+            should_open_editor: false,
+            api_endpoint,
+            registry_endpoint,
+            allow_dirs: vec![],
+        }
+    }
+
+    /// Create EnvArgs for a remove-component operation.
+    pub(crate) fn for_remove_component(
+        env_name: &str,
+        component_ref_str: &str,
+        api_endpoint: String,
+        registry_endpoint: String,
+    ) -> eyre::Result<Self> {
+        Ok(Self {
+            action: EnvAction::RemoveComponent,
+            env_resource_or_id: Some(ResourceOrIdArg::from_str(env_name).unwrap()),
+            component_arg: None,
+            component_ref: Some(ComponentRef::parse(component_ref_str)?),
+            function: None,
+            function_args: vec![],
+            run_args: None,
+            set_var_args: None,
+            push_args: None,
+            pull_args: None,
+            delete_args: None,
+            cp_args: None,
+            should_open_editor: false,
+            api_endpoint,
+            registry_endpoint,
+            allow_dirs: vec![],
+        })
+    }
+
+    /// Create EnvArgs for an add-component operation.
+    pub(crate) fn for_add_component(
+        env_name: &str,
+        component_ref_str: &str,
+        api_endpoint: String,
+        registry_endpoint: String,
+    ) -> eyre::Result<Self> {
+        Ok(Self {
+            action: EnvAction::AddComponent,
+            env_resource_or_id: Some(ResourceOrIdArg::from_str(env_name).unwrap()),
+            component_arg: None,
+            component_ref: Some(ComponentRef::parse(component_ref_str)?),
+            function: None,
+            function_args: vec![],
+            run_args: None,
+            set_var_args: None,
+            push_args: None,
+            pull_args: None,
+            delete_args: None,
+            cp_args: None,
+            should_open_editor: false,
+            api_endpoint,
+            registry_endpoint,
+            allow_dirs: vec![],
+        })
     }
 }
