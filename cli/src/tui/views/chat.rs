@@ -728,6 +728,7 @@ fn save_allowed_dirs(app: &App) {
     let _ = ops::set_var(&agent.env_name, "ASTERBOT_ALLOWED_DIRS", &value);
 }
 
+#[cfg(unix)]
 fn hostname() -> String {
     let mut buf = [0u8; 256];
     unsafe {
@@ -735,4 +736,11 @@ fn hostname() -> String {
     }
     let len = buf.iter().position(|&b| b == 0).unwrap_or(0);
     String::from_utf8_lossy(&buf[..len]).to_uppercase()
+}
+
+#[cfg(windows)]
+fn hostname() -> String {
+    std::env::var("COMPUTERNAME")
+        .unwrap_or_else(|_| "USER".to_string())
+        .to_uppercase()
 }
