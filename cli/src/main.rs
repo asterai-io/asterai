@@ -8,6 +8,7 @@ pub mod language;
 pub mod local_store;
 pub mod registry;
 pub mod runtime;
+pub mod tui;
 pub mod version_resolver;
 
 #[tokio::main]

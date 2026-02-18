@@ -133,7 +133,7 @@ impl AuthArgs {
     }
 }
 
-async fn validate_api_key(api_key: &str, api_endpoint: &str) -> eyre::Result<String> {
+pub async fn validate_api_key(api_key: &str, api_endpoint: &str) -> eyre::Result<String> {
     let url = format!("{}/v1/user", api_endpoint);
     let client = reqwest::Client::new();
     let response = client

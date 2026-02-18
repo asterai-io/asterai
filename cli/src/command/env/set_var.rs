@@ -6,7 +6,7 @@ use eyre::{OptionExt, bail};
 use std::str::FromStr;
 
 #[derive(Debug)]
-pub(super) struct SetVarArgs {
+pub(crate) struct SetVarArgs {
     /// Environment reference (namespace:name or just name for local).
     env_ref: String,
     /// Variable assignments (KEY=VALUE or KEY= to unset).

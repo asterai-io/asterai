@@ -20,15 +20,47 @@ struct EnvironmentSummary {
     latest_version: String,
 }
 
+/// A single entry from the environment list.
+#[derive(Debug, Clone)]
+pub struct EnvListEntry {
+    pub namespace: String,
+    pub name: String,
+    pub version: Option<String>,
+    pub component_count: usize,
+    pub sync_tag: ArtifactSyncTag,
+}
+
 impl EnvArgs {
     pub async fn list(&self) -> eyre::Result<()> {
-        // Collect local environments.
+        let entries = self.list_entries().await?;
+        println!("environments:");
+        if entries.is_empty() {
+            println!("  (none)");
+            return Ok(());
+        }
+        for entry in &entries {
+            let ref_str = match &entry.version {
+                Some(v) => format!("{}:{}@{}", entry.namespace, entry.name, v),
+                None => format!("{}:{}", entry.namespace, entry.name),
+            };
+            if entry.component_count > 0 {
+                println!(
+                    "  {}  ({} components)  [{}]",
+                    ref_str, entry.component_count, entry.sync_tag
+                );
+            } else {
+                println!("  {}  [{}]", ref_str, entry.sync_tag);
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn list_entries(&self) -> eyre::Result<Vec<EnvListEntry>> {
         let local_envs = LocalStore::list_environments();
         let local_refs: HashSet<String> = local_envs
             .iter()
             .map(|e| format!("{}:{}", e.namespace(), e.name()))
             .collect();
-        // Try to fetch remote environments.
         let remote_result = if let Some(api_key) = Auth::read_stored_api_key() {
             fetch_remote_environments(&api_key, &self.api_endpoint).await
         } else {
@@ -41,55 +73,41 @@ impl EnvArgs {
                 .collect(),
             Err(_) => HashSet::new(),
         };
-        // Build unified list.
-        let mut entries: Vec<(String, ArtifactSyncTag, usize)> = Vec::new();
-        // Add local environments.
+        let mut entries = Vec::new();
         for env in &local_envs {
             let id = format!("{}:{}", env.namespace(), env.name());
-            // Local envs (version 0.0.0) are never synced - they're unpushed even if
-            // remote has an env with the same name.
             let is_synced = remote_refs.contains(&id) && !env.is_local();
-            // Don't show version for unpushed envs since it's a meaningless placeholder.
-            // Version is server-managed and only assigned on push.
-            let ref_str = match is_synced {
-                true => env.resource_ref(),
-                false => id.clone(),
-            };
             let tag = match is_synced {
                 true => ArtifactSyncTag::Synced,
                 false => ArtifactSyncTag::Unpushed,
             };
-            entries.push((ref_str, tag, env.components.len()));
+            let version = match is_synced {
+                true => Some(env.version().to_string()),
+                false => None,
+            };
+            entries.push(EnvListEntry {
+                namespace: env.namespace().to_string(),
+                name: env.name().to_string(),
+                version,
+                component_count: env.components.len(),
+                sync_tag: tag,
+            });
         }
-        // Add remote-only environments.
         if let Ok(remote) = &remote_result {
             for env in remote {
                 let id = format!("{}:{}", env.namespace, env.name);
                 if !local_refs.contains(&id) {
-                    let ref_str = format!("{}:{}@{}", env.namespace, env.name, env.latest_version);
-                    entries.push((ref_str, ArtifactSyncTag::Remote, 0));
+                    entries.push(EnvListEntry {
+                        namespace: env.namespace.clone(),
+                        name: env.name.clone(),
+                        version: Some(env.latest_version.clone()),
+                        component_count: 0,
+                        sync_tag: ArtifactSyncTag::Remote,
+                    });
                 }
             }
         }
-        // Print.
-        println!("environments:");
-        if entries.is_empty() {
-            println!("  (none)");
-        } else {
-            for (ref_str, tag, component_count) in entries {
-                if component_count > 0 {
-                    println!("  {}  ({} components)  [{}]", ref_str, component_count, tag);
-                } else {
-                    println!("  {}  [{}]", ref_str, tag);
-                }
-            }
-        }
-        // Show error if remote fetch failed.
-        if let Err(e) = &remote_result {
-            println!();
-            println!("(remote: {})", e);
-        }
-        Ok(())
+        Ok(entries)
     }
 }
 
