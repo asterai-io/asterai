@@ -51,7 +51,7 @@ pub fn render(f: &mut Frame, state: &PickerState) {
             .as_deref()
             .unwrap_or_else(|| match agent.component_count {
                 0 => "remote",
-                n => return Box::leak(format!("{n} components").into_boxed_str()),
+                n => Box::leak(format!("{n} components").into_boxed_str()),
             });
         let line = Line::from(vec![
             Span::raw(pointer),
@@ -124,7 +124,7 @@ pub async fn handle_event(
         KeyCode::Enter => {
             let selected = state.selected;
             if selected == state.agents.len() {
-                app.screen = Screen::Setup(SetupState::new());
+                app.screen = Screen::Setup(SetupState::default());
             } else {
                 let agent = state.agents[selected].clone();
                 resolve_and_enter_chat(app, agent, terminal).await?;
@@ -138,7 +138,7 @@ pub async fn handle_event(
             if num >= 1 && num <= total {
                 let idx = num - 1;
                 if idx == state.agents.len() {
-                    app.screen = Screen::Setup(SetupState::new());
+                    app.screen = Screen::Setup(SetupState::default());
                 } else {
                     let Screen::Picker(state) = &app.screen else {
                         return Ok(());
@@ -249,6 +249,6 @@ async fn resolve_and_enter_chat(
         allowed_dirs,
     };
     app.agent = Some(config);
-    app.screen = Screen::Chat(ChatState::new());
+    app.screen = Screen::Chat(ChatState::default());
     Ok(())
 }

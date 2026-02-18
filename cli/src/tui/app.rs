@@ -2,7 +2,14 @@ use std::path::PathBuf;
 
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-pub const PROVIDERS: &[(&str, &str, &[(&str, &str)])] = &[
+/// (display_name, env_var_key, &[(model_id, model_label)]).
+pub type Provider = (
+    &'static str,
+    &'static str,
+    &'static [(&'static str, &'static str)],
+);
+
+pub const PROVIDERS: &[Provider] = &[
     (
         "Anthropic (Claude)",
         "ANTHROPIC_KEY",
@@ -156,8 +163,8 @@ pub struct App {
     pub pending_response: Option<tokio::sync::oneshot::Receiver<eyre::Result<Option<String>>>>,
 }
 
-impl App {
-    pub fn new() -> Self {
+impl Default for App {
+    fn default() -> Self {
         Self {
             screen: Screen::Auth(AuthState::Checking),
             should_quit: false,
@@ -165,7 +172,9 @@ impl App {
             pending_response: None,
         }
     }
+}
 
+impl App {
     pub fn push_message(&mut self, role: MessageRole, content: String) {
         if let Screen::Chat(state) = &mut self.screen {
             state.messages.push(ChatMessage { role, content });
@@ -192,8 +201,8 @@ pub struct SetupState {
     pub error: Option<String>,
 }
 
-impl SetupState {
-    pub fn new() -> Self {
+impl Default for SetupState {
+    fn default() -> Self {
         Self {
             step: SetupStep::Name,
             bot_name: String::new(),
@@ -214,6 +223,7 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+#[derive(Default)]
 pub struct ChatState {
     pub messages: Vec<ChatMessage>,
     pub input: String,
@@ -224,22 +234,6 @@ pub struct ChatState {
     pub slash_matches: Vec<usize>,
     pub slash_selected: usize,
     pub scroll_offset: u16,
-}
-
-impl ChatState {
-    pub fn new() -> Self {
-        Self {
-            messages: Vec::new(),
-            input: String::new(),
-            input_history: Vec::new(),
-            history_idx: None,
-            waiting: false,
-            spinner_tick: 0,
-            slash_matches: Vec::new(),
-            slash_selected: 0,
-            scroll_offset: 0,
-        }
-    }
 }
 
 /// Resolve the state directory for an agent.

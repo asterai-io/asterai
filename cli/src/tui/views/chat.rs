@@ -153,7 +153,7 @@ fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: R
     let tools = agent.map(|b| &b.tools).cloned().unwrap_or_default();
     let tool_names: Vec<&str> = tools
         .iter()
-        .map(|t| t.split(':').last().unwrap_or(t))
+        .map(|t| t.split(':').next_back().unwrap_or(t))
         .collect();
     let dirs_count = agent.map(|b| b.allowed_dirs.len()).unwrap_or(0);
     let title = format!(" {} ", name.to_uppercase());
@@ -175,9 +175,12 @@ fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: R
                 .set_char('│')
                 .set_style(Style::default().fg(Color::Cyan))
                 .clone();
-            f.buffer_mut()
+            if let Some(c) = f
+                .buffer_mut()
                 .cell_mut(ratatui::layout::Position::new(divider_x, y))
-                .map(|c| *c = cell);
+            {
+                *c = cell;
+            }
         }
     }
     // Left column: greeting + robot.
@@ -627,7 +630,7 @@ fn cmd_status(app: &mut App) -> eyre::Result<()> {
         let tool_names: Vec<&str> = agent
             .tools
             .iter()
-            .map(|t| t.split(':').last().unwrap_or(t))
+            .map(|t| t.split(':').next_back().unwrap_or(t))
             .collect();
         msg.push_str(&format!("\n  Tools:       {}", tool_names.join(", ")));
     }

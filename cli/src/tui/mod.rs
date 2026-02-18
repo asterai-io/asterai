@@ -38,7 +38,7 @@ pub async fn run() -> eyre::Result<()> {
     execute!(tty, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(tty);
     let mut terminal = Terminal::new(backend)?;
-    let mut app = App::new();
+    let mut app = App::default();
     let result = run_app(&mut terminal, &mut app).await;
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -91,20 +91,21 @@ async fn run_app(
         };
         if has_pending {
             check_pending_response(app);
-            if ev.is_none() {
-                if let Screen::Chat(state) = &mut app.screen {
-                    state.spinner_tick = state.spinner_tick.wrapping_add(1);
-                }
+            if ev.is_none()
+                && let Screen::Chat(state) = &mut app.screen
+            {
+                state.spinner_tick = state.spinner_tick.wrapping_add(1);
             }
         }
         let Some(ev) = ev else {
             continue;
         };
-        if let Event::Key(key) = &ev {
-            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                app.should_quit = true;
-                continue;
-            }
+        if let Event::Key(key) = &ev
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.code == KeyCode::Char('c')
+        {
+            app.should_quit = true;
+            continue;
         }
         views::handle_event(app, ev, terminal).await?;
     }

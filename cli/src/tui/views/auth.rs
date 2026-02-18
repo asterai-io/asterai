@@ -71,8 +71,8 @@ pub async fn handle_event(
     let Screen::Auth(state) = &mut app.screen else {
         return Ok(());
     };
-    match state {
-        AuthState::NeedLogin { input, error } => match code {
+    if let AuthState::NeedLogin { input, error } = state {
+        match code {
             KeyCode::Char(c) => {
                 input.push(c);
                 *error = None;
@@ -110,8 +110,7 @@ pub async fn handle_event(
                 app.should_quit = true;
             }
             _ => {}
-        },
-        _ => {}
+        }
     }
     Ok(())
 }

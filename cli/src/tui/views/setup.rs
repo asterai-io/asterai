@@ -369,10 +369,10 @@ async fn handle_push_prompt(
                 .map(|b| b.env_name.clone())
                 .unwrap_or_default();
             let _ = ops::push_env(&env_name).await;
-            app.screen = Screen::Chat(ChatState::new());
+            app.screen = Screen::Chat(ChatState::default());
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-            app.screen = Screen::Chat(ChatState::new());
+            app.screen = Screen::Chat(ChatState::default());
         }
         _ => {}
     }
