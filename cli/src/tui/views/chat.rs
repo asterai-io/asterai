@@ -313,8 +313,18 @@ fn render_input(f: &mut Frame, state: &ChatState, area: Rect) {
 }
 
 fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
+    let max_rows = area.height as usize;
+    let skip = state
+        .slash_selected
+        .saturating_sub(max_rows.saturating_sub(1));
     let mut lines: Vec<Line> = Vec::new();
-    for (i, &cmd_idx) in state.slash_matches.iter().enumerate() {
+    for (i, &cmd_idx) in state
+        .slash_matches
+        .iter()
+        .enumerate()
+        .skip(skip)
+        .take(max_rows)
+    {
         let cmd = &SLASH_COMMANDS[cmd_idx];
         let is_selected = i == state.slash_selected;
         let pointer = match is_selected {
