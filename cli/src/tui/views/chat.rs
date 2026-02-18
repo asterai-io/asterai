@@ -20,20 +20,14 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     let area = f.area();
     let agent = app.agent.as_ref();
     let bot_name = agent.map(|b| b.bot_name.as_str()).unwrap_or("Asterbot");
-    let slash_menu_height = match state.input.starts_with('/') && !state.input.contains(' ') {
-        true => state.slash_matches.len().min(6) as u16,
-        false => 0,
-    };
-    let constraints = vec![
-        Constraint::Length(12),
-        Constraint::Min(4),
-        Constraint::Length(1),
-        Constraint::Length(3),
-        Constraint::Length(slash_menu_height),
-    ];
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(constraints)
+        .constraints([
+            Constraint::Length(12),
+            Constraint::Min(4),
+            Constraint::Length(1),
+            Constraint::Length(3),
+        ])
         .split(area);
     render_banner(f, bot_name, agent, chunks[0]);
     let env_name = agent.map(|b| b.env_name.as_str()).unwrap_or("asterbot");
@@ -44,8 +38,20 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     ));
     f.render_widget(sep, chunks[2]);
     render_input(f, state, chunks[3]);
-    if slash_menu_height > 0 {
-        render_slash_menu(f, state, chunks[4]);
+    // Slash menu renders above the separator, overlaying messages.
+    let has_slash = state.input.starts_with('/') && !state.input.contains(' ');
+    let menu_h = match has_slash {
+        true => state.slash_matches.len().min(6) as u16,
+        false => 0,
+    };
+    if menu_h > 0 {
+        let menu_area = Rect::new(
+            chunks[2].x,
+            chunks[2].y.saturating_sub(menu_h),
+            chunks[2].width,
+            menu_h,
+        );
+        render_slash_menu(f, state, menu_area);
     }
 }
 
