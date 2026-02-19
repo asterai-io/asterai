@@ -2,32 +2,23 @@ use once_cell::sync::Lazy;
 use std::env;
 use std::path::PathBuf;
 
-const APP_DIR_NAME: &str = "asterai";
-
 pub const API_URL: &str = "https://api.asterai.io";
 pub const API_URL_STAGING: &str = "https://staging.api.asterai.io";
 pub const REGISTRY_URL: &str = "https://registry.asterai.io";
 pub const REGISTRY_URL_STAGING: &str = "https://staging.registry.asterai.io";
 
-pub static CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
-    let home_dir = if cfg!(windows) {
-        env::var("LOCALAPPDATA").unwrap_or_else(|_| env::var("USERPROFILE").unwrap())
+static BASE_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    let home = if cfg!(windows) {
+        env::var("USERPROFILE").unwrap()
     } else {
-        env::var("XDG_CONFIG_HOME")
-            .unwrap_or_else(|_| format!("{}/.config", env::var("HOME").unwrap()))
+        env::var("HOME").unwrap()
     };
-    PathBuf::from(home_dir).join(APP_DIR_NAME)
+    PathBuf::from(home).join(".asterai")
 });
 
-pub static BIN_DIR: Lazy<PathBuf> = Lazy::new(|| {
-    let bin_dir = if cfg!(windows) {
-        env::var("LOCALAPPDATA").unwrap_or_else(|_| env::var("USERPROFILE").unwrap())
-    } else {
-        env::var("XDG_DATA_HOME")
-            .unwrap_or_else(|_| format!("{}/.local/bin", env::var("HOME").unwrap()))
-    };
-    PathBuf::from(bin_dir).join(APP_DIR_NAME)
-});
+pub static CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| BASE_DIR.join("config"));
+
+pub static BIN_DIR: Lazy<PathBuf> = Lazy::new(|| BASE_DIR.join("bin"));
 
 /// Directory for storing artifacts (environments, components).
 pub static ARTIFACTS_DIR: Lazy<PathBuf> = Lazy::new(|| BIN_DIR.join("artifacts"));
