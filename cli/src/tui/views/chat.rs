@@ -3,7 +3,7 @@ use crate::tui::app::{
     resolve_state_dir,
 };
 use crate::tui::ops;
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
 
@@ -29,7 +29,14 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
             Constraint::Length(3),
         ])
         .split(area);
-    render_banner(f, bot_name, agent, chunks[0]);
+    render_banner(
+        f,
+        bot_name,
+        agent,
+        &state.banner_text,
+        state.banner_loading,
+        chunks[0],
+    );
     let env_name = agent.map(|b| b.env_name.as_str()).unwrap_or("asterbot");
     render_messages(f, state, env_name, chunks[1]);
     let sep = Paragraph::new(Span::styled(
@@ -39,9 +46,17 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     f.render_widget(sep, chunks[2]);
     render_input(f, state, chunks[3]);
     // Slash menu renders above the separator, overlaying messages.
-    let has_slash = state.input.starts_with('/') && !state.input.contains(' ');
+    let has_sub_menu = state.active_command.is_some() && !state.sub_matches.is_empty();
+    let has_slash = (state.input.starts_with('/')
+        && !state.input.contains(' ')
+        && !state.slash_matches.is_empty())
+        || has_sub_menu;
+    let menu_count = match has_sub_menu {
+        true => state.sub_matches.len(),
+        false => state.slash_matches.len(),
+    };
     let menu_h = match has_slash {
-        true => state.slash_matches.len().min(6) as u16,
+        true => menu_count.min(12) as u16,
         false => 0,
     };
     if menu_h > 0 {
@@ -56,17 +71,85 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
 }
 
 pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
-    let Event::Key(KeyEvent { code, .. }) = event else {
+    // Handle paste events.
+    if let Event::Paste(text) = &event {
+        if let Screen::Chat(state) = &mut app.screen
+            && !state.waiting
+        {
+            state.input.push_str(text);
+            update_menus(state);
+        }
+        return Ok(());
+    }
+    let Event::Key(key_event) = event else {
         return Ok(());
     };
+    // Only handle key press events (not release/repeat) to avoid duplication on Windows.
+    if key_event.kind != crossterm::event::KeyEventKind::Press {
+        return Ok(());
+    }
+    // Ignore Ctrl+key combos (e.g. Ctrl+V) to avoid stray characters.
+    if key_event
+        .modifiers
+        .contains(crossterm::event::KeyModifiers::CONTROL)
+    {
+        return Ok(());
+    }
+    let code = key_event.code;
     let Screen::Chat(state) = &mut app.screen else {
         return Ok(());
     };
     if state.waiting {
         return Ok(());
     }
-    let has_slash_menu = !state.slash_matches.is_empty();
+    let has_sub_menu = state.active_command.is_some() && !state.sub_matches.is_empty();
+    let has_slash_menu = !state.slash_matches.is_empty() || has_sub_menu;
     match code {
+        // --- Sub-menu navigation ---
+        KeyCode::Up if has_sub_menu => {
+            if state.sub_selected > 0 {
+                state.sub_selected -= 1;
+            }
+        }
+        KeyCode::Down if has_sub_menu => {
+            if state.sub_selected + 1 < state.sub_matches.len() {
+                state.sub_selected += 1;
+            }
+        }
+        KeyCode::Enter | KeyCode::Tab if has_sub_menu => {
+            let cmd_idx = state.active_command.unwrap();
+            let sub_idx = state.sub_matches[state.sub_selected];
+            let sub = &SLASH_COMMANDS[cmd_idx].subs[sub_idx];
+            let cmd_name = SLASH_COMMANDS[cmd_idx].name;
+            if sub.needs_arg {
+                // Fill in command + subcommand, let user type the argument.
+                state.input = format!("/{cmd_name} {} ", sub.name);
+                state.active_command = None;
+                state.sub_matches.clear();
+                state.sub_selected = 0;
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+            } else {
+                // Dispatch immediately (e.g. /tools list, /banner off).
+                let full = format!("/{cmd_name} {}", sub.name);
+                state.active_command = None;
+                state.sub_matches.clear();
+                state.sub_selected = 0;
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+                state.input.clear();
+                dispatch_slash(app, &full).await?;
+            }
+        }
+        KeyCode::Esc if has_sub_menu => {
+            state.active_command = None;
+            state.sub_matches.clear();
+            state.sub_selected = 0;
+            state.input.clear();
+            state.slash_matches.clear();
+            state.slash_selected = 0;
+        }
+        // --- Top-level slash menu navigation ---
         KeyCode::Up if has_slash_menu => {
             if state.slash_selected > 0 {
                 state.slash_selected -= 1;
@@ -77,15 +160,28 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 state.slash_selected += 1;
             }
         }
-        KeyCode::Enter if has_slash_menu && state.slash_selected < state.slash_matches.len() => {
+        KeyCode::Enter | KeyCode::Tab
+            if has_slash_menu && state.slash_selected < state.slash_matches.len() =>
+        {
             let cmd_idx = state.slash_matches[state.slash_selected];
-            let cmd_name = SLASH_COMMANDS[cmd_idx].name;
-            state.input = format!("/{cmd_name}");
-            state.slash_matches.clear();
-            state.slash_selected = 0;
-            let input = state.input.clone();
-            state.input.clear();
-            dispatch_slash(app, &input).await?;
+            let cmd = &SLASH_COMMANDS[cmd_idx];
+            if !cmd.subs.is_empty() {
+                // Has subcommands → enter sub-menu.
+                state.input = format!("/{} ", cmd.name);
+                state.active_command = Some(cmd_idx);
+                state.sub_matches = (0..cmd.subs.len()).collect();
+                state.sub_selected = 0;
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+            } else {
+                // No subcommands → dispatch immediately.
+                state.input = format!("/{}", cmd.name);
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+                let input = state.input.clone();
+                state.input.clear();
+                dispatch_slash(app, &input).await?;
+            }
         }
         KeyCode::Esc if has_slash_menu => {
             state.slash_matches.clear();
@@ -134,11 +230,11 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 return Ok(());
             };
             state.input.push(c);
-            update_slash_menu(state);
+            update_menus(state);
         }
         KeyCode::Backspace => {
             state.input.pop();
-            update_slash_menu(state);
+            update_menus(state);
         }
         KeyCode::Esc => {
             app.should_quit = true;
@@ -148,7 +244,14 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
     Ok(())
 }
 
-fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: Rect) {
+fn render_banner(
+    f: &mut Frame,
+    name: &str,
+    agent: Option<&AgentConfig>,
+    banner_text: &str,
+    banner_loading: bool,
+    area: Rect,
+) {
     let model = agent.and_then(|b| b.model.as_deref()).unwrap_or("not set");
     let tools = agent.map(|b| &b.tools).cloned().unwrap_or_default();
     let tool_names: Vec<&str> = tools
@@ -184,11 +287,14 @@ fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: R
         }
     }
     // Left column: greeting + robot.
-    let host = hostname();
+    let greeting_name = agent
+        .map(|a| a.user_name.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("USER");
     let mut left_lines: Vec<Line> = Vec::new();
     left_lines.push(
         Line::from(Span::styled(
-            format!("GREETINGS, {host}."),
+            format!("GREETINGS, {}.", greeting_name.to_uppercase()),
             Style::default().fg(Color::Cyan).bold(),
         ))
         .alignment(Alignment::Center),
@@ -224,10 +330,52 @@ fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: R
         Span::styled("MODEL   ", Style::default().fg(Color::DarkGray)),
         Span::styled(model, Style::default().fg(Color::White)),
     ]));
-    right_lines.push(Line::from(vec![
-        Span::styled("TOOLS   ", Style::default().fg(Color::DarkGray)),
-        Span::styled(&tool_str, Style::default().fg(Color::White)),
-    ]));
+    // Wrap TOOLS across multiple lines if needed.
+    let label_w = 8; // "TOOLS   ".len()
+    let avail = right_area.width.saturating_sub(2) as usize;
+    let tool_max = avail.saturating_sub(label_w);
+    if tool_str.len() <= tool_max {
+        right_lines.push(Line::from(vec![
+            Span::styled("TOOLS   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&tool_str, Style::default().fg(Color::White)),
+        ]));
+    } else {
+        // Split tools into lines that fit.
+        let mut first = true;
+        let mut line_buf = String::new();
+        for name in &tool_names {
+            let sep = match line_buf.is_empty() {
+                true => "",
+                false => " · ",
+            };
+            if !line_buf.is_empty() && line_buf.len() + sep.len() + name.len() > tool_max {
+                let prefix = match first {
+                    true => "TOOLS   ",
+                    false => "        ",
+                };
+                right_lines.push(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+                    Span::styled(line_buf.clone(), Style::default().fg(Color::White)),
+                ]));
+                line_buf.clear();
+                first = false;
+            }
+            if !line_buf.is_empty() {
+                line_buf.push_str(" · ");
+            }
+            line_buf.push_str(name);
+        }
+        if !line_buf.is_empty() {
+            let prefix = match first {
+                true => "TOOLS   ",
+                false => "        ",
+            };
+            right_lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+                Span::styled(line_buf, Style::default().fg(Color::White)),
+            ]));
+        }
+    }
     if dirs_count > 0 {
         let dirs_label = match dirs_count {
             1 => "1 folder".to_string(),
@@ -243,9 +391,39 @@ fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: R
         Span::styled("Type ", Style::default().fg(Color::DarkGray)),
         Span::styled("/", Style::default().fg(Color::Cyan)),
         Span::styled(" for commands · ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Ctrl+C", Style::default().fg(Color::Cyan)),
-        Span::styled(" to exit", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::Cyan)),
+        Span::styled(" to go back", Style::default().fg(Color::DarkGray)),
     ]));
+    // Banner content (quote or tool data).
+    if !banner_text.is_empty() {
+        right_lines.push(Line::from(""));
+        right_lines.push(Line::from(""));
+        let display = match banner_loading {
+            true => format!("{banner_text} ..."),
+            false => banner_text.to_string(),
+        };
+        // Truncate to ~120 chars to avoid LLM duplication.
+        let display = match display.len() > 120 {
+            true => {
+                let end = display
+                    .char_indices()
+                    .take_while(|(i, _)| *i <= 117)
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                format!("{}...", &display[..end])
+            }
+            false => display,
+        };
+        // Word-wrap to available width.
+        let max_w = right_area.width.saturating_sub(2) as usize;
+        for wrapped in textwrap(&display, max_w) {
+            right_lines.push(Line::from(Span::styled(
+                wrapped,
+                Style::default().fg(Color::Rgb(100, 100, 120)).italic(),
+            )));
+        }
+    }
     f.render_widget(Paragraph::new(right_lines), right_area);
 }
 
@@ -317,6 +495,47 @@ fn render_input(f: &mut Frame, state: &ChatState, area: Rect) {
 
 fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
     let max_rows = area.height as usize;
+
+    // Sub-menu mode: show sub-options for the active command.
+    if let Some(cmd_idx) = state.active_command {
+        let cmd = &SLASH_COMMANDS[cmd_idx];
+        let skip = state
+            .sub_selected
+            .saturating_sub(max_rows.saturating_sub(1));
+        let mut lines: Vec<Line> = Vec::new();
+        for (i, &sub_idx) in state
+            .sub_matches
+            .iter()
+            .enumerate()
+            .skip(skip)
+            .take(max_rows)
+        {
+            let sub = &cmd.subs[sub_idx];
+            let is_selected = i == state.sub_selected;
+            let pointer = match is_selected {
+                true => "▸ ",
+                false => "  ",
+            };
+            let name_style = match is_selected {
+                true => Style::default().fg(Color::Cyan).bold(),
+                false => Style::default().fg(Color::Cyan),
+            };
+            let desc_style = match is_selected {
+                true => Style::default().fg(Color::White),
+                false => Style::default().fg(Color::DarkGray),
+            };
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::raw(pointer),
+                Span::styled(format!("{:<12}", sub.name), name_style),
+                Span::styled(sub.description, desc_style),
+            ]));
+        }
+        f.render_widget(Paragraph::new(lines), area);
+        return;
+    }
+
+    // Top-level slash command menu.
     let skip = state
         .slash_selected
         .saturating_sub(max_rows.saturating_sub(1));
@@ -352,6 +571,32 @@ fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
     f.render_widget(Paragraph::new(lines), area);
 }
 
+/// Kick off an async banner content fetch if banner_mode is "auto".
+pub fn start_banner_fetch(app: &mut App) {
+    let Some(agent) = &app.agent else { return };
+    if agent.banner_mode != "auto" {
+        return;
+    }
+    if let Screen::Chat(state) = &mut app.screen {
+        state.banner_loading = true;
+    }
+    let agent = agent.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.pending_banner = Some(rx);
+    tokio::spawn(async move {
+        let prompt = "In one brief line (under 80 chars), give a useful status update \
+            using your available tools. Examples: current weather, top task, latest price. \
+            No pleasantries, just the data.";
+        let result =
+            match tokio::task::spawn(async move { ops::call_converse(prompt, &agent).await }).await
+            {
+                Ok(r) => r.ok().flatten(),
+                Err(_) => None,
+            };
+        let _ = tx.send(result);
+    });
+}
+
 fn send_message(app: &mut App, input: &str) {
     let Screen::Chat(state) = &mut app.screen else {
         return;
@@ -367,7 +612,24 @@ fn send_message(app: &mut App, input: &str) {
     app.pending_response = Some(rx);
     tokio::spawn(async move {
         let result = match agent {
-            Some(ref a) => ops::call_converse(&message, a).await,
+            Some(ref a) => {
+                let a = a.clone();
+                let msg = message.clone();
+                match tokio::task::spawn(async move { ops::call_converse(&msg, &a).await }).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let panic_msg = if let Ok(s) = e.try_into_panic() {
+                            s.downcast_ref::<String>()
+                                .cloned()
+                                .or_else(|| s.downcast_ref::<&str>().map(|s| s.to_string()))
+                                .unwrap_or_else(|| "internal error".to_string())
+                        } else {
+                            "request was cancelled".to_string()
+                        };
+                        Err(eyre::eyre!("{panic_msg}"))
+                    }
+                }
+            }
             None => Err(eyre::eyre!("no active agent")),
         };
         let _ = tx.send(result);
@@ -387,8 +649,10 @@ async fn dispatch_slash(app: &mut App, input: &str) -> eyre::Result<()> {
         "clear" | "c" => cmd_clear(app),
         "model" | "m" => cmd_model(app, args),
         "name" | "rename" => cmd_name(app, args),
+        "username" | "whoami" => cmd_username(app, args),
         "dir" | "dirs" => cmd_dir(app, args),
         "status" | "info" => cmd_status(app),
+        "banner" => cmd_banner(app, args),
         "push" => cmd_push(app).await,
         "pull" | "sync" => cmd_pull(app).await,
         "config" | "vars" => cmd_config(app, args).await,
@@ -402,7 +666,44 @@ async fn dispatch_slash(app: &mut App, input: &str) -> eyre::Result<()> {
     }
 }
 
-fn update_slash_menu(state: &mut ChatState) {
+fn update_menus(state: &mut ChatState) {
+    // If we're in a sub-menu, filter sub-options.
+    if let Some(cmd_idx) = state.active_command {
+        let cmd = &SLASH_COMMANDS[cmd_idx];
+        let prefix = format!("/{} ", cmd.name);
+        if state.input.starts_with(&prefix) {
+            let partial = state.input[prefix.len()..].to_lowercase();
+            // If user typed past the sub-command (has a space after sub), close menu.
+            if partial.contains(' ') {
+                state.active_command = None;
+                state.sub_matches.clear();
+                state.sub_selected = 0;
+            } else {
+                state.sub_matches = cmd
+                    .subs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, sub)| sub.name.starts_with(partial.as_str()))
+                    .map(|(i, _)| i)
+                    .collect();
+                state.sub_selected = state
+                    .sub_selected
+                    .min(state.sub_matches.len().saturating_sub(1));
+            }
+        } else {
+            // Input no longer matches the command prefix - exit sub-menu.
+            state.active_command = None;
+            state.sub_matches.clear();
+            state.sub_selected = 0;
+            // Fall through to update top-level menu.
+            update_top_level_menu(state);
+        }
+        return;
+    }
+    update_top_level_menu(state);
+}
+
+fn update_top_level_menu(state: &mut ChatState) {
     if state.input.starts_with('/') && !state.input.contains(' ') {
         let partial = &state.input[1..].to_lowercase();
         state.slash_matches = SLASH_COMMANDS
@@ -411,7 +712,9 @@ fn update_slash_menu(state: &mut ChatState) {
             .filter(|(_, cmd)| cmd.name.starts_with(partial.as_str()))
             .map(|(i, _)| i)
             .collect();
-        state.slash_selected = 0;
+        state.slash_selected = state
+            .slash_selected
+            .min(state.slash_matches.len().saturating_sub(1));
     } else {
         state.slash_matches.clear();
         state.slash_selected = 0;
@@ -465,11 +768,18 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     };
     let env_name = agent.env_name.clone();
     if args[0] == "add" && args.len() > 1 {
-        let component = args[1];
-        match ops::add_component(&env_name, component).await {
+        // Auto-prepend user namespace if missing (e.g. "trello" → "seadog:trello").
+        let component = match args[1].contains(':') {
+            true => args[1].to_string(),
+            false => {
+                let ns = crate::auth::Auth::read_user_or_fallback_namespace();
+                format!("{ns}:{}", args[1])
+            }
+        };
+        match ops::add_component(&env_name, &component).await {
             Ok(_) => {
                 if let Some(agent) = &mut app.agent {
-                    let base = component.split('@').next().unwrap_or(component);
+                    let base = component.split('@').next().unwrap_or(&component);
                     if !agent.tools.contains(&base.to_string()) {
                         agent.tools.push(base.to_string());
                     }
@@ -558,6 +868,83 @@ fn cmd_name(app: &mut App, args: &[&str]) -> eyre::Result<()> {
         agent.bot_name = new_name.clone();
     }
     push_system(app, &format!("Agent renamed to {new_name}"));
+    Ok(())
+}
+
+fn cmd_username(app: &mut App, args: &[&str]) -> eyre::Result<()> {
+    if args.is_empty() {
+        let name = app
+            .agent
+            .as_ref()
+            .map(|b| b.user_name.as_str())
+            .unwrap_or("not set");
+        push_system(
+            app,
+            &format!("Your display name: {name}\n\nChange with: /username <name>"),
+        );
+        return Ok(());
+    }
+    let new_name = args.join(" ");
+    if let Some(agent) = &app.agent {
+        let _ = ops::set_var(&agent.env_name, "ASTERBOT_USER_NAME", &new_name);
+    }
+    if let Some(agent) = &mut app.agent {
+        agent.user_name = new_name.clone();
+    }
+    push_system(app, &format!("Display name set to {new_name}"));
+    Ok(())
+}
+
+fn cmd_banner(app: &mut App, args: &[&str]) -> eyre::Result<()> {
+    if args.is_empty() {
+        let mode = app
+            .agent
+            .as_ref()
+            .map(|a| a.banner_mode.as_str())
+            .unwrap_or("auto");
+        push_system(
+            app,
+            &format!(
+                "Banner mode: {mode}\n\n\
+                 /banner auto  - agent picks content from tools\n\
+                 /banner quote - random quotes only\n\
+                 /banner off   - no banner content"
+            ),
+        );
+        return Ok(());
+    }
+    let mode = args[0].to_lowercase();
+    if !["auto", "quote", "off"].contains(&mode.as_str()) {
+        push_system(app, "Invalid mode. Use: auto, quote, or off");
+        return Ok(());
+    }
+    if let Some(agent) = &app.agent {
+        let _ = ops::set_var(&agent.env_name, "ASTERBOT_BANNER", &mode);
+    }
+    if let Some(agent) = &mut app.agent {
+        agent.banner_mode = mode.clone();
+    }
+    match mode.as_str() {
+        "auto" => {
+            push_system(app, "Banner set to auto (fetching from tools).");
+            start_banner_fetch(app);
+        }
+        "quote" => {
+            if let Screen::Chat(state) = &mut app.screen {
+                state.banner_text = crate::tui::app::random_quote().to_string();
+                state.banner_loading = false;
+            }
+            push_system(app, "Banner set to random quotes.");
+        }
+        "off" => {
+            if let Screen::Chat(state) = &mut app.screen {
+                state.banner_text.clear();
+                state.banner_loading = false;
+            }
+            push_system(app, "Banner content disabled.");
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -728,19 +1115,26 @@ fn save_allowed_dirs(app: &App) {
     let _ = ops::set_var(&agent.env_name, "ASTERBOT_ALLOWED_DIRS", &value);
 }
 
-#[cfg(unix)]
-fn hostname() -> String {
-    let mut buf = [0u8; 256];
-    unsafe {
-        libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len());
+/// Simple word-wrap for banner text.
+fn textwrap(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return vec![text.to_string()];
     }
-    let len = buf.iter().position(|&b| b == 0).unwrap_or(0);
-    String::from_utf8_lossy(&buf[..len]).to_uppercase()
-}
-
-#[cfg(windows)]
-fn hostname() -> String {
-    std::env::var("COMPUTERNAME")
-        .unwrap_or_else(|_| "USER".to_string())
-        .to_uppercase()
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.is_empty() {
+            current = word.to_string();
+        } else if current.len() + 1 + word.len() <= max_width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
 }

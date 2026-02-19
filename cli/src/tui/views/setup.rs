@@ -1,10 +1,10 @@
 use crate::tui::Tty;
 use crate::tui::app::{
     AgentConfig, App, CORE_COMPONENTS, ChatState, DEFAULT_TOOLS, PROVIDERS, SPINNER_FRAMES, Screen,
-    SetupState, SetupStep, resolve_state_dir, sanitize_bot_name,
+    SetupState, SetupStep, default_user_name, resolve_state_dir, sanitize_bot_name,
 };
 use crate::tui::ops;
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
 
@@ -24,6 +24,7 @@ pub fn render(f: &mut Frame, state: &SetupState) {
     );
     match &state.step {
         SetupStep::Name => render_name_step(f, state, content_area),
+        SetupStep::Username => render_username_step(f, state, content_area),
         SetupStep::Provider => render_provider_step(f, state, content_area),
         SetupStep::ApiKey => render_api_key_step(f, state, content_area),
         SetupStep::Model => render_model_step(f, state, content_area),
@@ -55,14 +56,19 @@ pub async fn handle_event(
     event: Event,
     terminal: &mut Terminal<CrosstermBackend<Tty>>,
 ) -> eyre::Result<()> {
-    let Event::Key(KeyEvent { code, .. }) = event else {
+    let Event::Key(key_event) = event else {
         return Ok(());
     };
+    if key_event.kind != crossterm::event::KeyEventKind::Press {
+        return Ok(());
+    }
+    let code = key_event.code;
     let Screen::Setup(state) = &mut app.screen else {
         return Ok(());
     };
     match &state.step {
         SetupStep::Name => handle_name(state, code),
+        SetupStep::Username => handle_username(state, code),
         SetupStep::Provider => handle_provider(state, code),
         SetupStep::ApiKey => handle_api_key(state, code),
         SetupStep::Model => handle_model(state, code),
@@ -107,6 +113,23 @@ fn render_name_step(f: &mut Frame, state: &SetupState, area: Rect) {
             Style::default().fg(Color::DarkGray),
         )));
     }
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+fn render_username_step(f: &mut Frame, state: &SetupState, area: Rect) {
+    let default = default_user_name();
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "What should the agent call you?",
+            Style::default().bold(),
+        )),
+        Line::from(""),
+    ];
+    lines.push(Line::from(vec![
+        Span::raw(format!("Your name (default: {default}): ")),
+        Span::styled(&state.input, Style::default().fg(Color::Cyan)),
+        Span::styled("_", Style::default().fg(Color::DarkGray)),
+    ]));
     f.render_widget(Paragraph::new(lines), area);
 }
 
@@ -253,10 +276,31 @@ fn handle_name(state: &mut SetupState, code: KeyCode) {
             state.bot_name = name;
             state.env_name = sanitize_bot_name(&state.bot_name);
             state.input.clear();
-            state.step = SetupStep::Provider;
+            state.step = SetupStep::Username;
         }
         KeyCode::Esc => {
             state.step = SetupStep::Name;
+        }
+        _ => {}
+    }
+}
+
+fn handle_username(state: &mut SetupState, code: KeyCode) {
+    match code {
+        KeyCode::Char(c) => {
+            state.input.push(c);
+        }
+        KeyCode::Backspace => {
+            state.input.pop();
+        }
+        KeyCode::Enter => {
+            let name = match state.input.trim().is_empty() {
+                true => default_user_name(),
+                false => state.input.trim().to_string(),
+            };
+            state.user_name = name;
+            state.input.clear();
+            state.step = SetupStep::Provider;
         }
         _ => {}
     }
@@ -376,9 +420,11 @@ async fn handle_push_prompt(
                 .unwrap_or_default();
             let _ = ops::push_env(&env_name).await;
             app.screen = Screen::Chat(ChatState::default());
+            super::chat::start_banner_fetch(app);
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
             app.screen = Screen::Chat(ChatState::default());
+            super::chat::start_banner_fetch(app);
         }
         _ => {}
     }
@@ -394,6 +440,7 @@ async fn run_provisioning(
     };
     let env_name = state.env_name.clone();
     let bot_name = state.bot_name.clone();
+    let user_name = state.user_name.clone();
     let provider_idx = state.provider_idx;
     let api_key = state.api_key.clone();
     let model = state.model.clone();
@@ -405,8 +452,8 @@ async fn run_provisioning(
         .chain(DEFAULT_TOOLS.iter())
         .copied()
         .collect();
-    // Components + init + 6 vars.
-    let total = all_components.len() + 7;
+    // Components + init + 7 vars.
+    let total = all_components.len() + 8;
     let mut current = 0;
     update_provisioning(app, current, total, "Creating environment...");
     terminal.draw(|f| super::render(f, app))?;
@@ -446,6 +493,7 @@ async fn run_provisioning(
         ("ASTERBOT_TOOLS", &tool_names),
         ("ASTERBOT_HOST_DIR", &wasi_state_dir),
         ("ASTERBOT_BOT_NAME", bot_name.as_str()),
+        ("ASTERBOT_USER_NAME", user_name.as_str()),
         ("ASTERBOT_ALLOWED_DIRS", dirs_value.as_str()),
     ];
     for (key, value) in &vars {
@@ -458,10 +506,12 @@ async fn run_provisioning(
     let agent = AgentConfig {
         env_name: env_name.clone(),
         bot_name,
+        user_name,
         model: Some(model),
         provider: provider.map(|p| p.0).unwrap_or("custom").to_string(),
         tools: DEFAULT_TOOLS.iter().map(|s| s.to_string()).collect(),
         allowed_dirs,
+        banner_mode: "auto".to_string(),
     };
     app.agent = Some(agent.clone());
     let Screen::Setup(state) = &mut app.screen else {

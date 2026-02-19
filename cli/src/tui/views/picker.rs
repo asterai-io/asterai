@@ -2,10 +2,10 @@ use crate::artifact::ArtifactSyncTag;
 use crate::tui::Tty;
 use crate::tui::app::{
     AgentConfig, AgentEntry, App, CORE_COMPONENTS, ChatState, PickerState, Screen, SetupState,
-    resolve_state_dir,
+    default_user_name, resolve_state_dir,
 };
 use crate::tui::ops;
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
@@ -48,14 +48,8 @@ pub fn render(f: &mut Frame, state: &PickerState) {
             false => "  ",
         };
         let model_str = match agent.is_remote {
-            true => "remote",
-            false => agent
-                .model
-                .as_deref()
-                .unwrap_or_else(|| match agent.component_count {
-                    0 => "",
-                    n => Box::leak(format!("{n} components").into_boxed_str()),
-                }),
+            true => "remote · enter to pull",
+            false => agent.model.as_deref().unwrap_or(""),
         };
         let line = Line::from(vec![
             Span::raw(pointer),
@@ -97,10 +91,20 @@ pub fn render(f: &mut Frame, state: &PickerState) {
     f.render_widget(list, chunks[1]);
     let footer_text = match &state.error {
         Some(err) => Line::from(Span::styled(err.as_str(), Style::default().fg(Color::Red))),
-        None => Line::from(Span::styled(
-            "↑↓ navigate · enter select · esc quit",
-            Style::default().fg(Color::DarkGray),
-        )),
+        None => {
+            let hint = if state.selected == state.agents.len() {
+                "↑↓ navigate · enter create · esc quit"
+            } else if state
+                .agents
+                .get(state.selected)
+                .is_some_and(|a| a.is_remote)
+            {
+                "↑↓ navigate · enter pull & open · r refresh · esc quit"
+            } else {
+                "↑↓ navigate · enter open · r refresh · esc quit"
+            };
+            Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray)))
+        }
     };
     f.render_widget(Paragraph::new(footer_text), chunks[2]);
 }
@@ -110,9 +114,13 @@ pub async fn handle_event(
     event: Event,
     terminal: &mut Terminal<CrosstermBackend<Tty>>,
 ) -> eyre::Result<()> {
-    let Event::Key(KeyEvent { code, .. }) = event else {
+    let Event::Key(key_event) = event else {
         return Ok(());
     };
+    if key_event.kind != crossterm::event::KeyEventKind::Press {
+        return Ok(());
+    }
+    let code = key_event.code;
     let Screen::Picker(state) = &mut app.screen else {
         return Ok(());
     };
@@ -140,6 +148,16 @@ pub async fn handle_event(
         }
         KeyCode::Esc => {
             app.should_quit = true;
+        }
+        KeyCode::Char('r') => {
+            app.screen = Screen::Picker(PickerState {
+                agents: Vec::new(),
+                selected: 0,
+                loading: true,
+                error: None,
+            });
+            terminal.draw(|f| super::render(f, app))?;
+            discover_agents(app).await;
         }
         KeyCode::Char(c) if c.is_ascii_digit() => {
             let num = c.to_digit(10).unwrap() as usize;
@@ -218,13 +236,18 @@ pub async fn discover_agents(app: &mut App) {
 async fn resolve_and_enter_chat(
     app: &mut App,
     agent: AgentEntry,
-    _terminal: &mut Terminal<CrosstermBackend<Tty>>,
+    terminal: &mut Terminal<CrosstermBackend<Tty>>,
 ) -> eyre::Result<()> {
-    if agent.is_remote
-        && let Err(e) = ops::pull_env(&agent.name).await
-    {
-        set_picker_error(app, format!("Failed to pull: {e}"));
-        return Ok(());
+    if agent.is_remote {
+        // Show pulling status and redraw before the network call.
+        if let Screen::Picker(state) = &mut app.screen {
+            state.error = Some(format!("Pulling {}...", agent.name));
+        }
+        terminal.draw(|f| super::render(f, app))?;
+        if let Err(e) = ops::pull_env(&agent.name).await {
+            set_picker_error(app, format!("Failed to pull: {e}"));
+            return Ok(());
+        }
     }
     let data = match ops::inspect_environment(&agent.name).await {
         Ok(Some(d)) => d,
@@ -284,6 +307,16 @@ async fn resolve_and_enter_chat(
         let wasi_dir = state_dir.to_string_lossy().replace('\\', "/");
         let _ = ops::set_var(&agent.name, "ASTERBOT_HOST_DIR", &wasi_dir);
     }
+    let user_name = data
+        .var_values
+        .get("ASTERBOT_USER_NAME")
+        .cloned()
+        .unwrap_or_else(default_user_name);
+    let banner_mode = data
+        .var_values
+        .get("ASTERBOT_BANNER")
+        .cloned()
+        .unwrap_or_else(|| "auto".to_string());
     let config = AgentConfig {
         env_name: agent.name.clone(),
         bot_name: data
@@ -291,13 +324,16 @@ async fn resolve_and_enter_chat(
             .get("ASTERBOT_BOT_NAME")
             .cloned()
             .unwrap_or(agent.name.clone()),
+        user_name,
         model: data.var_values.get("ASTERBOT_MODEL").cloned(),
         provider: provider.to_string(),
         tools,
         allowed_dirs,
+        banner_mode,
     };
     app.agent = Some(config);
     app.screen = Screen::Chat(ChatState::default());
+    super::chat::start_banner_fetch(app);
     Ok(())
 }
 

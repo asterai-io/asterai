@@ -20,6 +20,15 @@ struct SavedStdio {
 }
 
 pub async fn run() -> eyre::Result<()> {
+    #[cfg(windows)]
+    {
+        unsafe extern "system" {
+            fn SetConsoleOutputCP(code_page: u32) -> i32;
+        }
+        unsafe {
+            SetConsoleOutputCP(65001);
+        }
+    }
     let (saved, mut tty) = redirect_stdio();
     enable_raw_mode()?;
     execute!(tty, EnterAlternateScreen)?;
@@ -32,7 +41,11 @@ pub async fn run() -> eyre::Result<()> {
     terminal.show_cursor()?;
     let _ = Write::flush(terminal.backend_mut());
     restore_stdio(saved);
-    result
+    // Exit immediately so background tokio tasks don't keep the process alive.
+    std::process::exit(match result {
+        Ok(_) => 0,
+        Err(_) => 1,
+    })
 }
 
 async fn run_app(
@@ -63,7 +76,7 @@ async fn run_app(
         if app.should_quit {
             return Ok(());
         }
-        let has_pending = app.pending_response.is_some();
+        let has_pending = app.pending_response.is_some() || app.pending_banner.is_some();
         let has_warmup = app.pending_warmup.is_some();
         let needs_poll = has_pending || has_warmup;
         let ev = match needs_poll {
@@ -73,13 +86,16 @@ async fn run_app(
             },
             false => Some(event::read()?),
         };
-        if has_pending {
+        if app.pending_response.is_some() {
             check_pending_response(app);
             if ev.is_none()
                 && let Screen::Chat(state) = &mut app.screen
             {
                 state.spinner_tick = state.spinner_tick.wrapping_add(1);
             }
+        }
+        if app.pending_banner.is_some() {
+            check_pending_banner(app);
         }
         if has_warmup && let Some(rx) = &mut app.pending_warmup {
             match rx.try_recv() {
@@ -99,10 +115,17 @@ async fn run_app(
         let Some(ev) = ev else {
             continue;
         };
+        // Ctrl+C quits from all screens on Unix.
+        // On Windows, Ctrl+C is reserved for copy in Windows Terminal,
+        // so it only quits from non-chat screens.
         if let Event::Key(key) = &ev
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && key.code == KeyCode::Char('c')
         {
+            #[cfg(windows)]
+            if matches!(app.screen, Screen::Chat(_)) {
+                continue;
+            }
             app.should_quit = true;
             continue;
         }
@@ -150,6 +173,39 @@ fn check_pending_response(app: &mut App) {
                     role: app::MessageRole::System,
                     content: "Request was cancelled.".to_string(),
                 });
+            }
+        }
+    }
+}
+
+fn check_pending_banner(app: &mut App) {
+    let Some(rx) = &mut app.pending_banner else {
+        return;
+    };
+    match rx.try_recv() {
+        Ok(Some(text)) => {
+            app.pending_banner = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                // Clean up LLM response: trim, take first line only.
+                let clean = text.trim().lines().next().unwrap_or("").trim().to_string();
+                if !clean.is_empty() {
+                    state.banner_text = clean;
+                }
+                state.banner_loading = false;
+            }
+        }
+        Ok(None) => {
+            // No data returned - keep the quote.
+            app.pending_banner = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.banner_loading = false;
+            }
+        }
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+            app.pending_banner = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.banner_loading = false;
             }
         }
     }
@@ -215,7 +271,13 @@ unsafe extern "system" {
         inherit_handle: i32,
         options: u32,
     ) -> i32;
+    fn SetStdHandle(std_handle: u32, handle: isize) -> i32;
 }
+
+#[cfg(windows)]
+const STD_OUTPUT_HANDLE: u32 = 0xFFFF_FFF5; // -11
+#[cfg(windows)]
+const STD_ERROR_HANDLE: u32 = 0xFFFF_FFF4; // -12
 
 #[cfg(windows)]
 const DUPLICATE_SAME_ACCESS: u32 = 2;
@@ -227,12 +289,18 @@ fn redirect_stdio() -> (SavedStdio, Tty) {
         let saved_out = _dup(1);
         let saved_err = _dup(2);
         // Redirect stdout and stderr to NUL.
-        if let Ok(devnull) = std::fs::File::open("NUL") {
+        // Must set both CRT fds (_dup2) AND Win32 handles (SetStdHandle)
+        // because Rust's println! uses GetStdHandle, not the CRT fd.
+        if let Ok(devnull) = std::fs::OpenOptions::new().write(true).open("NUL") {
             let null_handle = devnull.into_raw_handle();
             let null_fd = _open_osfhandle(null_handle as isize, 0);
             if null_fd != -1 {
                 _dup2(null_fd, 1);
                 _dup2(null_fd, 2);
+                _close(null_fd);
+                // Set Win32 handles using the dup'd fds (not null_fd which is now closed).
+                SetStdHandle(STD_OUTPUT_HANDLE, _get_osfhandle(1));
+                SetStdHandle(STD_ERROR_HANDLE, _get_osfhandle(2));
             }
         }
         // Duplicate the saved stdout handle for ratatui.
@@ -265,6 +333,8 @@ fn restore_stdio(saved: SavedStdio) {
     unsafe {
         _dup2(saved.out, 1);
         _dup2(saved.err, 2);
+        SetStdHandle(STD_OUTPUT_HANDLE, _get_osfhandle(1));
+        SetStdHandle(STD_ERROR_HANDLE, _get_osfhandle(2));
         _close(saved.out);
         _close(saved.err);
     }
