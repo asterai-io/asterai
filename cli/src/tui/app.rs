@@ -115,9 +115,21 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "tools",
         description: "List, add, or remove tools",
         subs: &[
-            SubCommand { name: "list", description: "Show installed tools", needs_arg: false },
-            SubCommand { name: "add", description: "Add a tool component", needs_arg: true },
-            SubCommand { name: "remove", description: "Remove a tool", needs_arg: true },
+            SubCommand {
+                name: "list",
+                description: "Show installed tools",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "add",
+                description: "Add a tool component",
+                needs_arg: true,
+            },
+            SubCommand {
+                name: "remove",
+                description: "Remove a tool",
+                needs_arg: true,
+            },
         ],
     },
     SlashCommand {
@@ -144,9 +156,21 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "dir",
         description: "Manage directory access",
         subs: &[
-            SubCommand { name: "list", description: "Show allowed directories", needs_arg: false },
-            SubCommand { name: "add", description: "Grant directory access", needs_arg: true },
-            SubCommand { name: "remove", description: "Revoke directory access", needs_arg: true },
+            SubCommand {
+                name: "list",
+                description: "Show allowed directories",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "add",
+                description: "Grant directory access",
+                needs_arg: true,
+            },
+            SubCommand {
+                name: "remove",
+                description: "Revoke directory access",
+                needs_arg: true,
+            },
         ],
     },
     SlashCommand {
@@ -158,17 +182,37 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "config",
         description: "Manage env variables",
         subs: &[
-            SubCommand { name: "list", description: "Show all variables", needs_arg: false },
-            SubCommand { name: "set", description: "Set KEY=VALUE", needs_arg: true },
+            SubCommand {
+                name: "list",
+                description: "Show all variables",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "set",
+                description: "Set KEY=VALUE",
+                needs_arg: true,
+            },
         ],
     },
     SlashCommand {
         name: "banner",
         description: "Configure banner content",
         subs: &[
-            SubCommand { name: "auto", description: "Agent picks content from tools", needs_arg: false },
-            SubCommand { name: "quote", description: "Random quotes only", needs_arg: false },
-            SubCommand { name: "off", description: "No banner content", needs_arg: false },
+            SubCommand {
+                name: "auto",
+                description: "Agent picks content from tools",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "quote",
+                description: "Random quotes only",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "off",
+                description: "No banner content",
+                needs_arg: false,
+            },
         ],
     },
     SlashCommand {

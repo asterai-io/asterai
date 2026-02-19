@@ -94,7 +94,10 @@ pub async fn handle_event(
         return Ok(());
     }
     // Ignore Ctrl+key combos (e.g. Ctrl+V) to avoid stray characters.
-    if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+    if key_event
+        .modifiers
+        .contains(crossterm::event::KeyModifiers::CONTROL)
+    {
         return Ok(());
     }
     let code = key_event.code;

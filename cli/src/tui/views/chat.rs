@@ -29,7 +29,14 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
             Constraint::Length(3),
         ])
         .split(area);
-    render_banner(f, bot_name, agent, &state.banner_text, state.banner_loading, chunks[0]);
+    render_banner(
+        f,
+        bot_name,
+        agent,
+        &state.banner_text,
+        state.banner_loading,
+        chunks[0],
+    );
     let env_name = agent.map(|b| b.env_name.as_str()).unwrap_or("asterbot");
     render_messages(f, state, env_name, chunks[1]);
     let sep = Paragraph::new(Span::styled(
@@ -40,7 +47,9 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     render_input(f, state, chunks[3]);
     // Slash menu renders above the separator, overlaying messages.
     let has_sub_menu = state.active_command.is_some() && !state.sub_matches.is_empty();
-    let has_slash = (state.input.starts_with('/') && !state.input.contains(' ') && !state.slash_matches.is_empty())
+    let has_slash = (state.input.starts_with('/')
+        && !state.input.contains(' ')
+        && !state.slash_matches.is_empty())
         || has_sub_menu;
     let menu_count = match has_sub_menu {
         true => state.sub_matches.len(),
@@ -80,7 +89,10 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
         return Ok(());
     }
     // Ignore Ctrl+key combos (e.g. Ctrl+V) to avoid stray characters.
-    if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+    if key_event
+        .modifiers
+        .contains(crossterm::event::KeyModifiers::CONTROL)
+    {
         return Ok(());
     }
     let code = key_event.code;
@@ -479,7 +491,9 @@ fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
     // Sub-menu mode: show sub-options for the active command.
     if let Some(cmd_idx) = state.active_command {
         let cmd = &SLASH_COMMANDS[cmd_idx];
-        let skip = state.sub_selected.saturating_sub(max_rows.saturating_sub(1));
+        let skip = state
+            .sub_selected
+            .saturating_sub(max_rows.saturating_sub(1));
         let mut lines: Vec<Line> = Vec::new();
         for (i, &sub_idx) in state
             .sub_matches
@@ -565,14 +579,12 @@ pub fn start_banner_fetch(app: &mut App) {
         let prompt = "In one brief line (under 80 chars), give a useful status update \
             using your available tools. Examples: current weather, top task, latest price. \
             No pleasantries, just the data.";
-        let result = match tokio::task::spawn(async move {
-            ops::call_converse(prompt, &agent).await
-        })
-        .await
-        {
-            Ok(r) => r.ok().flatten(),
-            Err(_) => None,
-        };
+        let result =
+            match tokio::task::spawn(async move { ops::call_converse(prompt, &agent).await }).await
+            {
+                Ok(r) => r.ok().flatten(),
+                Err(_) => None,
+            };
         let _ = tx.send(result);
     });
 }
@@ -595,11 +607,7 @@ fn send_message(app: &mut App, input: &str) {
             Some(ref a) => {
                 let a = a.clone();
                 let msg = message.clone();
-                match tokio::task::spawn(async move {
-                    ops::call_converse(&msg, &a).await
-                })
-                .await
-                {
+                match tokio::task::spawn(async move { ops::call_converse(&msg, &a).await }).await {
                     Ok(r) => r,
                     Err(e) => {
                         let panic_msg = if let Ok(s) = e.try_into_panic() {
@@ -670,9 +678,9 @@ fn update_menus(state: &mut ChatState) {
                     .filter(|(_, sub)| sub.name.starts_with(partial.as_str()))
                     .map(|(i, _)| i)
                     .collect();
-                state.sub_selected = state.sub_selected.min(
-                    state.sub_matches.len().saturating_sub(1),
-                );
+                state.sub_selected = state
+                    .sub_selected
+                    .min(state.sub_matches.len().saturating_sub(1));
             }
         } else {
             // Input no longer matches the command prefix — exit sub-menu.
@@ -696,9 +704,9 @@ fn update_top_level_menu(state: &mut ChatState) {
             .filter(|(_, cmd)| cmd.name.starts_with(partial.as_str()))
             .map(|(i, _)| i)
             .collect();
-        state.slash_selected = state.slash_selected.min(
-            state.slash_matches.len().saturating_sub(1),
-        );
+        state.slash_selected = state
+            .slash_selected
+            .min(state.slash_matches.len().saturating_sub(1));
     } else {
         state.slash_matches.clear();
         state.slash_selected = 0;
@@ -1121,4 +1129,3 @@ fn textwrap(text: &str, max_width: usize) -> Vec<String> {
     }
     lines
 }
-

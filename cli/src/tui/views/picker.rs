@@ -100,7 +100,11 @@ pub fn render(f: &mut Frame, state: &PickerState) {
         None => {
             let hint = if state.selected == state.agents.len() {
                 "↑↓ navigate · enter create · esc quit"
-            } else if state.agents.get(state.selected).map_or(false, |a| a.is_remote) {
+            } else if state
+                .agents
+                .get(state.selected)
+                .map_or(false, |a| a.is_remote)
+            {
                 "↑↓ navigate · enter pull & open · r refresh · esc quit"
             } else {
                 "↑↓ navigate · enter open · r refresh · esc quit"
