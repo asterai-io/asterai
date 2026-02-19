@@ -29,7 +29,7 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
             Constraint::Length(3),
         ])
         .split(area);
-    render_banner(f, bot_name, agent, chunks[0]);
+    render_banner(f, bot_name, agent, &state.banner_text, state.banner_loading, chunks[0]);
     let env_name = agent.map(|b| b.env_name.as_str()).unwrap_or("asterbot");
     render_messages(f, state, env_name, chunks[1]);
     let sep = Paragraph::new(Span::styled(
@@ -41,7 +41,7 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     // Slash menu renders above the separator, overlaying messages.
     let has_slash = state.input.starts_with('/') && !state.input.contains(' ');
     let menu_h = match has_slash {
-        true => state.slash_matches.len().min(6) as u16,
+        true => state.slash_matches.len().min(12) as u16,
         false => 0,
     };
     if menu_h > 0 {
@@ -167,7 +167,14 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
     Ok(())
 }
 
-fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: Rect) {
+fn render_banner(
+    f: &mut Frame,
+    name: &str,
+    agent: Option<&AgentConfig>,
+    banner_text: &str,
+    banner_loading: bool,
+    area: Rect,
+) {
     let model = agent.and_then(|b| b.model.as_deref()).unwrap_or("not set");
     let tools = agent.map(|b| &b.tools).cloned().unwrap_or_default();
     let tool_names: Vec<&str> = tools
@@ -203,11 +210,14 @@ fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: R
         }
     }
     // Left column: greeting + robot.
-    let host = hostname();
+    let greeting_name = agent
+        .map(|a| a.user_name.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "USER");
     let mut left_lines: Vec<Line> = Vec::new();
     left_lines.push(
         Line::from(Span::styled(
-            format!("GREETINGS, {host}."),
+            format!("GREETINGS, {}.", greeting_name.to_uppercase()),
             Style::default().fg(Color::Cyan).bold(),
         ))
         .alignment(Alignment::Center),
@@ -243,10 +253,52 @@ fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: R
         Span::styled("MODEL   ", Style::default().fg(Color::DarkGray)),
         Span::styled(model, Style::default().fg(Color::White)),
     ]));
-    right_lines.push(Line::from(vec![
-        Span::styled("TOOLS   ", Style::default().fg(Color::DarkGray)),
-        Span::styled(&tool_str, Style::default().fg(Color::White)),
-    ]));
+    // Wrap TOOLS across multiple lines if needed.
+    let label_w = 8; // "TOOLS   ".len()
+    let avail = right_area.width.saturating_sub(2) as usize;
+    let tool_max = avail.saturating_sub(label_w);
+    if tool_str.len() <= tool_max {
+        right_lines.push(Line::from(vec![
+            Span::styled("TOOLS   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&tool_str, Style::default().fg(Color::White)),
+        ]));
+    } else {
+        // Split tools into lines that fit.
+        let mut first = true;
+        let mut line_buf = String::new();
+        for name in &tool_names {
+            let sep = match line_buf.is_empty() {
+                true => "",
+                false => " · ",
+            };
+            if !line_buf.is_empty() && line_buf.len() + sep.len() + name.len() > tool_max {
+                let prefix = match first {
+                    true => "TOOLS   ",
+                    false => "        ",
+                };
+                right_lines.push(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+                    Span::styled(line_buf.clone(), Style::default().fg(Color::White)),
+                ]));
+                line_buf.clear();
+                first = false;
+            }
+            if !line_buf.is_empty() {
+                line_buf.push_str(" · ");
+            }
+            line_buf.push_str(name);
+        }
+        if !line_buf.is_empty() {
+            let prefix = match first {
+                true => "TOOLS   ",
+                false => "        ",
+            };
+            right_lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+                Span::styled(line_buf, Style::default().fg(Color::White)),
+            ]));
+        }
+    }
     if dirs_count > 0 {
         let dirs_label = match dirs_count {
             1 => "1 folder".to_string(),
@@ -262,9 +314,31 @@ fn render_banner(f: &mut Frame, name: &str, agent: Option<&AgentConfig>, area: R
         Span::styled("Type ", Style::default().fg(Color::DarkGray)),
         Span::styled("/", Style::default().fg(Color::Cyan)),
         Span::styled(" for commands · ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Ctrl+C", Style::default().fg(Color::Cyan)),
-        Span::styled(" to exit", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::Cyan)),
+        Span::styled(" to go back", Style::default().fg(Color::DarkGray)),
     ]));
+    // Banner content (quote or tool data).
+    if !banner_text.is_empty() {
+        right_lines.push(Line::from(""));
+        right_lines.push(Line::from(""));
+        let display = match banner_loading {
+            true => format!("{banner_text} ..."),
+            false => banner_text.to_string(),
+        };
+        // Truncate to ~120 chars to avoid LLM duplication.
+        let display = match display.len() > 120 {
+            true => format!("{}...", &display[..117]),
+            false => display,
+        };
+        // Word-wrap to available width.
+        let max_w = right_area.width.saturating_sub(2) as usize;
+        for wrapped in textwrap(&display, max_w) {
+            right_lines.push(Line::from(Span::styled(
+                wrapped,
+                Style::default().fg(Color::Rgb(100, 100, 120)).italic(),
+            )));
+        }
+    }
     f.render_widget(Paragraph::new(right_lines), right_area);
 }
 
@@ -371,6 +445,34 @@ fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
     f.render_widget(Paragraph::new(lines), area);
 }
 
+/// Kick off an async banner content fetch if banner_mode is "auto".
+pub fn start_banner_fetch(app: &mut App) {
+    let Some(agent) = &app.agent else { return };
+    if agent.banner_mode != "auto" {
+        return;
+    }
+    if let Screen::Chat(state) = &mut app.screen {
+        state.banner_loading = true;
+    }
+    let agent = agent.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.pending_banner = Some(rx);
+    tokio::spawn(async move {
+        let prompt = "In one brief line (under 80 chars), give a useful status update \
+            using your available tools. Examples: current weather, top task, latest price. \
+            No pleasantries, just the data.";
+        let result = match tokio::task::spawn(async move {
+            ops::call_converse(prompt, &agent).await
+        })
+        .await
+        {
+            Ok(r) => r.ok().flatten(),
+            Err(_) => None,
+        };
+        let _ = tx.send(result);
+    });
+}
+
 fn send_message(app: &mut App, input: &str) {
     let Screen::Chat(state) = &mut app.screen else {
         return;
@@ -427,8 +529,10 @@ async fn dispatch_slash(app: &mut App, input: &str) -> eyre::Result<()> {
         "clear" | "c" => cmd_clear(app),
         "model" | "m" => cmd_model(app, args),
         "name" | "rename" => cmd_name(app, args),
+        "username" | "whoami" => cmd_username(app, args),
         "dir" | "dirs" => cmd_dir(app, args),
         "status" | "info" => cmd_status(app),
+        "banner" => cmd_banner(app, args),
         "push" => cmd_push(app).await,
         "pull" | "sync" => cmd_pull(app).await,
         "config" | "vars" => cmd_config(app, args).await,
@@ -607,6 +711,83 @@ fn cmd_name(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     Ok(())
 }
 
+fn cmd_username(app: &mut App, args: &[&str]) -> eyre::Result<()> {
+    if args.is_empty() {
+        let name = app
+            .agent
+            .as_ref()
+            .map(|b| b.user_name.as_str())
+            .unwrap_or("not set");
+        push_system(
+            app,
+            &format!("Your display name: {name}\n\nChange with: /username <name>"),
+        );
+        return Ok(());
+    }
+    let new_name = args.join(" ");
+    if let Some(agent) = &app.agent {
+        let _ = ops::set_var(&agent.env_name, "ASTERBOT_USER_NAME", &new_name);
+    }
+    if let Some(agent) = &mut app.agent {
+        agent.user_name = new_name.clone();
+    }
+    push_system(app, &format!("Display name set to {new_name}"));
+    Ok(())
+}
+
+fn cmd_banner(app: &mut App, args: &[&str]) -> eyre::Result<()> {
+    if args.is_empty() {
+        let mode = app
+            .agent
+            .as_ref()
+            .map(|a| a.banner_mode.as_str())
+            .unwrap_or("auto");
+        push_system(
+            app,
+            &format!(
+                "Banner mode: {mode}\n\n\
+                 /banner auto  — agent picks content from tools\n\
+                 /banner quote — random quotes only\n\
+                 /banner off   — no banner content"
+            ),
+        );
+        return Ok(());
+    }
+    let mode = args[0].to_lowercase();
+    if !["auto", "quote", "off"].contains(&mode.as_str()) {
+        push_system(app, "Invalid mode. Use: auto, quote, or off");
+        return Ok(());
+    }
+    if let Some(agent) = &app.agent {
+        let _ = ops::set_var(&agent.env_name, "ASTERBOT_BANNER", &mode);
+    }
+    if let Some(agent) = &mut app.agent {
+        agent.banner_mode = mode.clone();
+    }
+    match mode.as_str() {
+        "auto" => {
+            push_system(app, "Banner set to auto (fetching from tools).");
+            start_banner_fetch(app);
+        }
+        "quote" => {
+            if let Screen::Chat(state) = &mut app.screen {
+                state.banner_text = crate::tui::app::random_quote().to_string();
+                state.banner_loading = false;
+            }
+            push_system(app, "Banner set to random quotes.");
+        }
+        "off" => {
+            if let Screen::Chat(state) = &mut app.screen {
+                state.banner_text.clear();
+                state.banner_loading = false;
+            }
+            push_system(app, "Banner content disabled.");
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn cmd_dir(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     let dirs = app
         .agent
@@ -774,19 +955,27 @@ fn save_allowed_dirs(app: &App) {
     let _ = ops::set_var(&agent.env_name, "ASTERBOT_ALLOWED_DIRS", &value);
 }
 
-#[cfg(unix)]
-fn hostname() -> String {
-    let mut buf = [0u8; 256];
-    unsafe {
-        libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len());
+/// Simple word-wrap for banner text.
+fn textwrap(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return vec![text.to_string()];
     }
-    let len = buf.iter().position(|&b| b == 0).unwrap_or(0);
-    String::from_utf8_lossy(&buf[..len]).to_uppercase()
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.is_empty() {
+            current = word.to_string();
+        } else if current.len() + 1 + word.len() <= max_width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
-#[cfg(windows)]
-fn hostname() -> String {
-    std::env::var("COMPUTERNAME")
-        .unwrap_or_else(|_| "USER".to_string())
-        .to_uppercase()
-}

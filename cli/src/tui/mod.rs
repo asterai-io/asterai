@@ -72,7 +72,7 @@ async fn run_app(
         if app.should_quit {
             return Ok(());
         }
-        let has_pending = app.pending_response.is_some();
+        let has_pending = app.pending_response.is_some() || app.pending_banner.is_some();
         let ev = match has_pending {
             true => match event::poll(Duration::from_millis(100))? {
                 true => Some(event::read()?),
@@ -80,7 +80,7 @@ async fn run_app(
             },
             false => Some(event::read()?),
         };
-        if has_pending {
+        if app.pending_response.is_some() {
             check_pending_response(app);
             if ev.is_none()
                 && let Screen::Chat(state) = &mut app.screen
@@ -88,12 +88,18 @@ async fn run_app(
                 state.spinner_tick = state.spinner_tick.wrapping_add(1);
             }
         }
+        if app.pending_banner.is_some() {
+            check_pending_banner(app);
+        }
         let Some(ev) = ev else {
             continue;
         };
+        // Ctrl+C quits only from non-chat screens (picker, auth, setup).
+        // In chat, Ctrl+C is reserved for copy on Windows Terminal.
         if let Event::Key(key) = &ev
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && key.code == KeyCode::Char('c')
+            && !matches!(app.screen, Screen::Chat(_))
         {
             app.should_quit = true;
             continue;
@@ -142,6 +148,39 @@ fn check_pending_response(app: &mut App) {
                     role: app::MessageRole::System,
                     content: "Request was cancelled.".to_string(),
                 });
+            }
+        }
+    }
+}
+
+fn check_pending_banner(app: &mut App) {
+    let Some(rx) = &mut app.pending_banner else {
+        return;
+    };
+    match rx.try_recv() {
+        Ok(Some(text)) => {
+            app.pending_banner = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                // Clean up LLM response: trim, take first line only.
+                let clean = text.trim().lines().next().unwrap_or("").trim().to_string();
+                if !clean.is_empty() {
+                    state.banner_text = clean;
+                }
+                state.banner_loading = false;
+            }
+        }
+        Ok(None) => {
+            // No data returned — keep the quote.
+            app.pending_banner = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.banner_loading = false;
+            }
+        }
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+            app.pending_banner = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.banner_loading = false;
             }
         }
     }

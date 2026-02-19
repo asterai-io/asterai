@@ -2,7 +2,7 @@ use crate::artifact::ArtifactSyncTag;
 use crate::tui::Tty;
 use crate::tui::app::{
     AgentConfig, AgentEntry, App, CORE_COMPONENTS, ChatState, PickerState, Screen, SetupState,
-    resolve_state_dir,
+    default_user_name, resolve_state_dir,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -309,6 +309,16 @@ async fn resolve_and_enter_chat(
         let wasi_dir = state_dir.to_string_lossy().replace('\\', "/");
         let _ = ops::set_var(&agent.name, "ASTERBOT_HOST_DIR", &wasi_dir);
     }
+    let user_name = data
+        .var_values
+        .get("ASTERBOT_USER_NAME")
+        .cloned()
+        .unwrap_or_else(default_user_name);
+    let banner_mode = data
+        .var_values
+        .get("ASTERBOT_BANNER")
+        .cloned()
+        .unwrap_or_else(|| "auto".to_string());
     let config = AgentConfig {
         env_name: agent.name.clone(),
         bot_name: data
@@ -316,13 +326,16 @@ async fn resolve_and_enter_chat(
             .get("ASTERBOT_BOT_NAME")
             .cloned()
             .unwrap_or(agent.name.clone()),
+        user_name,
         model: data.var_values.get("ASTERBOT_MODEL").cloned(),
         provider: provider.to_string(),
         tools,
         allowed_dirs,
+        banner_mode,
     };
     app.agent = Some(config);
     app.screen = Screen::Chat(ChatState::default());
+    super::chat::start_banner_fetch(app);
     Ok(())
 }
 
