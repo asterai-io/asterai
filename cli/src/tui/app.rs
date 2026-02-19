@@ -425,10 +425,10 @@ pub fn resolve_state_dir(env_name: &str) -> PathBuf {
 
 /// Default user display name: asterai namespace, falling back to OS username.
 pub fn default_user_name() -> String {
-    if let Some(ns) = crate::auth::Auth::read_stored_user_namespace() {
-        if ns != crate::auth::LOCAL_NAMESPACE {
-            return ns;
-        }
+    if let Some(ns) = crate::auth::Auth::read_stored_user_namespace()
+        && ns != crate::auth::LOCAL_NAMESPACE
+    {
+        return ns;
     }
     #[cfg(windows)]
     {

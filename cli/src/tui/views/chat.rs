@@ -73,11 +73,11 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
 pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
     // Handle paste events.
     if let Event::Paste(text) = &event {
-        if let Screen::Chat(state) = &mut app.screen {
-            if !state.waiting {
-                state.input.push_str(text);
-                update_menus(state);
-            }
+        if let Screen::Chat(state) = &mut app.screen
+            && !state.waiting
+        {
+            state.input.push_str(text);
+            update_menus(state);
         }
         return Ok(());
     }
@@ -290,7 +290,7 @@ fn render_banner(
     let greeting_name = agent
         .map(|a| a.user_name.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "USER");
+        .unwrap_or("USER");
     let mut left_lines: Vec<Line> = Vec::new();
     left_lines.push(
         Line::from(Span::styled(
@@ -404,7 +404,15 @@ fn render_banner(
         };
         // Truncate to ~120 chars to avoid LLM duplication.
         let display = match display.len() > 120 {
-            true => format!("{}...", &display[..117]),
+            true => {
+                let end = display
+                    .char_indices()
+                    .take_while(|(i, _)| *i <= 117)
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                format!("{}...", &display[..end])
+            }
             false => display,
         };
         // Word-wrap to available width.
@@ -761,11 +769,12 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     let env_name = agent.env_name.clone();
     if args[0] == "add" && args.len() > 1 {
         // Auto-prepend user namespace if missing (e.g. "trello" → "seadog:trello").
-        let component = if args[1].contains(':') {
-            args[1].to_string()
-        } else {
-            let ns = crate::auth::Auth::read_user_or_fallback_namespace();
-            format!("{ns}:{}", args[1])
+        let component = match args[1].contains(':') {
+            true => args[1].to_string(),
+            false => {
+                let ns = crate::auth::Auth::read_user_or_fallback_namespace();
+                format!("{ns}:{}", args[1])
+            }
         };
         match ops::add_component(&env_name, &component).await {
             Ok(_) => {

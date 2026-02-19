@@ -49,13 +49,7 @@ pub fn render(f: &mut Frame, state: &PickerState) {
         };
         let model_str = match agent.is_remote {
             true => "remote · enter to pull",
-            false => agent
-                .model
-                .as_deref()
-                .unwrap_or_else(|| match agent.component_count {
-                    0 => "",
-                    n => Box::leak(format!("{n} components").into_boxed_str()),
-                }),
+            false => agent.model.as_deref().unwrap_or(""),
         };
         let line = Line::from(vec![
             Span::raw(pointer),
@@ -103,7 +97,7 @@ pub fn render(f: &mut Frame, state: &PickerState) {
             } else if state
                 .agents
                 .get(state.selected)
-                .map_or(false, |a| a.is_remote)
+                .is_some_and(|a| a.is_remote)
             {
                 "↑↓ navigate · enter pull & open · r refresh · esc quit"
             } else {
