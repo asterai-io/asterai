@@ -15,11 +15,11 @@ pub const PROVIDERS: &[Provider] = &[
         "ANTHROPIC_KEY",
         &[
             (
-                "anthropic/claude-sonnet-4-5",
-                "Claude Sonnet 4.5 (recommended)",
+                "anthropic/claude-sonnet-4-6",
+                "Claude Sonnet 4.6 (recommended)",
             ),
-            ("anthropic/claude-opus-4", "Claude Opus 4"),
-            ("anthropic/claude-haiku-3-5", "Claude Haiku 3.5"),
+            ("anthropic/claude-opus-4-6", "Claude Opus 4.6"),
+            ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5"),
         ],
     ),
     (

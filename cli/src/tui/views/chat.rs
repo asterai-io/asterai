@@ -386,7 +386,28 @@ fn send_message(app: &mut App, input: &str) {
     app.pending_response = Some(rx);
     tokio::spawn(async move {
         let result = match agent {
-            Some(ref a) => ops::call_converse(&message, a).await,
+            Some(ref a) => {
+                let a = a.clone();
+                let msg = message.clone();
+                match tokio::task::spawn(async move {
+                    ops::call_converse(&msg, &a).await
+                })
+                .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let panic_msg = if let Ok(s) = e.try_into_panic() {
+                            s.downcast_ref::<String>()
+                                .cloned()
+                                .or_else(|| s.downcast_ref::<&str>().map(|s| s.to_string()))
+                                .unwrap_or_else(|| "internal error".to_string())
+                        } else {
+                            "request was cancelled".to_string()
+                        };
+                        Err(eyre::eyre!("{panic_msg}"))
+                    }
+                }
+            }
             None => Err(eyre::eyre!("no active agent")),
         };
         let _ = tx.send(result);
@@ -484,11 +505,17 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     };
     let env_name = agent.env_name.clone();
     if args[0] == "add" && args.len() > 1 {
-        let component = args[1];
-        match ops::add_component(&env_name, component).await {
+        // Auto-prepend user namespace if missing (e.g. "trello" → "seadog:trello").
+        let component = if args[1].contains(':') {
+            args[1].to_string()
+        } else {
+            let ns = crate::auth::Auth::read_user_or_fallback_namespace();
+            format!("{ns}:{}", args[1])
+        };
+        match ops::add_component(&env_name, &component).await {
             Ok(_) => {
                 if let Some(agent) = &mut app.agent {
-                    let base = component.split('@').next().unwrap_or(component);
+                    let base = component.split('@').next().unwrap_or(&component);
                     if !agent.tools.contains(&base.to_string()) {
                         agent.tools.push(base.to_string());
                     }

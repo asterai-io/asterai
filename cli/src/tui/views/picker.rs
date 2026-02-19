@@ -48,7 +48,7 @@ pub fn render(f: &mut Frame, state: &PickerState) {
             false => "  ",
         };
         let model_str = match agent.is_remote {
-            true => "remote",
+            true => "remote · enter to pull",
             false => agent
                 .model
                 .as_deref()
@@ -97,10 +97,16 @@ pub fn render(f: &mut Frame, state: &PickerState) {
     f.render_widget(list, chunks[1]);
     let footer_text = match &state.error {
         Some(err) => Line::from(Span::styled(err.as_str(), Style::default().fg(Color::Red))),
-        None => Line::from(Span::styled(
-            "↑↓ navigate · enter select · esc quit",
-            Style::default().fg(Color::DarkGray),
-        )),
+        None => {
+            let hint = if state.selected == state.agents.len() {
+                "↑↓ navigate · enter create · esc quit"
+            } else if state.agents.get(state.selected).map_or(false, |a| a.is_remote) {
+                "↑↓ navigate · enter pull & open · r refresh · esc quit"
+            } else {
+                "↑↓ navigate · enter open · r refresh · esc quit"
+            };
+            Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray)))
+        }
     };
     f.render_widget(Paragraph::new(footer_text), chunks[2]);
 }
@@ -144,6 +150,16 @@ pub async fn handle_event(
         }
         KeyCode::Esc => {
             app.should_quit = true;
+        }
+        KeyCode::Char('r') => {
+            app.screen = Screen::Picker(PickerState {
+                agents: Vec::new(),
+                selected: 0,
+                loading: true,
+                error: None,
+            });
+            terminal.draw(|f| super::render(f, app))?;
+            discover_agents(app).await;
         }
         KeyCode::Char(c) if c.is_ascii_digit() => {
             let num = c.to_digit(10).unwrap() as usize;
@@ -222,13 +238,18 @@ pub async fn discover_agents(app: &mut App) {
 async fn resolve_and_enter_chat(
     app: &mut App,
     agent: AgentEntry,
-    _terminal: &mut Terminal<CrosstermBackend<Tty>>,
+    terminal: &mut Terminal<CrosstermBackend<Tty>>,
 ) -> eyre::Result<()> {
-    if agent.is_remote
-        && let Err(e) = ops::pull_env(&agent.name).await
-    {
-        set_picker_error(app, format!("Failed to pull: {e}"));
-        return Ok(());
+    if agent.is_remote {
+        // Show pulling status and redraw before the network call.
+        if let Screen::Picker(state) = &mut app.screen {
+            state.error = Some(format!("Pulling {}...", agent.name));
+        }
+        terminal.draw(|f| super::render(f, app))?;
+        if let Err(e) = ops::pull_env(&agent.name).await {
+            set_picker_error(app, format!("Failed to pull: {e}"));
+            return Ok(());
+        }
     }
     let data = match ops::inspect_environment(&agent.name).await {
         Ok(Some(d)) => d,
