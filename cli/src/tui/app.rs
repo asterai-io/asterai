@@ -68,16 +68,30 @@ pub const PROVIDERS: &[Provider] = &[
         "OpenAI (GPT)",
         "OPENAI_KEY",
         &[
-            ("openai/gpt-4o", "GPT-4o (recommended)"),
-            ("openai/gpt-4o-mini", "GPT-4o Mini"),
+            ("openai/gpt-5-mini", "GPT-5 Mini (recommended)"),
+            ("openai/gpt-5.2", "GPT-5.2"),
+            ("openai/gpt-5-nano", "GPT-5 Nano"),
         ],
     ),
     (
         "Google (Gemini)",
         "GOOGLE_KEY",
         &[
-            ("google/gemini-2.0-flash", "Gemini 2.0 Flash (recommended)"),
+            (
+                "google/gemini-3-flash-preview",
+                "Gemini 3 Flash Preview (recommended)",
+            ),
+            ("google/gemini-2.5-flash", "Gemini 2.5 Flash"),
             ("google/gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ],
+    ),
+    (
+        "Venice",
+        "VENICE_KEY",
+        &[
+            ("venice/kimi-k2-5", "Kimi K2.5 (recommended)"),
+            ("venice/zai-org-glm-5", "GLM 5"),
+            ("venice/venice-uncensored", "Venice Uncensored 1.1"),
         ],
     ),
 ];
@@ -251,6 +265,7 @@ pub struct App {
     pub agent: Option<AgentConfig>,
     pub pending_response: Option<tokio::sync::oneshot::Receiver<eyre::Result<Option<String>>>>,
     pub pending_banner: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
+    pub pending_warmup: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 impl Default for App {
@@ -261,6 +276,7 @@ impl Default for App {
             agent: None,
             pending_response: None,
             pending_banner: None,
+            pending_warmup: None,
         }
     }
 }
@@ -292,6 +308,7 @@ pub struct SetupState {
     pub allowed_dirs: Vec<String>,
     pub input: String,
     pub error: Option<String>,
+    pub spinner_tick: usize,
 }
 
 impl Default for SetupState {
@@ -308,6 +325,7 @@ impl Default for SetupState {
             allowed_dirs: Vec::new(),
             input: String::new(),
             error: None,
+            spinner_tick: 0,
         }
     }
 }
@@ -358,10 +376,7 @@ impl Default for ChatState {
 
 /// Resolve the state directory for an agent.
 pub fn resolve_state_dir(env_name: &str) -> PathBuf {
-    dirs::home_dir()
-        .expect("could not determine home directory")
-        .join(".asterai-agents")
-        .join(env_name)
+    crate::config::BASE_DIR.join("agents").join(env_name)
 }
 
 /// Default user display name: asterai namespace, falling back to OS username.

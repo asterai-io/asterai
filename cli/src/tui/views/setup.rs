@@ -1,7 +1,7 @@
 use crate::tui::Tty;
 use crate::tui::app::{
-    AgentConfig, App, CORE_COMPONENTS, ChatState, DEFAULT_TOOLS, PROVIDERS, Screen, SetupState,
-    SetupStep, default_user_name, resolve_state_dir, sanitize_bot_name,
+    AgentConfig, App, CORE_COMPONENTS, ChatState, DEFAULT_TOOLS, PROVIDERS, SPINNER_FRAMES, Screen,
+    SetupState, SetupStep, default_user_name, resolve_state_dir, sanitize_bot_name,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -37,9 +37,15 @@ pub fn render(f: &mut Frame, state: &SetupState) {
             render_provisioning(f, *current, *total, message, content_area);
         }
         SetupStep::WarmUp => {
-            let text = Paragraph::new("Warming up (first-time compilation may take a moment)...")
-                .style(Style::default().fg(Color::DarkGray));
-            f.render_widget(text, content_area);
+            let frame = SPINNER_FRAMES[state.spinner_tick % SPINNER_FRAMES.len()];
+            let line = Line::from(vec![
+                Span::styled(format!("{frame} "), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "Warming up (first-time compilation may take a moment)...",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]);
+            f.render_widget(Paragraph::new(line), content_area);
         }
         SetupStep::PushPrompt => render_push_prompt(f, content_area),
     }
@@ -507,19 +513,17 @@ async fn run_provisioning(
         allowed_dirs,
         banner_mode: "auto".to_string(),
     };
-    app.agent = Some(agent);
+    app.agent = Some(agent.clone());
     let Screen::Setup(state) = &mut app.screen else {
         return Ok(());
     };
     state.step = SetupStep::WarmUp;
-    terminal.draw(|f| super::render(f, app))?;
-    if let Some(agent) = &app.agent {
-        let _ = ops::call_converse("hello", agent).await;
-    }
-    let Screen::Setup(state) = &mut app.screen else {
-        return Ok(());
-    };
-    state.step = SetupStep::PushPrompt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let _ = ops::call_converse("hello", &agent).await;
+        let _ = tx.send(());
+    });
+    app.pending_warmup = Some(rx);
     Ok(())
 }
 
