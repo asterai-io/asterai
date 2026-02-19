@@ -40,6 +40,15 @@ pub const PROVIDERS: &[Provider] = &[
             ("google/gemini-2.5-pro", "Gemini 2.5 Pro"),
         ],
     ),
+    (
+        "Venice",
+        "VENICE_KEY",
+        &[
+            ("venice/kimi-k2-5", "Kimi K2.5 (recommended)"),
+            ("venice/zai-org-glm-5", "GLM 5"),
+            ("venice/venice-uncensored", "Venice Uncensored 1.1"),
+        ],
+    ),
 ];
 
 pub const CORE_COMPONENTS: &[&str] = &[
