@@ -41,7 +41,11 @@ pub async fn run() -> eyre::Result<()> {
     terminal.show_cursor()?;
     let _ = Write::flush(terminal.backend_mut());
     restore_stdio(saved);
-    result
+    // Exit immediately so background tokio tasks don't keep the process alive.
+    std::process::exit(match result {
+        Ok(_) => 0,
+        Err(_) => 1,
+    })
 }
 
 async fn run_app(
