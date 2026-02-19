@@ -35,7 +35,10 @@ pub const PROVIDERS: &[Provider] = &[
         "Google (Gemini)",
         "GOOGLE_KEY",
         &[
-            ("google/gemini-3-flash-preview", "Gemini 3 Flash Preview (recommended)"),
+            (
+                "google/gemini-3-flash-preview",
+                "Gemini 3 Flash Preview (recommended)",
+            ),
             ("google/gemini-2.5-flash", "Gemini 2.5 Flash"),
             ("google/gemini-2.5-pro", "Gemini 2.5 Pro"),
         ],
@@ -173,6 +176,7 @@ pub struct App {
     pub should_quit: bool,
     pub agent: Option<AgentConfig>,
     pub pending_response: Option<tokio::sync::oneshot::Receiver<eyre::Result<Option<String>>>>,
+    pub pending_warmup: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 impl Default for App {
@@ -182,6 +186,7 @@ impl Default for App {
             should_quit: false,
             agent: None,
             pending_response: None,
+            pending_warmup: None,
         }
     }
 }
@@ -212,6 +217,7 @@ pub struct SetupState {
     pub allowed_dirs: Vec<String>,
     pub input: String,
     pub error: Option<String>,
+    pub spinner_tick: usize,
 }
 
 impl Default for SetupState {
@@ -227,6 +233,7 @@ impl Default for SetupState {
             allowed_dirs: Vec::new(),
             input: String::new(),
             error: None,
+            spinner_tick: 0,
         }
     }
 }

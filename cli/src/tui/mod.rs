@@ -64,7 +64,9 @@ async fn run_app(
             return Ok(());
         }
         let has_pending = app.pending_response.is_some();
-        let ev = match has_pending {
+        let has_warmup = app.pending_warmup.is_some();
+        let needs_poll = has_pending || has_warmup;
+        let ev = match needs_poll {
             true => match event::poll(Duration::from_millis(100))? {
                 true => Some(event::read()?),
                 false => None,
@@ -77,6 +79,21 @@ async fn run_app(
                 && let Screen::Chat(state) = &mut app.screen
             {
                 state.spinner_tick = state.spinner_tick.wrapping_add(1);
+            }
+        }
+        if has_warmup && let Some(rx) = &mut app.pending_warmup {
+            match rx.try_recv() {
+                Ok(()) => {
+                    app.pending_warmup = None;
+                    if let Screen::Setup(state) = &mut app.screen {
+                        state.step = app::SetupStep::PushPrompt;
+                    }
+                }
+                _ => {
+                    if let Screen::Setup(state) = &mut app.screen {
+                        state.spinner_tick = state.spinner_tick.wrapping_add(1);
+                    }
+                }
             }
         }
         let Some(ev) = ev else {
