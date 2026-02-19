@@ -20,6 +20,15 @@ struct SavedStdio {
 }
 
 pub async fn run() -> eyre::Result<()> {
+    #[cfg(windows)]
+    {
+        unsafe extern "system" {
+            fn SetConsoleOutputCP(code_page: u32) -> i32;
+        }
+        unsafe {
+            SetConsoleOutputCP(65001);
+        }
+    }
     let (saved, mut tty) = redirect_stdio();
     enable_raw_mode()?;
     execute!(tty, EnterAlternateScreen)?;

@@ -4,7 +4,7 @@ use crate::tui::app::{
     SetupStep, resolve_state_dir, sanitize_bot_name,
 };
 use crate::tui::ops;
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
 
@@ -49,9 +49,13 @@ pub async fn handle_event(
     event: Event,
     terminal: &mut Terminal<CrosstermBackend<Tty>>,
 ) -> eyre::Result<()> {
-    let Event::Key(KeyEvent { code, .. }) = event else {
+    let Event::Key(key_event) = event else {
         return Ok(());
     };
+    if key_event.kind != crossterm::event::KeyEventKind::Press {
+        return Ok(());
+    }
+    let code = key_event.code;
     let Screen::Setup(state) = &mut app.screen else {
         return Ok(());
     };

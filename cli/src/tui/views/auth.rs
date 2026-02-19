@@ -2,12 +2,14 @@ use crate::tui::Tty;
 use crate::tui::app::{App, AuthState, PickerState, Screen};
 use crate::tui::ops;
 use crate::tui::views::picker;
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 pub fn render(f: &mut Frame, state: &AuthState) {
-    let area = centered_rect(60, 12, f.area());
+    let has_error = matches!(state, AuthState::NeedLogin { error: Some(_), .. });
+    let height = if has_error { 14 } else { 12 };
+    let area = centered_rect(60, height, f.area());
     let block = Block::default()
         .title(" asterai agents ")
         .borders(Borders::ALL)
@@ -51,7 +53,11 @@ pub fn render(f: &mut Frame, state: &AuthState) {
             if let Some(err) = error {
                 lines.push(Line::from(Span::styled(
                     err.as_str(),
-                    Style::default().fg(Color::Red),
+                    Style::default().fg(Color::Red).bold(),
+                )));
+                lines.push(Line::from(Span::styled(
+                    "Check your key at asterai.io/settings/api-keys",
+                    Style::default().fg(Color::DarkGray),
                 )));
                 lines.push(Line::from(""));
             }
@@ -72,9 +78,26 @@ pub async fn handle_event(
     event: Event,
     terminal: &mut Terminal<CrosstermBackend<Tty>>,
 ) -> eyre::Result<()> {
-    let Event::Key(KeyEvent { code, .. }) = event else {
+    // Handle paste events.
+    if let Event::Paste(text) = &event {
+        if let Screen::Auth(AuthState::NeedLogin { input, error }) = &mut app.screen {
+            input.push_str(text);
+            *error = None;
+        }
+        return Ok(());
+    }
+    let Event::Key(key_event) = event else {
         return Ok(());
     };
+    // Only handle key press events (not release/repeat) to avoid duplication on Windows.
+    if key_event.kind != crossterm::event::KeyEventKind::Press {
+        return Ok(());
+    }
+    // Ignore Ctrl+key combos (e.g. Ctrl+V) to avoid stray characters.
+    if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+        return Ok(());
+    }
+    let code = key_event.code;
     let Screen::Auth(state) = &mut app.screen else {
         return Ok(());
     };
@@ -107,9 +130,17 @@ pub async fn handle_event(
                         picker::discover_agents(app).await;
                     }
                     Err(e) => {
+                        let msg = format!("{e:#}");
+                        let short = if msg.contains("invalid or expired") {
+                            "Invalid API key.".to_string()
+                        } else if msg.contains("failed to connect") {
+                            "Could not connect to API.".to_string()
+                        } else {
+                            format!("Login failed: {msg}")
+                        };
                         app.screen = Screen::Auth(AuthState::NeedLogin {
                             input: String::new(),
-                            error: Some(format!("Login failed: {e}")),
+                            error: Some(short),
                         });
                     }
                 }

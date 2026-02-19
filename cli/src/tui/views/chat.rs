@@ -3,7 +3,7 @@ use crate::tui::app::{
     resolve_state_dir,
 };
 use crate::tui::ops;
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
 
@@ -56,9 +56,28 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
 }
 
 pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
-    let Event::Key(KeyEvent { code, .. }) = event else {
+    // Handle paste events.
+    if let Event::Paste(text) = &event {
+        if let Screen::Chat(state) = &mut app.screen {
+            if !state.waiting {
+                state.input.push_str(text);
+                update_slash_menu(state);
+            }
+        }
+        return Ok(());
+    }
+    let Event::Key(key_event) = event else {
         return Ok(());
     };
+    // Only handle key press events (not release/repeat) to avoid duplication on Windows.
+    if key_event.kind != crossterm::event::KeyEventKind::Press {
+        return Ok(());
+    }
+    // Ignore Ctrl+key combos (e.g. Ctrl+V) to avoid stray characters.
+    if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+        return Ok(());
+    }
+    let code = key_event.code;
     let Screen::Chat(state) = &mut app.screen else {
         return Ok(());
     };
