@@ -7,7 +7,7 @@ pub const API_URL_STAGING: &str = "https://staging.api.asterai.io";
 pub const REGISTRY_URL: &str = "https://registry.asterai.io";
 pub const REGISTRY_URL_STAGING: &str = "https://staging.registry.asterai.io";
 
-static BASE_DIR: Lazy<PathBuf> = Lazy::new(|| {
+pub static BASE_DIR: Lazy<PathBuf> = Lazy::new(|| {
     let home = if cfg!(windows) {
         env::var("USERPROFILE").unwrap()
     } else {

@@ -36,9 +36,14 @@ pub fn render(f: &mut Frame, state: &SetupState) {
             render_provisioning(f, *current, *total, message, content_area);
         }
         SetupStep::WarmUp => {
-            let text = Paragraph::new("Warming up (first-time compilation may take a moment)...")
-                .style(Style::default().fg(Color::DarkGray));
-            f.render_widget(text, content_area);
+            let line = Line::from(vec![
+                Span::styled("⠋ ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "Warming up (first-time compilation may take a moment)...",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]);
+            f.render_widget(Paragraph::new(line), content_area);
         }
         SetupStep::PushPrompt => render_push_prompt(f, content_area),
     }

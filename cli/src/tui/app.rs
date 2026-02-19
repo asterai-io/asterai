@@ -251,10 +251,7 @@ pub struct ChatState {
 
 /// Resolve the state directory for an agent.
 pub fn resolve_state_dir(env_name: &str) -> PathBuf {
-    dirs::home_dir()
-        .expect("could not determine home directory")
-        .join(".asterai-agents")
-        .join(env_name)
+    crate::config::BASE_DIR.join("agents").join(env_name)
 }
 
 /// Sanitize a display name to a valid environment name.
