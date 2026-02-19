@@ -683,7 +683,7 @@ fn update_menus(state: &mut ChatState) {
                     .min(state.sub_matches.len().saturating_sub(1));
             }
         } else {
-            // Input no longer matches the command prefix — exit sub-menu.
+            // Input no longer matches the command prefix - exit sub-menu.
             state.active_command = None;
             state.sub_matches.clear();
             state.sub_selected = 0;
@@ -897,9 +897,9 @@ fn cmd_banner(app: &mut App, args: &[&str]) -> eyre::Result<()> {
             app,
             &format!(
                 "Banner mode: {mode}\n\n\
-                 /banner auto  — agent picks content from tools\n\
-                 /banner quote — random quotes only\n\
-                 /banner off   — no banner content"
+                 /banner auto  - agent picks content from tools\n\
+                 /banner quote - random quotes only\n\
+                 /banner off   - no banner content"
             ),
         );
         return Ok(());

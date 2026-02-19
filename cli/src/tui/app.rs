@@ -21,7 +21,7 @@ pub const QUOTES: &[&str] = &[
     "\"We can only see a short distance ahead, but we can see plenty there that needs to be done.\" — Alan Turing",
     "\"A computer once beat me at chess, but it was no match for me at kickboxing.\" — Emo Philips",
     "\"The Net is a waste of time, and that's exactly what's right about it.\" — William Gibson",
-    "\"The future is already here — it's just not evenly distributed.\" — William Gibson",
+    "\"The future is already here - it's just not evenly distributed.\" — William Gibson",
     "\"Never trust a computer you can't throw out a window.\" — Steve Wozniak",
     "\"People who are really serious about software should make their own hardware.\" — Alan Kay",
     "\"In the beginning the Universe was created. This made a lot of people angry.\" — Douglas Adams",

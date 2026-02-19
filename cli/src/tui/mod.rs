@@ -111,13 +111,17 @@ async fn run_app(
         let Some(ev) = ev else {
             continue;
         };
-        // Ctrl+C quits only from non-chat screens (picker, auth, setup).
-        // In chat, Ctrl+C is reserved for copy on Windows Terminal.
+        // Ctrl+C quits from all screens on Unix.
+        // On Windows, Ctrl+C is reserved for copy in Windows Terminal,
+        // so it only quits from non-chat screens.
         if let Event::Key(key) = &ev
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && key.code == KeyCode::Char('c')
-            && !matches!(app.screen, Screen::Chat(_))
         {
+            #[cfg(windows)]
+            if matches!(app.screen, Screen::Chat(_)) {
+                continue;
+            }
             app.should_quit = true;
             continue;
         }
@@ -187,7 +191,7 @@ fn check_pending_banner(app: &mut App) {
             }
         }
         Ok(None) => {
-            // No data returned — keep the quote.
+            // No data returned - keep the quote.
             app.pending_banner = None;
             if let Screen::Chat(state) = &mut app.screen {
                 state.banner_loading = false;
