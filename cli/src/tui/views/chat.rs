@@ -39,9 +39,15 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     f.render_widget(sep, chunks[2]);
     render_input(f, state, chunks[3]);
     // Slash menu renders above the separator, overlaying messages.
-    let has_slash = state.input.starts_with('/') && !state.input.contains(' ');
+    let has_sub_menu = state.active_command.is_some() && !state.sub_matches.is_empty();
+    let has_slash = (state.input.starts_with('/') && !state.input.contains(' ') && !state.slash_matches.is_empty())
+        || has_sub_menu;
+    let menu_count = match has_sub_menu {
+        true => state.sub_matches.len(),
+        false => state.slash_matches.len(),
+    };
     let menu_h = match has_slash {
-        true => state.slash_matches.len().min(12) as u16,
+        true => menu_count.min(12) as u16,
         false => 0,
     };
     if menu_h > 0 {
@@ -61,7 +67,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
         if let Screen::Chat(state) = &mut app.screen {
             if !state.waiting {
                 state.input.push_str(text);
-                update_slash_menu(state);
+                update_menus(state);
             }
         }
         return Ok(());
@@ -84,8 +90,54 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
     if state.waiting {
         return Ok(());
     }
-    let has_slash_menu = !state.slash_matches.is_empty();
+    let has_sub_menu = state.active_command.is_some() && !state.sub_matches.is_empty();
+    let has_slash_menu = !state.slash_matches.is_empty() || has_sub_menu;
     match code {
+        // --- Sub-menu navigation ---
+        KeyCode::Up if has_sub_menu => {
+            if state.sub_selected > 0 {
+                state.sub_selected -= 1;
+            }
+        }
+        KeyCode::Down if has_sub_menu => {
+            if state.sub_selected + 1 < state.sub_matches.len() {
+                state.sub_selected += 1;
+            }
+        }
+        KeyCode::Enter | KeyCode::Tab if has_sub_menu => {
+            let cmd_idx = state.active_command.unwrap();
+            let sub_idx = state.sub_matches[state.sub_selected];
+            let sub = &SLASH_COMMANDS[cmd_idx].subs[sub_idx];
+            let cmd_name = SLASH_COMMANDS[cmd_idx].name;
+            if sub.needs_arg {
+                // Fill in command + subcommand, let user type the argument.
+                state.input = format!("/{cmd_name} {} ", sub.name);
+                state.active_command = None;
+                state.sub_matches.clear();
+                state.sub_selected = 0;
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+            } else {
+                // Dispatch immediately (e.g. /tools list, /banner off).
+                let full = format!("/{cmd_name} {}", sub.name);
+                state.active_command = None;
+                state.sub_matches.clear();
+                state.sub_selected = 0;
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+                state.input.clear();
+                dispatch_slash(app, &full).await?;
+            }
+        }
+        KeyCode::Esc if has_sub_menu => {
+            state.active_command = None;
+            state.sub_matches.clear();
+            state.sub_selected = 0;
+            state.input.clear();
+            state.slash_matches.clear();
+            state.slash_selected = 0;
+        }
+        // --- Top-level slash menu navigation ---
         KeyCode::Up if has_slash_menu => {
             if state.slash_selected > 0 {
                 state.slash_selected -= 1;
@@ -96,15 +148,28 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 state.slash_selected += 1;
             }
         }
-        KeyCode::Enter if has_slash_menu && state.slash_selected < state.slash_matches.len() => {
+        KeyCode::Enter | KeyCode::Tab
+            if has_slash_menu && state.slash_selected < state.slash_matches.len() =>
+        {
             let cmd_idx = state.slash_matches[state.slash_selected];
-            let cmd_name = SLASH_COMMANDS[cmd_idx].name;
-            state.input = format!("/{cmd_name}");
-            state.slash_matches.clear();
-            state.slash_selected = 0;
-            let input = state.input.clone();
-            state.input.clear();
-            dispatch_slash(app, &input).await?;
+            let cmd = &SLASH_COMMANDS[cmd_idx];
+            if !cmd.subs.is_empty() {
+                // Has subcommands → enter sub-menu.
+                state.input = format!("/{} ", cmd.name);
+                state.active_command = Some(cmd_idx);
+                state.sub_matches = (0..cmd.subs.len()).collect();
+                state.sub_selected = 0;
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+            } else {
+                // No subcommands → dispatch immediately.
+                state.input = format!("/{}", cmd.name);
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+                let input = state.input.clone();
+                state.input.clear();
+                dispatch_slash(app, &input).await?;
+            }
         }
         KeyCode::Esc if has_slash_menu => {
             state.slash_matches.clear();
@@ -153,11 +218,11 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 return Ok(());
             };
             state.input.push(c);
-            update_slash_menu(state);
+            update_menus(state);
         }
         KeyCode::Backspace => {
             state.input.pop();
-            update_slash_menu(state);
+            update_menus(state);
         }
         KeyCode::Esc => {
             app.should_quit = true;
@@ -410,6 +475,45 @@ fn render_input(f: &mut Frame, state: &ChatState, area: Rect) {
 
 fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
     let max_rows = area.height as usize;
+
+    // Sub-menu mode: show sub-options for the active command.
+    if let Some(cmd_idx) = state.active_command {
+        let cmd = &SLASH_COMMANDS[cmd_idx];
+        let skip = state.sub_selected.saturating_sub(max_rows.saturating_sub(1));
+        let mut lines: Vec<Line> = Vec::new();
+        for (i, &sub_idx) in state
+            .sub_matches
+            .iter()
+            .enumerate()
+            .skip(skip)
+            .take(max_rows)
+        {
+            let sub = &cmd.subs[sub_idx];
+            let is_selected = i == state.sub_selected;
+            let pointer = match is_selected {
+                true => "▸ ",
+                false => "  ",
+            };
+            let name_style = match is_selected {
+                true => Style::default().fg(Color::Cyan).bold(),
+                false => Style::default().fg(Color::Cyan),
+            };
+            let desc_style = match is_selected {
+                true => Style::default().fg(Color::White),
+                false => Style::default().fg(Color::DarkGray),
+            };
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::raw(pointer),
+                Span::styled(format!("{:<12}", sub.name), name_style),
+                Span::styled(sub.description, desc_style),
+            ]));
+        }
+        f.render_widget(Paragraph::new(lines), area);
+        return;
+    }
+
+    // Top-level slash command menu.
     let skip = state
         .slash_selected
         .saturating_sub(max_rows.saturating_sub(1));
@@ -546,7 +650,44 @@ async fn dispatch_slash(app: &mut App, input: &str) -> eyre::Result<()> {
     }
 }
 
-fn update_slash_menu(state: &mut ChatState) {
+fn update_menus(state: &mut ChatState) {
+    // If we're in a sub-menu, filter sub-options.
+    if let Some(cmd_idx) = state.active_command {
+        let cmd = &SLASH_COMMANDS[cmd_idx];
+        let prefix = format!("/{} ", cmd.name);
+        if state.input.starts_with(&prefix) {
+            let partial = state.input[prefix.len()..].to_lowercase();
+            // If user typed past the sub-command (has a space after sub), close menu.
+            if partial.contains(' ') {
+                state.active_command = None;
+                state.sub_matches.clear();
+                state.sub_selected = 0;
+            } else {
+                state.sub_matches = cmd
+                    .subs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, sub)| sub.name.starts_with(partial.as_str()))
+                    .map(|(i, _)| i)
+                    .collect();
+                state.sub_selected = state.sub_selected.min(
+                    state.sub_matches.len().saturating_sub(1),
+                );
+            }
+        } else {
+            // Input no longer matches the command prefix — exit sub-menu.
+            state.active_command = None;
+            state.sub_matches.clear();
+            state.sub_selected = 0;
+            // Fall through to update top-level menu.
+            update_top_level_menu(state);
+        }
+        return;
+    }
+    update_top_level_menu(state);
+}
+
+fn update_top_level_menu(state: &mut ChatState) {
     if state.input.starts_with('/') && !state.input.contains(' ') {
         let partial = &state.input[1..].to_lowercase();
         state.slash_matches = SLASH_COMMANDS
@@ -555,7 +696,9 @@ fn update_slash_menu(state: &mut ChatState) {
             .filter(|(_, cmd)| cmd.name.starts_with(partial.as_str()))
             .map(|(i, _)| i)
             .collect();
-        state.slash_selected = 0;
+        state.slash_selected = state.slash_selected.min(
+            state.slash_matches.len().saturating_sub(1),
+        );
     } else {
         state.slash_matches.clear();
         state.slash_selected = 0;

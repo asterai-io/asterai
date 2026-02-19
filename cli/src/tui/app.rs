@@ -95,56 +95,90 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "help",
         description: "Show available commands",
+        subs: &[],
     },
     SlashCommand {
         name: "tools",
         description: "List, add, or remove tools",
+        subs: &[
+            SubCommand { name: "list", description: "Show installed tools", needs_arg: false },
+            SubCommand { name: "add", description: "Add a tool component", needs_arg: true },
+            SubCommand { name: "remove", description: "Remove a tool", needs_arg: true },
+        ],
     },
     SlashCommand {
         name: "clear",
         description: "Clear conversation history",
+        subs: &[],
     },
     SlashCommand {
         name: "model",
         description: "View or switch LLM model",
+        subs: &[],
     },
     SlashCommand {
         name: "name",
         description: "View or change agent name",
+        subs: &[],
     },
     SlashCommand {
         name: "username",
         description: "View or change your display name",
+        subs: &[],
     },
     SlashCommand {
         name: "dir",
         description: "Manage directory access",
+        subs: &[
+            SubCommand { name: "list", description: "Show allowed directories", needs_arg: false },
+            SubCommand { name: "add", description: "Grant directory access", needs_arg: true },
+            SubCommand { name: "remove", description: "Revoke directory access", needs_arg: true },
+        ],
     },
     SlashCommand {
         name: "status",
         description: "Show agent status",
+        subs: &[],
     },
     SlashCommand {
         name: "config",
         description: "Manage env variables",
+        subs: &[
+            SubCommand { name: "list", description: "Show all variables", needs_arg: false },
+            SubCommand { name: "set", description: "Set KEY=VALUE", needs_arg: true },
+        ],
     },
     SlashCommand {
         name: "banner",
-        description: "Configure banner content (auto/quote/off)",
+        description: "Configure banner content",
+        subs: &[
+            SubCommand { name: "auto", description: "Agent picks content from tools", needs_arg: false },
+            SubCommand { name: "quote", description: "Random quotes only", needs_arg: false },
+            SubCommand { name: "off", description: "No banner content", needs_arg: false },
+        ],
     },
     SlashCommand {
         name: "push",
         description: "Push agent to cloud",
+        subs: &[],
     },
     SlashCommand {
         name: "pull",
         description: "Pull agent from cloud",
+        subs: &[],
     },
 ];
 
 pub struct SlashCommand {
     pub name: &'static str,
     pub description: &'static str,
+    pub subs: &'static [SubCommand],
+}
+
+pub struct SubCommand {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub needs_arg: bool,
 }
 
 /// Which screen is active.
@@ -292,6 +326,10 @@ pub struct ChatState {
     pub spinner_tick: usize,
     pub slash_matches: Vec<usize>,
     pub slash_selected: usize,
+    /// When browsing a command's sub-menu, this holds the index into SLASH_COMMANDS.
+    pub active_command: Option<usize>,
+    pub sub_matches: Vec<usize>,
+    pub sub_selected: usize,
     pub scroll_offset: u16,
     pub banner_text: String,
     pub banner_loading: bool,
@@ -308,6 +346,9 @@ impl Default for ChatState {
             spinner_tick: 0,
             slash_matches: Vec::new(),
             slash_selected: 0,
+            active_command: None,
+            sub_matches: Vec::new(),
+            sub_selected: 0,
             scroll_offset: 0,
             banner_text: random_quote().to_string(),
             banner_loading: false,
