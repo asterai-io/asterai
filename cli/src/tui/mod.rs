@@ -48,6 +48,13 @@ async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<Tty>>,
     app: &mut App,
 ) -> eyre::Result<()> {
+    // Fire async CLI version check (non-blocking).
+    let (vtx, vrx) = tokio::sync::oneshot::channel();
+    app.pending_version_check = Some(vrx);
+    tokio::spawn(async move {
+        let ver = ops::fetch_latest_cli_version().await;
+        let _ = vtx.send(ver);
+    });
     let username = ops::check_auth().await;
     match username {
         Some(_username) => {
@@ -72,7 +79,10 @@ async fn run_app(
         if app.should_quit {
             return Ok(());
         }
-        let has_pending = app.pending_response.is_some() || app.pending_banner.is_some();
+        let has_pending = app.pending_response.is_some()
+            || app.pending_banner.is_some()
+            || app.pending_components.is_some()
+            || app.pending_version_check.is_some();
         let ev = match has_pending {
             true => match event::poll(Duration::from_millis(100))? {
                 true => Some(event::read()?),
@@ -91,6 +101,15 @@ async fn run_app(
         if app.pending_banner.is_some() {
             check_pending_banner(app);
         }
+        if app.pending_components.is_some() {
+            check_pending_components(app);
+        }
+        if let Some(rx) = &mut app.pending_version_check {
+            if let Ok(ver) = rx.try_recv() {
+                app.latest_cli_version = ver;
+                app.pending_version_check = None;
+            }
+        }
         let Some(ev) = ev else {
             continue;
         };
@@ -105,6 +124,13 @@ async fn run_app(
             continue;
         }
         views::handle_event(app, ev, terminal).await?;
+        // If we returned to the picker (e.g. Esc from chat), re-discover agents.
+        if let Screen::Picker(state) = &app.screen {
+            if state.loading {
+                terminal.draw(|f| views::render(f, app))?;
+                views::picker::discover_agents(app).await;
+            }
+        }
     }
 }
 
@@ -148,6 +174,42 @@ fn check_pending_response(app: &mut App) {
                     role: app::MessageRole::System,
                     content: "Request was cancelled.".to_string(),
                 });
+            }
+        }
+    }
+}
+
+fn check_pending_components(app: &mut App) {
+    let Some(rx) = &mut app.pending_components else {
+        return;
+    };
+    match rx.try_recv() {
+        Ok(Ok(items)) => {
+            app.pending_components = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.dynamic_loading = false;
+                state.dynamic_items = items;
+                state.dynamic_matches = (0..state.dynamic_items.len()).collect();
+                state.dynamic_selected = 0;
+            }
+        }
+        Ok(Err(e)) => {
+            app.pending_components = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.dynamic_loading = false;
+                state.dynamic_command = None;
+                state.messages.push(app::ChatMessage {
+                    role: app::MessageRole::System,
+                    content: format!("Failed to load components: {e:#}"),
+                });
+            }
+        }
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+            app.pending_components = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.dynamic_loading = false;
+                state.dynamic_command = None;
             }
         }
     }

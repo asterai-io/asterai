@@ -107,6 +107,71 @@ pub async fn pull_env(env_name: &str) -> eyre::Result<()> {
     args.execute(&api, &registry).await
 }
 
+/// Fetch all components from the remote registry.
+/// Returns (namespace, name, latest_version) tuples.
+pub async fn list_remote_components() -> eyre::Result<Vec<(String, String, String)>> {
+    let api_key = Auth::read_stored_api_key()
+        .ok_or_else(|| eyre::eyre!("not authenticated"))?;
+    let (api, _) = endpoints();
+    let components =
+        crate::command::component::list::fetch_remote_components(&api_key, &api).await?;
+    Ok(components
+        .into_iter()
+        .map(|c| (c.namespace, c.name, c.latest_version))
+        .collect())
+}
+
+/// Fetch the latest CLI version from crates.io.
+pub async fn fetch_latest_cli_version() -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct CrateResponse {
+        #[serde(rename = "crate")]
+        krate: CrateInfo,
+    }
+    #[derive(serde::Deserialize)]
+    struct CrateInfo {
+        max_version: String,
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .ok()?;
+    let resp = client
+        .get("https://crates.io/api/v1/crates/asterai")
+        .header("User-Agent", "asterai-cli")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let data: CrateResponse = resp.json().await.ok()?;
+    Some(data.krate.max_version)
+}
+
+/// Delete a local environment (all versions) by namespace and name.
+pub fn delete_local_env(namespace: &str, name: &str) -> eyre::Result<usize> {
+    let ns_dir = crate::config::ARTIFACTS_DIR.join(namespace);
+    if !ns_dir.exists() {
+        return Ok(0);
+    }
+    let prefix = format!("{name}@");
+    let mut removed = 0;
+    for entry in std::fs::read_dir(&ns_dir)? {
+        let entry = entry?;
+        if let Some(fname) = entry.file_name().to_str() {
+            if fname.starts_with(&prefix) {
+                // Only delete if it contains env.toml (is an environment, not a component).
+                if entry.path().join("env.toml").exists() {
+                    std::fs::remove_dir_all(entry.path())?;
+                    removed += 1;
+                }
+            }
+        }
+    }
+    Ok(removed)
+}
+
 fn endpoints() -> (String, String) {
     (API_URL.to_string(), REGISTRY_URL.to_string())
 }

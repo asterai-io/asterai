@@ -1,6 +1,6 @@
 use crate::tui::app::{
-    AgentConfig, App, ChatMessage, ChatState, MessageRole, SLASH_COMMANDS, SPINNER_FRAMES, Screen,
-    resolve_state_dir,
+    AgentConfig, App, ChatMessage, ChatState, CORE_COMPONENTS, DynamicItem, MessageRole,
+    PickerState, SLASH_COMMANDS, SPINNER_FRAMES, Screen, required_env_vars, resolve_state_dir,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -39,12 +39,17 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     f.render_widget(sep, chunks[2]);
     render_input(f, state, chunks[3]);
     // Slash menu renders above the separator, overlaying messages.
+    let has_dynamic = state.dynamic_command.is_some();
     let has_sub_menu = state.active_command.is_some() && !state.sub_matches.is_empty();
     let has_slash = (state.input.starts_with('/') && !state.input.contains(' ') && !state.slash_matches.is_empty())
-        || has_sub_menu;
-    let menu_count = match has_sub_menu {
-        true => state.sub_matches.len(),
-        false => state.slash_matches.len(),
+        || has_sub_menu
+        || has_dynamic;
+    let menu_count = if has_dynamic {
+        if state.dynamic_loading { 1 } else { state.dynamic_matches.len() }
+    } else if has_sub_menu {
+        state.sub_matches.len()
+    } else {
+        state.slash_matches.len()
     };
     let menu_h = match has_slash {
         true => menu_count.min(12) as u16,
@@ -84,19 +89,144 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
         return Ok(());
     }
     let code = key_event.code;
+    // Pre-capture agent tools for remove picker (avoids borrow conflict with screen).
+    let agent_tools: Vec<String> = app
+        .agent
+        .as_ref()
+        .map(|a| a.tools.clone())
+        .unwrap_or_default();
     let Screen::Chat(state) = &mut app.screen else {
         return Ok(());
     };
     if state.waiting {
         return Ok(());
     }
+    let has_dynamic = state.dynamic_command.is_some();
     let has_sub_menu = state.active_command.is_some() && !state.sub_matches.is_empty();
     let has_slash_menu = !state.slash_matches.is_empty() || has_sub_menu;
     match code {
+        // --- Dynamic picker navigation ---
+        KeyCode::Up if has_dynamic && !state.dynamic_loading => {
+            if state.dynamic_selected > 0 {
+                state.dynamic_selected -= 1;
+            } else if !state.dynamic_matches.is_empty() {
+                // At top — confirm selection (same as Enter).
+                let item_idx = state.dynamic_matches[state.dynamic_selected];
+                let item = &state.dynamic_items[item_idx];
+                if item.disabled {
+                    return Ok(());
+                }
+                let cmd = state.dynamic_command.clone().unwrap();
+                let full = format!("/{} {}", cmd, item.value);
+                state.dynamic_items.clear();
+                state.dynamic_matches.clear();
+                state.dynamic_selected = 0;
+                state.dynamic_command = None;
+                state.dynamic_loading = false;
+                state.active_command = None;
+                state.sub_matches.clear();
+                state.sub_selected = 0;
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+                state.input.clear();
+                dispatch_slash(app, &full).await?;
+            }
+        }
+        KeyCode::Down if has_dynamic && !state.dynamic_loading => {
+            if state.dynamic_selected + 1 < state.dynamic_matches.len() {
+                state.dynamic_selected += 1;
+            }
+        }
+        KeyCode::Enter if has_dynamic && !state.dynamic_loading && !state.dynamic_matches.is_empty() => {
+            let item_idx = state.dynamic_matches[state.dynamic_selected];
+            let item = &state.dynamic_items[item_idx];
+            if item.disabled {
+                return Ok(());
+            }
+            let cmd = state.dynamic_command.clone().unwrap();
+            let full = format!("/{} {}", cmd, item.value);
+            // Clear dynamic picker state.
+            state.dynamic_items.clear();
+            state.dynamic_matches.clear();
+            state.dynamic_selected = 0;
+            state.dynamic_command = None;
+            state.dynamic_loading = false;
+            state.active_command = None;
+            state.sub_matches.clear();
+            state.sub_selected = 0;
+            state.slash_matches.clear();
+            state.slash_selected = 0;
+            state.input.clear();
+            dispatch_slash(app, &full).await?;
+        }
+        KeyCode::Char(c) if has_dynamic && !state.dynamic_loading => {
+            state.input.push(c);
+            update_dynamic_filter(state);
+        }
+        KeyCode::Backspace if has_dynamic && !state.dynamic_loading => {
+            state.input.pop();
+            update_dynamic_filter(state);
+        }
+        KeyCode::Esc if has_dynamic => {
+            state.dynamic_items.clear();
+            state.dynamic_matches.clear();
+            state.dynamic_selected = 0;
+            state.dynamic_command = None;
+            state.dynamic_loading = false;
+            state.active_command = None;
+            state.sub_matches.clear();
+            state.sub_selected = 0;
+            state.slash_matches.clear();
+            state.slash_selected = 0;
+            state.input.clear();
+            app.pending_components = None;
+        }
         // --- Sub-menu navigation ---
         KeyCode::Up if has_sub_menu => {
             if state.sub_selected > 0 {
                 state.sub_selected -= 1;
+            } else {
+                // At top — confirm selection (same as Enter/Tab).
+                let cmd_idx = state.active_command.unwrap();
+                let sub_idx = state.sub_matches[state.sub_selected];
+                let sub = &SLASH_COMMANDS[cmd_idx].subs[sub_idx];
+                let cmd_name = SLASH_COMMANDS[cmd_idx].name;
+                if sub.needs_arg && cmd_name == "tools" {
+                    let sub_name = sub.name.to_string();
+                    state.input.clear();
+                    state.active_command = None;
+                    state.sub_matches.clear();
+                    state.sub_selected = 0;
+                    state.slash_matches.clear();
+                    state.slash_selected = 0;
+                    if sub_name == "add" {
+                        state.dynamic_command = Some("tools add".to_string());
+                        state.dynamic_loading = true;
+                        start_component_fetch(app);
+                    } else if sub_name == "remove" {
+                        state.dynamic_command = Some("tools remove".to_string());
+                        state.dynamic_items = build_remove_items(&agent_tools);
+                        state.dynamic_matches =
+                            (0..state.dynamic_items.len()).collect();
+                        state.dynamic_selected = 0;
+                    }
+                } else if sub.needs_arg {
+                    state.input = format!("/{cmd_name} {} ", sub.name);
+                    state.active_command = None;
+                    state.sub_matches.clear();
+                    state.sub_selected = 0;
+                    state.slash_matches.clear();
+                    state.slash_selected = 0;
+                } else {
+                    let full = format!("/{cmd_name} {}", sub.name);
+                    state.active_command = None;
+                    state.sub_matches.clear();
+                    state.sub_selected = 0;
+                    state.slash_matches.clear();
+                    state.slash_selected = 0;
+                    state.input.clear();
+                    dispatch_slash(app, &full).await?;
+                }
             }
         }
         KeyCode::Down if has_sub_menu => {
@@ -109,7 +239,27 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
             let sub_idx = state.sub_matches[state.sub_selected];
             let sub = &SLASH_COMMANDS[cmd_idx].subs[sub_idx];
             let cmd_name = SLASH_COMMANDS[cmd_idx].name;
-            if sub.needs_arg {
+            if sub.needs_arg && cmd_name == "tools" {
+                // Dynamic picker for /tools add and /tools remove.
+                let sub_name = sub.name.to_string();
+                state.input.clear();
+                state.active_command = None;
+                state.sub_matches.clear();
+                state.sub_selected = 0;
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+                if sub_name == "add" {
+                    state.dynamic_command = Some("tools add".to_string());
+                    state.dynamic_loading = true;
+                    start_component_fetch(app);
+                } else if sub_name == "remove" {
+                    state.dynamic_command = Some("tools remove".to_string());
+                    state.dynamic_items = build_remove_items(&agent_tools);
+                    state.dynamic_matches =
+                        (0..state.dynamic_items.len()).collect();
+                    state.dynamic_selected = 0;
+                }
+            } else if sub.needs_arg {
                 // Fill in command + subcommand, let user type the argument.
                 state.input = format!("/{cmd_name} {} ", sub.name);
                 state.active_command = None;
@@ -141,6 +291,25 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
         KeyCode::Up if has_slash_menu => {
             if state.slash_selected > 0 {
                 state.slash_selected -= 1;
+            } else if state.slash_selected < state.slash_matches.len() {
+                // At top — confirm selection (same as Enter/Tab).
+                let cmd_idx = state.slash_matches[state.slash_selected];
+                let cmd = &SLASH_COMMANDS[cmd_idx];
+                if !cmd.subs.is_empty() {
+                    state.input = format!("/{} ", cmd.name);
+                    state.active_command = Some(cmd_idx);
+                    state.sub_matches = (0..cmd.subs.len()).collect();
+                    state.sub_selected = 0;
+                    state.slash_matches.clear();
+                    state.slash_selected = 0;
+                } else {
+                    state.input = format!("/{}", cmd.name);
+                    state.slash_matches.clear();
+                    state.slash_selected = 0;
+                    let input = state.input.clone();
+                    state.input.clear();
+                    dispatch_slash(app, &input).await?;
+                }
             }
         }
         KeyCode::Down if has_slash_menu => {
@@ -174,6 +343,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
         KeyCode::Esc if has_slash_menu => {
             state.slash_matches.clear();
             state.slash_selected = 0;
+            state.input.clear();
         }
         KeyCode::Up if !has_slash_menu => {
             if !state.input_history.is_empty() {
@@ -225,7 +395,24 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
             update_menus(state);
         }
         KeyCode::Esc => {
-            app.should_quit = true;
+            if !state.input.is_empty() {
+                // Clear input first.
+                state.input.clear();
+                state.slash_matches.clear();
+                state.slash_selected = 0;
+            } else {
+                // Empty input — return to agent picker.
+                app.agent = None;
+                app.pending_response = None;
+                app.pending_banner = None;
+                app.pending_components = None;
+                app.screen = Screen::Picker(PickerState {
+                    agents: Vec::new(),
+                    selected: 0,
+                    loading: true,
+                    error: None,
+                });
+            }
         }
         _ => {}
     }
@@ -476,6 +663,69 @@ fn render_input(f: &mut Frame, state: &ChatState, area: Rect) {
 fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
     let max_rows = area.height as usize;
 
+    // Dynamic picker mode: show browsable items.
+    if state.dynamic_command.is_some() {
+        if state.dynamic_loading {
+            let line = Line::from(vec![
+                Span::raw("  "),
+                Span::styled("  Loading...", Style::default().fg(Color::DarkGray).italic()),
+            ]);
+            f.render_widget(Paragraph::new(vec![line]), area);
+            return;
+        }
+        if state.dynamic_matches.is_empty() {
+            let line = Line::from(vec![
+                Span::raw("  "),
+                Span::styled("  (no matches)", Style::default().fg(Color::DarkGray)),
+            ]);
+            f.render_widget(Paragraph::new(vec![line]), area);
+            return;
+        }
+        let skip = state
+            .dynamic_selected
+            .saturating_sub(max_rows.saturating_sub(1));
+        let mut lines: Vec<Line> = Vec::new();
+        for (i, &item_idx) in state
+            .dynamic_matches
+            .iter()
+            .enumerate()
+            .skip(skip)
+            .take(max_rows)
+        {
+            let item = &state.dynamic_items[item_idx];
+            let is_selected = i == state.dynamic_selected;
+            let pointer = match is_selected {
+                true => "▸ ",
+                false => "  ",
+            };
+            let (name_style, desc_style) = if item.disabled {
+                (
+                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(Color::DarkGray),
+                )
+            } else {
+                (
+                    match is_selected {
+                        true => Style::default().fg(Color::Cyan).bold(),
+                        false => Style::default().fg(Color::Cyan),
+                    },
+                    match is_selected {
+                        true => Style::default().fg(Color::White),
+                        false => Style::default().fg(Color::DarkGray),
+                    },
+                )
+            };
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::raw(pointer),
+                Span::styled(format!("{:<20}", item.label), name_style),
+                Span::styled(&item.description, desc_style),
+            ]));
+        }
+        f.render_widget(Paragraph::new(lines), area);
+        return;
+    }
+
     // Sub-menu mode: show sub-options for the active command.
     if let Some(cmd_idx) = state.active_command {
         let cmd = &SLASH_COMMANDS[cmd_idx];
@@ -635,11 +885,15 @@ async fn dispatch_slash(app: &mut App, input: &str) -> eyre::Result<()> {
         "name" | "rename" => cmd_name(app, args),
         "username" | "whoami" => cmd_username(app, args),
         "dir" | "dirs" => cmd_dir(app, args),
-        "status" | "info" => cmd_status(app),
+        "status" | "info" => cmd_status(app).await,
         "banner" => cmd_banner(app, args),
         "push" => cmd_push(app).await,
         "pull" | "sync" => cmd_pull(app).await,
         "config" | "vars" => cmd_config(app, args).await,
+        "quit" | "exit" | "q" => {
+            app.should_quit = true;
+            Ok(())
+        }
         _ => {
             push_system(
                 app,
@@ -730,7 +984,7 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
         .map(|b| &b.tools)
         .cloned()
         .unwrap_or_default();
-    if args.is_empty() {
+    if args.is_empty() || args[0] == "list" {
         let mut msg = String::from("Enabled tools:\n");
         if tools.is_empty() {
             msg.push_str("  (none)");
@@ -768,7 +1022,28 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
                     }
                 }
                 save_tools(app);
-                push_system(app, &format!("+ {component}"));
+                let env_vars = required_env_vars(&component);
+                if env_vars.is_empty() {
+                    push_system(app, &format!("+ {component}"));
+                } else {
+                    // Check which vars are set in the environment.
+                    let data = ops::inspect_environment(&env_name).await.ok().flatten();
+                    let var_values = data.map(|d| d.var_values).unwrap_or_default();
+                    let mut msg = format!("+ {component}\n  Needs:");
+                    let mut any_missing = false;
+                    for var in env_vars {
+                        if var_values.contains_key(*var) {
+                            msg.push_str(&format!("\n  {var} \u{2713}"));
+                        } else {
+                            msg.push_str(&format!("\n  {var} \u{2717} (not set)"));
+                            any_missing = true;
+                        }
+                    }
+                    if any_missing {
+                        msg.push_str("\n  /config set KEY=VALUE");
+                    }
+                    push_system(app, &msg);
+                }
             }
             Err(e) => push_system(app, &format!("Failed to add: {e:#}")),
         }
@@ -980,7 +1255,7 @@ fn cmd_dir(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     Ok(())
 }
 
-fn cmd_status(app: &mut App) -> eyre::Result<()> {
+async fn cmd_status(app: &mut App) -> eyre::Result<()> {
     let Some(agent) = &app.agent else {
         push_system(app, "No active agent.");
         return Ok(());
@@ -997,12 +1272,29 @@ fn cmd_status(app: &mut App) -> eyre::Result<()> {
         agent.provider,
     );
     if !agent.tools.is_empty() {
-        let tool_names: Vec<&str> = agent
-            .tools
-            .iter()
-            .map(|t| t.split(':').next_back().unwrap_or(t))
-            .collect();
-        msg.push_str(&format!("\n  Tools:       {}", tool_names.join(", ")));
+        // Fetch env var values for status display.
+        let data = ops::inspect_environment(&agent.env_name).await.ok().flatten();
+        let var_values = data.map(|d| d.var_values).unwrap_or_default();
+        msg.push_str("\n  Tools:");
+        for tool in &agent.tools {
+            let short = tool.split(':').next_back().unwrap_or(tool);
+            let env_vars = required_env_vars(tool);
+            if env_vars.is_empty() {
+                msg.push_str(&format!("\n    {short}"));
+            } else {
+                let statuses: Vec<String> = env_vars
+                    .iter()
+                    .map(|v| {
+                        if var_values.contains_key(*v) {
+                            format!("{v} \u{2713}")
+                        } else {
+                            format!("{v} \u{2717}")
+                        }
+                    })
+                    .collect();
+                msg.push_str(&format!("\n    {:<16} {}", short, statuses.join(", ")));
+            }
+        }
     }
     if !agent.allowed_dirs.is_empty() {
         msg.push_str(&format!(
@@ -1096,6 +1388,88 @@ fn save_allowed_dirs(app: &App) {
     let Some(agent) = &app.agent else { return };
     let value = agent.allowed_dirs.join(",");
     let _ = ops::set_var(&agent.env_name, "ASTERBOT_ALLOWED_DIRS", &value);
+}
+
+fn start_component_fetch(app: &mut App) {
+    let installed: Vec<String> = app
+        .agent
+        .as_ref()
+        .map(|a| {
+            a.tools
+                .iter()
+                .map(|t| t.split('@').next().unwrap_or(t).to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.pending_components = Some(rx);
+    tokio::spawn(async move {
+        let result = ops::list_remote_components().await.map(|components| {
+            components
+                .into_iter()
+                .filter(|(ns, name, _)| {
+                    let ref_str = format!("{ns}:{name}");
+                    !installed.contains(&ref_str)
+                })
+                .map(|(ns, name, _ver)| DynamicItem {
+                    value: format!("{ns}:{name}"),
+                    label: name,
+                    description: ns,
+                    disabled: false,
+                })
+                .collect()
+        });
+        let _ = tx.send(result);
+    });
+}
+
+/// Build the DynamicItem list for /tools remove: core components (disabled) + user tools.
+fn build_remove_items(tools: &[String]) -> Vec<DynamicItem> {
+    let mut items: Vec<DynamicItem> = CORE_COMPONENTS
+        .iter()
+        .map(|c| {
+            let label = c.split(':').next_back().unwrap_or(c).to_string();
+            let ns = c.split(':').next().unwrap_or("").to_string();
+            DynamicItem {
+                value: c.to_string(),
+                label,
+                description: format!("{ns} (core)"),
+                disabled: true,
+            }
+        })
+        .collect();
+    for t in tools {
+        let label = t.split(':').next_back().unwrap_or(t).to_string();
+        let ns = t.split(':').next().unwrap_or("").to_string();
+        items.push(DynamicItem {
+            value: t.clone(),
+            label,
+            description: ns,
+            disabled: false,
+        });
+    }
+    items
+}
+
+fn update_dynamic_filter(state: &mut ChatState) {
+    let filter = state.input.to_lowercase();
+    if filter.is_empty() {
+        state.dynamic_matches = (0..state.dynamic_items.len()).collect();
+    } else {
+        state.dynamic_matches = state
+            .dynamic_items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| {
+                item.label.to_lowercase().contains(&filter)
+                    || item.value.to_lowercase().contains(&filter)
+            })
+            .map(|(i, _)| i)
+            .collect();
+    }
+    state.dynamic_selected = state
+        .dynamic_selected
+        .min(state.dynamic_matches.len().saturating_sub(1));
 }
 
 /// Simple word-wrap for banner text.

@@ -1,3 +1,4 @@
+use crate::artifact::ArtifactSyncTag;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -82,6 +83,14 @@ pub const PROVIDERS: &[Provider] = &[
     ),
 ];
 
+#[derive(Debug, Clone)]
+pub struct DynamicItem {
+    pub value: String,
+    pub label: String,
+    pub description: String,
+    pub disabled: bool,
+}
+
 pub const CORE_COMPONENTS: &[&str] = &[
     "asterbot:agent",
     "asterbot:core",
@@ -90,6 +99,42 @@ pub const CORE_COMPONENTS: &[&str] = &[
 ];
 
 pub const DEFAULT_TOOLS: &[&str] = &["asterbot:soul", "asterbot:memory", "asterbot:skills"];
+
+/// Maps tool short names to the environment variables they require.
+pub const TOOL_ENV_VARS: &[(&str, &[&str])] = &[
+    ("anthropic", &["ANTHROPIC_API_KEY"]),
+    ("openai", &["OPENAI_API_KEY"]),
+    ("google-gemini", &["GOOGLE_API_KEY"]),
+    ("mistral", &["MISTRAL_API_KEY"]),
+    ("perplexity", &["PERPLEXITY_API_KEY"]),
+    ("deepseek", &["DEEPSEEK_API_KEY"]),
+    ("openrouter", &["OPENROUTER_API_KEY"]),
+    ("xai", &["XAI_API_KEY"]),
+    ("huggingface", &["HF_API_TOKEN"]),
+    ("slack", &["SLACK_BOT_TOKEN"]),
+    ("telegram", &["TELEGRAM_BOT_TOKEN"]),
+    ("twitter", &["TWITTER_BEARER_TOKEN"]),
+    ("github", &["GITHUB_TOKEN"]),
+    ("notion", &["NOTION_API_KEY"]),
+    ("trello", &["TRELLO_API_KEY", "TRELLO_TOKEN"]),
+    ("home-assistant", &["HA_URL", "HA_ACCESS_TOKEN"]),
+    ("spotify", &["SPOTIFY_ACCESS_TOKEN"]),
+    ("image-gen", &["OPENAI_API_KEY"]),
+    ("email", &["SENDGRID_API_KEY"]),
+    ("gif-search", &["GIPHY_API_KEY"]),
+    ("firecrawl", &["FIRECRAWL_API_KEY"]),
+    ("rocketchat-listener", &["RC_URL", "RC_USER", "RC_PASSWORD"]),
+];
+
+/// Get required env vars for a tool by its short or full name.
+pub fn required_env_vars(tool: &str) -> &'static [&'static str] {
+    let short = tool.split(':').next_back().unwrap_or(tool);
+    TOOL_ENV_VARS
+        .iter()
+        .find(|(name, _)| *name == short)
+        .map(|(_, vars)| *vars)
+        .unwrap_or(&[])
+}
 
 pub const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
@@ -167,6 +212,11 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Pull agent from cloud",
         subs: &[],
     },
+    SlashCommand {
+        name: "quit",
+        description: "Exit the application",
+        subs: &[],
+    },
 ];
 
 pub struct SlashCommand {
@@ -242,8 +292,12 @@ pub struct AgentEntry {
     pub component_count: usize,
     pub bot_name: String,
     pub model: Option<String>,
-    pub is_remote: bool,
+    pub sync_tag: ArtifactSyncTag,
+    pub local_version: Option<String>,
+    pub remote_version: Option<String>,
 }
+
+pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct App {
     pub screen: Screen,
@@ -251,6 +305,10 @@ pub struct App {
     pub agent: Option<AgentConfig>,
     pub pending_response: Option<tokio::sync::oneshot::Receiver<eyre::Result<Option<String>>>>,
     pub pending_banner: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
+    pub pending_components: Option<tokio::sync::oneshot::Receiver<eyre::Result<Vec<DynamicItem>>>>,
+    /// Latest CLI version from crates.io (None = not yet checked).
+    pub latest_cli_version: Option<String>,
+    pub pending_version_check: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
 }
 
 impl Default for App {
@@ -261,6 +319,9 @@ impl Default for App {
             agent: None,
             pending_response: None,
             pending_banner: None,
+            pending_components: None,
+            latest_cli_version: None,
+            pending_version_check: None,
         }
     }
 }
@@ -333,6 +394,12 @@ pub struct ChatState {
     pub scroll_offset: u16,
     pub banner_text: String,
     pub banner_loading: bool,
+    /// Dynamic picker (third-level menu for browsable item selection).
+    pub dynamic_items: Vec<DynamicItem>,
+    pub dynamic_matches: Vec<usize>,
+    pub dynamic_selected: usize,
+    pub dynamic_loading: bool,
+    pub dynamic_command: Option<String>,
 }
 
 impl Default for ChatState {
@@ -352,6 +419,11 @@ impl Default for ChatState {
             scroll_offset: 0,
             banner_text: random_quote().to_string(),
             banner_loading: false,
+            dynamic_items: Vec::new(),
+            dynamic_matches: Vec::new(),
+            dynamic_selected: 0,
+            dynamic_loading: false,
+            dynamic_command: None,
         }
     }
 }

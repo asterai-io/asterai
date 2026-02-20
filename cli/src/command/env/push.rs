@@ -145,6 +145,19 @@ impl PushArgs {
             );
         }
 
+        // Save the new version locally so sync indicators stay accurate.
+        let old_dir = LocalStore::environment_dir(&environment);
+        let mut environment = environment;
+        environment.metadata.namespace = result.namespace;
+        environment.metadata.version = result.version;
+        LocalStore::write_environment(&environment)
+            .wrap_err("failed to save updated environment locally")?;
+        // Remove old directory if it differs from the new one.
+        let new_dir = LocalStore::environment_dir(&environment);
+        if old_dir != new_dir {
+            let _ = std::fs::remove_dir_all(&old_dir);
+        }
+
         Ok(())
     }
 }

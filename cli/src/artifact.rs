@@ -6,8 +6,10 @@ use strum_macros::{Display, EnumString};
 pub enum ArtifactSyncTag {
     /// Exists locally but not pushed to remote.
     Unpushed,
-    /// Exists both locally and on remote.
+    /// Exists both locally and on remote at the same version.
     Synced,
+    /// Exists locally but remote has a newer version.
+    Behind,
     /// Exists only on remote, not cached locally.
     Remote,
 }
