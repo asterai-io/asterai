@@ -8,6 +8,7 @@ use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use std::collections::HashMap;
 
 pub fn render(f: &mut Frame, state: &PickerState) {
     let area = f.area();
@@ -40,6 +41,11 @@ pub fn render(f: &mut Frame, state: &PickerState) {
     )]));
     f.render_widget(header, chunks[0]);
     let total = state.agents.len() + 1;
+    // Detect duplicate bot_names so we can disambiguate with env name.
+    let mut name_counts: HashMap<&str, usize> = HashMap::new();
+    for agent in &state.agents {
+        *name_counts.entry(&agent.bot_name).or_insert(0) += 1;
+    }
     let mut items: Vec<ListItem> = Vec::with_capacity(total);
     for (i, agent) in state.agents.iter().enumerate() {
         let is_selected = i == state.selected;
@@ -57,11 +63,16 @@ pub fn render(f: &mut Frame, state: &PickerState) {
                     n => Box::leak(format!("{n} components").into_boxed_str()),
                 }),
         };
+        let display_name = if name_counts.get(agent.bot_name.as_str()).copied().unwrap_or(0) > 1 {
+            format!("{} ({})", agent.bot_name, agent.name)
+        } else {
+            agent.bot_name.clone()
+        };
         let line = Line::from(vec![
             Span::raw(pointer),
             Span::styled(format!("{}. ", i + 1), Style::default().fg(Color::DarkGray)),
             Span::styled(
-                &agent.bot_name,
+                display_name,
                 match is_selected {
                     true => Style::default().fg(Color::Cyan).bold(),
                     false => Style::default(),
