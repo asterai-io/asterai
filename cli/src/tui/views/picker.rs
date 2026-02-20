@@ -13,38 +13,8 @@ use std::collections::HashMap;
 pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
     let area = f.area();
 
-    // Build title with CLI version.
-    let mut title_spans = vec![
-        Span::raw(" asterai agents "),
-        Span::styled(
-            format!("v{CLI_VERSION}"),
-            Style::default().fg(Color::DarkGray),
-        ),
-    ];
-    // Show update badge if a newer version is available.
-    if let Some(latest) = &app.latest_cli_version {
-        if latest.as_str() != CLI_VERSION {
-            // Compare semver: only show if latest > current.
-            let show = match (
-                semver::Version::parse(CLI_VERSION),
-                semver::Version::parse(latest),
-            ) {
-                (Ok(cur), Ok(lat)) => lat > cur,
-                _ => latest.as_str() != CLI_VERSION,
-            };
-            if show {
-                title_spans.push(Span::raw(" "));
-                title_spans.push(Span::styled(
-                    format!("update available: v{latest}"),
-                    Style::default().fg(Color::Yellow).bold(),
-                ));
-            }
-        }
-    }
-    title_spans.push(Span::raw(" "));
-
     let block = Block::default()
-        .title(Line::from(title_spans))
+        .title(" asterai agents ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
     let inner = block.inner(area);
@@ -62,6 +32,7 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
         .margin(1)
         .constraints([
             Constraint::Min(1),
+            Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
         ])
@@ -222,6 +193,31 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
         }
     };
     f.render_widget(Paragraph::new(footer_text), chunks[2]);
+
+    // Version line at bottom.
+    let mut ver_spans = vec![Span::styled(
+        format!("v{CLI_VERSION}"),
+        Style::default().fg(Color::DarkGray),
+    )];
+    if let Some(latest) = &app.latest_cli_version {
+        let show = match (
+            semver::Version::parse(CLI_VERSION),
+            semver::Version::parse(latest),
+        ) {
+            (Ok(cur), Ok(lat)) => lat > cur,
+            _ => latest.as_str() != CLI_VERSION,
+        };
+        if show {
+            ver_spans.push(Span::styled(
+                format!("  update available: v{latest}"),
+                Style::default().fg(Color::Yellow).bold(),
+            ));
+        }
+    }
+    f.render_widget(
+        Paragraph::new(Line::from(ver_spans)).alignment(Alignment::Right),
+        chunks[3],
+    );
 }
 
 pub async fn handle_event(
