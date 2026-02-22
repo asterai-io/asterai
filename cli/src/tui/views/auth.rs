@@ -8,10 +8,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 pub fn render(f: &mut Frame, state: &AuthState) {
     let has_error = matches!(state, AuthState::NeedLogin { error: Some(_), .. });
-    let height = match has_error {
-        true => 14,
-        false => 12,
-    };
+    let height = if has_error { 14 } else { 12 };
     let area = centered_rect(60, height, f.area());
     let block = Block::default()
         .title(" asterai agents ")
@@ -97,10 +94,7 @@ pub async fn handle_event(
         return Ok(());
     }
     // Ignore Ctrl+key combos (e.g. Ctrl+V) to avoid stray characters.
-    if key_event
-        .modifiers
-        .contains(crossterm::event::KeyModifiers::CONTROL)
-    {
+    if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
         return Ok(());
     }
     let code = key_event.code;
@@ -126,14 +120,9 @@ pub async fn handle_event(
                 terminal.draw(|f| super::render(f, app))?;
                 match ops::login(&key).await {
                     Ok(_) => {
-                        app.screen = Screen::Picker(PickerState {
-                            error: None,
-                            agents: Vec::new(),
-                            selected: 0,
-                            loading: true,
-                        });
+                        app.screen = Screen::Picker(PickerState::loading(0));
                         terminal.draw(|f| super::render(f, app))?;
-                        picker::discover_agents(app).await;
+                        picker::discover_agents(app);
                     }
                     Err(e) => {
                         let msg = format!("{e:#}");

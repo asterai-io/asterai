@@ -8,16 +8,16 @@ use std::collections::HashSet;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ListComponentsResponse {
-    components: Vec<ComponentSummary>,
+pub(crate) struct ListComponentsResponse {
+    pub components: Vec<ComponentSummary>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ComponentSummary {
-    namespace: String,
-    name: String,
-    latest_version: String,
+pub(crate) struct ComponentSummary {
+    pub namespace: String,
+    pub name: String,
+    pub latest_version: String,
 }
 
 impl ComponentArgs {
@@ -89,7 +89,7 @@ impl ComponentArgs {
     }
 }
 
-async fn fetch_remote_components(
+pub(crate) async fn fetch_remote_components(
     api_key: &str,
     api_url: &str,
 ) -> eyre::Result<Vec<ComponentSummary>> {
