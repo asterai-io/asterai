@@ -1,10 +1,12 @@
 use crate::artifact::ArtifactSyncTag;
+use crate::command::env::list::EnvListEntry;
 use asterai_runtime::runtime::ComponentRuntime;
 use ratatui::prelude::*;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, oneshot};
 
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -349,19 +351,17 @@ pub struct App {
     pub screen: Screen,
     pub should_quit: bool,
     pub agent: Option<AgentConfig>,
-    pub pending_response: Option<tokio::sync::oneshot::Receiver<eyre::Result<Option<String>>>>,
-    pub pending_banner: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
-    pub pending_components: Option<tokio::sync::oneshot::Receiver<eyre::Result<Vec<DynamicItem>>>>,
+    pub pending_response: Option<oneshot::Receiver<eyre::Result<Option<String>>>>,
+    pub pending_banner: Option<oneshot::Receiver<Option<String>>>,
+    pub pending_components: Option<oneshot::Receiver<eyre::Result<Vec<DynamicItem>>>>,
     /// Latest CLI version from crates.io (None = not yet checked).
     pub latest_cli_version: Option<String>,
-    pub pending_version_check: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
-    pub pending_sync:
-        Option<tokio::sync::oneshot::Receiver<Vec<crate::command::env::list::EnvListEntry>>>,
-    pub pending_env_check:
-        Option<tokio::sync::oneshot::Receiver<std::collections::HashMap<String, bool>>>,
+    pub pending_version_check: Option<oneshot::Receiver<Option<String>>>,
+    pub pending_sync: Option<oneshot::Receiver<Vec<EnvListEntry>>>,
+    pub pending_env_check: Option<oneshot::Receiver<HashMap<String, bool>>>,
     pub saved_picker: Option<Vec<AgentEntry>>,
     pub runtime: Option<Arc<Mutex<ComponentRuntime>>>,
-    pub pending_runtime: Option<tokio::sync::oneshot::Receiver<eyre::Result<ComponentRuntime>>>,
+    pub pending_runtime: Option<oneshot::Receiver<eyre::Result<ComponentRuntime>>>,
 }
 
 impl Default for App {
