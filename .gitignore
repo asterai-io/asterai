@@ -2,6 +2,3 @@
 target/
 cli_legacy/
 CLAUDE.md
-claude-code-reference.md
-cli.js
-sdk-tools.d.ts
