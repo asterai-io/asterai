@@ -24,25 +24,22 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     // Compute input box height based on visual wrap lines.
     // Inner width = total width - 2 (left/right borders).
     let inner_w = area.width.saturating_sub(2) as usize;
-    let input_text = if state.has_env_prompt() {
-        &state.env_prompt_input
-    } else {
-        &state.input
+    let input_text = match state.has_env_prompt() {
+        true => &state.env_prompt_input,
+        false => &state.input,
     };
-    let prefix_len = if state.has_env_prompt() {
-        state
+    let prefix_len = match state.has_env_prompt() {
+        true => state
             .env_prompt_vars
             .get(state.env_prompt_idx)
             .map(|v| v.len() + 1) // "VAR="
-            .unwrap_or(0)
-    } else {
-        2 // "> "
+            .unwrap_or(0),
+        false => 2, // "> "
     };
     let content_len = prefix_len + input_text.len() + 1; // +1 for cursor
-    let visual_lines = if inner_w > 0 {
-        content_len.div_ceil(inner_w).max(1) as u16
-    } else {
-        1
+    let visual_lines = match inner_w > 0 {
+        true => content_len.div_ceil(inner_w).max(1) as u16,
+        false => 1,
     };
     let input_h = (visual_lines + 2).max(3); // +2 for top/bottom borders
     let chunks = Layout::default()
@@ -90,16 +87,13 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
         && !state.slash_matches.is_empty())
         || has_sub_menu
         || has_dynamic;
-    let menu_count = if has_dynamic {
-        if state.dynamic_loading {
-            1
-        } else {
-            state.dynamic_matches.len()
-        }
-    } else if has_sub_menu {
-        state.sub_matches.len()
-    } else {
-        state.slash_matches.len()
+    let menu_count = match (has_dynamic, has_sub_menu) {
+        (true, _) => match state.dynamic_loading {
+            true => 1,
+            false => state.dynamic_matches.len(),
+        },
+        (false, true) => state.sub_matches.len(),
+        (false, false) => state.slash_matches.len(),
     };
     let content_h = match has_slash {
         true => menu_count as u16,
@@ -601,10 +595,9 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
         let mut line_spans: Vec<Span> = Vec::new();
         let mut line_len: usize = 0;
         for (i, (name, style)) in tool_spans.iter().enumerate() {
-            let needed = if i == 0 || line_len == 0 {
-                name.len()
-            } else {
-                sep.len() + name.len()
+            let needed = match i == 0 || line_len == 0 {
+                true => name.len(),
+                false => sep.len() + name.len(),
             };
             if line_len > 0 && line_len + needed > tool_max {
                 // Flush current line.
@@ -747,15 +740,13 @@ fn render_input(f: &mut Frame, state: &ChatState, area: Rect) {
         let var_name = &state.env_prompt_vars[state.env_prompt_idx];
         let remaining = state.env_prompt_vars.len() - state.env_prompt_idx;
         let ghost = Style::default().fg(Color::Rgb(60, 60, 70));
-        let hint_text = if remaining > 1 {
-            format!("  ({remaining} remaining, Esc to skip)")
-        } else {
-            "  (Esc to skip)".to_string()
+        let hint_text = match remaining > 1 {
+            true => format!("  ({remaining} remaining, Esc to skip)"),
+            false => "  (Esc to skip)".to_string(),
         };
-        let placeholder = if state.env_prompt_input.is_empty() {
-            "paste your API key here"
-        } else {
-            ""
+        let placeholder = match state.env_prompt_input.is_empty() {
+            true => "paste your API key here",
+            false => "",
         };
         let mut spans: Vec<Span<'static>> = vec![
             Span::styled(
@@ -984,10 +975,9 @@ fn render_info_overlay(f: &mut Frame, state: &ChatState, area: Rect) {
     let content = Paragraph::new(lines.clone()).scroll((scroll, 0));
     f.render_widget(content, inner);
     // Show dismiss hint on the bottom border.
-    let hint = if total_lines > inner.height {
-        " ↑↓ scroll · any key to close "
-    } else {
-        " any key to close "
+    let hint = match total_lines > inner.height {
+        true => " ↑↓ scroll · any key to close ",
+        false => " any key to close ",
     };
     let hint_w = hint.len() as u16;
     if hint_w + 2 < overlay.width {
@@ -1390,11 +1380,12 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
     let env_name = agent.env_name.clone();
     if args[0] == "add" && args.len() > 1 {
         // Auto-prepend user namespace if missing (e.g. "trello" → "seadog:trello").
-        let component = if args[1].contains(':') {
-            args[1].to_string()
-        } else {
-            let ns = crate::auth::Auth::read_user_or_fallback_namespace();
-            format!("{ns}:{}", args[1])
+        let component = match args[1].contains(':') {
+            true => args[1].to_string(),
+            false => {
+                let ns = crate::auth::Auth::read_user_or_fallback_namespace();
+                format!("{ns}:{}", args[1])
+            }
         };
         match ops::add_component(&env_name, &component).await {
             Ok(_) => {
@@ -1968,10 +1959,9 @@ fn build_model_items(current_model: Option<&str>) -> Vec<DynamicItem> {
     for &(provider_name, _key, models) in PROVIDERS {
         for &(model_id, model_label) in models {
             let is_current = current_model == Some(model_id);
-            let label = if is_current {
-                format!("{model_label} *")
-            } else {
-                model_label.to_string()
+            let label = match is_current {
+                true => format!("{model_label} *"),
+                false => model_label.to_string(),
             };
             items.push(DynamicItem {
                 value: model_id.to_string(),
