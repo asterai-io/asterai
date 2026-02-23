@@ -571,10 +571,7 @@ impl Default for ChatState {
 
 /// Resolve the state directory for an agent.
 pub fn resolve_state_dir(env_name: &str) -> PathBuf {
-    dirs::home_dir()
-        .expect("could not determine home directory")
-        .join(".asterai-agents")
-        .join(env_name)
+    crate::config::BASE_DIR.join("agents").join(env_name)
 }
 
 /// Default user display name: asterai namespace, falling back to OS username.
