@@ -7,10 +7,19 @@ use crate::command::env::list::{EnvListEntry, deduplicate_local_envs};
 use crate::command::env::pull::PullArgs;
 use crate::command::env::push::PushArgs;
 use crate::command::env::set_var::SetVarArgs;
+use crate::command::resource_or_id::ResourceOrIdArg;
 use crate::config::{API_URL, REGISTRY_URL};
 use crate::local_store::LocalStore;
+use crate::runtime::build_runtime;
 use crate::tui::app::{AgentConfig, resolve_state_dir};
+use asterai_runtime::component::ComponentId;
+use asterai_runtime::component::function_name::ComponentFunctionName;
+use asterai_runtime::runtime::parsing::ValExt;
+use asterai_runtime::runtime::{ComponentRuntime, Val};
 use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Check if logged in. Returns username slug or None.
 pub async fn check_auth() -> Option<String> {
@@ -190,6 +199,46 @@ pub fn delete_local_env(namespace: &str, name: &str) -> eyre::Result<usize> {
         }
     }
     Ok(removed)
+}
+
+/// Build a ComponentRuntime for an agent, ready to reuse across calls.
+pub async fn build_agent_runtime(agent: &AgentConfig) -> eyre::Result<ComponentRuntime> {
+    let state_dir = resolve_state_dir(&agent.env_name);
+    let mut allow_dirs: Vec<PathBuf> = vec![state_dir];
+    for dir in &agent.allowed_dirs {
+        allow_dirs.push(PathBuf::from(dir));
+    }
+    let resource_id_str = ResourceOrIdArg::from_str(&agent.env_name)
+        .unwrap()
+        .with_local_namespace_fallback();
+    let resource_id = asterai_runtime::resource::ResourceId::from_str(&resource_id_str)?;
+    let environment = LocalStore::fetch_environment(&resource_id)?;
+    build_runtime(environment, &allow_dirs).await
+}
+
+/// Call the converse function using a cached runtime.
+pub async fn call_with_runtime(
+    runtime: Arc<Mutex<ComponentRuntime>>,
+    message: &str,
+) -> eyre::Result<Option<String>> {
+    let comp_id = ComponentId::from_str("asterbot:agent")?;
+    let function_name = ComponentFunctionName::new(Some("agent".to_owned()), "converse".to_owned());
+    let mut rt = runtime.lock().await;
+    let function = rt
+        .find_function(&comp_id, &function_name, None)?
+        .ok_or_else(|| eyre::eyre!("converse function not found"))?;
+    let input = Val::String(message.into());
+    let output_opt = rt.call_function(function, &[input]).await?;
+    if let Some(output) = output_opt
+        && let Some(function_output) = output.function_output_opt
+    {
+        let json = function_output.value.val.try_into_json_value();
+        return Ok(json.map(|j| match j {
+            serde_json::Value::String(s) => s,
+            other => other.to_string(),
+        }));
+    }
+    Ok(None)
 }
 
 fn endpoints() -> (String, String) {

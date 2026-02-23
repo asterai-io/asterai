@@ -456,6 +456,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
             } else {
                 // Empty input — return to agent picker.
                 app.agent = None;
+                app.runtime = None;
                 app.pending_response = None;
                 app.pending_banner = None;
                 app.pending_components = None;
@@ -466,6 +467,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                         selected: 0,
                         loading: false,
                         error: None,
+                        spinner_tick: 0,
                     });
                 } else {
                     app.screen = Screen::Picker(PickerState::loading(0));
@@ -731,8 +733,8 @@ fn render_messages(f: &mut Frame, state: &ChatState, env_name: &str, area: Rect)
 }
 
 fn render_input(f: &mut Frame, state: &ChatState, area: Rect) {
-    // Blinking cursor: visible on even ticks, hidden on odd.
-    let cursor_visible = state.spinner_tick.is_multiple_of(2);
+    // Blinking cursor: toggle every ~500ms (5 ticks at 100ms).
+    let cursor_visible = (state.spinner_tick / 5).is_multiple_of(2);
     let cursor_ch = match cursor_visible {
         true => "_",
         false => " ",
@@ -1062,14 +1064,14 @@ fn send_message(app: &mut App, input: &str) {
         styled_lines: None,
     });
     state.waiting = true;
-    let agent = app.agent.clone();
+    let runtime = app.runtime.clone();
     let message = input.to_string();
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.pending_response = Some(rx);
     tokio::spawn(async move {
-        let result = match agent {
-            Some(a) => {
-                match tokio::task::spawn(async move { ops::call_converse(&message, &a).await })
+        let result = match runtime {
+            Some(rt) => {
+                match tokio::task::spawn(async move { ops::call_with_runtime(rt, &message).await })
                     .await
                 {
                     Ok(r) => r,
@@ -1086,7 +1088,7 @@ fn send_message(app: &mut App, input: &str) {
                     }
                 }
             }
-            None => Err(eyre::eyre!("no active agent")),
+            None => Err(eyre::eyre!("no active runtime")),
         };
         let _ = tx.send(result);
     });

@@ -1,7 +1,10 @@
 use crate::artifact::ArtifactSyncTag;
+use asterai_runtime::runtime::ComponentRuntime;
 use ratatui::prelude::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
 
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -357,6 +360,8 @@ pub struct App {
     pub pending_env_check:
         Option<tokio::sync::oneshot::Receiver<std::collections::HashMap<String, bool>>>,
     pub saved_picker: Option<Vec<AgentEntry>>,
+    pub runtime: Option<Arc<Mutex<ComponentRuntime>>>,
+    pub pending_runtime: Option<tokio::sync::oneshot::Receiver<eyre::Result<ComponentRuntime>>>,
 }
 
 impl Default for App {
@@ -373,6 +378,8 @@ impl Default for App {
             pending_sync: None,
             pending_env_check: None,
             saved_picker: None,
+            runtime: None,
+            pending_runtime: None,
         }
     }
 }
@@ -401,6 +408,7 @@ pub struct PickerState {
     pub selected: usize,
     pub loading: bool,
     pub error: Option<String>,
+    pub spinner_tick: usize,
 }
 
 impl PickerState {
@@ -410,6 +418,7 @@ impl PickerState {
             selected,
             loading: true,
             error: None,
+            spinner_tick: 0,
         }
     }
 }

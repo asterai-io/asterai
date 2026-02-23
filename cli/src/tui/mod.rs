@@ -91,12 +91,13 @@ async fn run_app(
             || app.pending_components.is_some()
             || app.pending_version_check.is_some()
             || app.pending_sync.is_some()
-            || app.pending_env_check.is_some();
+            || app.pending_env_check.is_some()
+            || app.pending_runtime.is_some();
         // Always poll with timeout so the cursor blink can advance.
         let is_chat = matches!(&app.screen, Screen::Chat(_));
         let needs_poll = has_pending || is_chat;
         let ev = match needs_poll {
-            true => match event::poll(Duration::from_millis(500))? {
+            true => match event::poll(Duration::from_millis(100))? {
                 true => Some(event::read()?),
                 false => None,
             },
@@ -105,11 +106,17 @@ async fn run_app(
         if app.pending_response.is_some() {
             check_pending_response(app);
         }
-        // Tick chat spinner (cursor blink + waiting animation).
-        if ev.is_none()
-            && let Screen::Chat(state) = &mut app.screen
-        {
-            state.spinner_tick = state.spinner_tick.wrapping_add(1);
+        // Tick spinners on timeout (no user event).
+        if ev.is_none() {
+            match &mut app.screen {
+                Screen::Chat(state) => {
+                    state.spinner_tick = state.spinner_tick.wrapping_add(1);
+                }
+                Screen::Picker(state) => {
+                    state.spinner_tick = state.spinner_tick.wrapping_add(1);
+                }
+                _ => {}
+            }
         }
         if app.pending_banner.is_some() {
             check_pending_banner(app);
@@ -141,6 +148,32 @@ async fn run_app(
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
                     app.pending_env_check = None;
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(rx) = &mut app.pending_runtime {
+            match rx.try_recv() {
+                Ok(Ok(rt)) => {
+                    app.pending_runtime = None;
+                    app.runtime = Some(std::sync::Arc::new(tokio::sync::Mutex::new(rt)));
+                    app.screen = Screen::Chat(Box::default());
+                    views::chat::start_banner_fetch(app);
+                    views::chat::start_env_check(app);
+                }
+                Ok(Err(e)) => {
+                    app.pending_runtime = None;
+                    app.agent = None;
+                    if let Screen::Picker(state) = &mut app.screen {
+                        state.error = Some(format!("Failed to load: {e}"));
+                    }
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    app.pending_runtime = None;
+                    app.agent = None;
+                    if let Screen::Picker(state) = &mut app.screen {
+                        state.error = Some("Runtime build cancelled.".to_string());
+                    }
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
             }

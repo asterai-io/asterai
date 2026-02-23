@@ -1,8 +1,8 @@
 use crate::artifact::ArtifactSyncTag;
 use crate::tui::Tty;
 use crate::tui::app::{
-    AgentConfig, AgentEntry, App, CLI_VERSION, CORE_COMPONENTS, PickerState, Screen, SetupState,
-    default_user_name, resolve_state_dir,
+    AgentConfig, AgentEntry, App, CLI_VERSION, CORE_COMPONENTS, PickerState, SPINNER_FRAMES,
+    Screen, SetupState, default_user_name, resolve_state_dir,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -204,6 +204,13 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
 
     // Footer.
     let footer_text = match &state.error {
+        Some(msg) if msg.ends_with("...") => {
+            let frame = SPINNER_FRAMES[state.spinner_tick % SPINNER_FRAMES.len()];
+            Line::from(vec![
+                Span::styled(format!("{frame} "), Style::default().fg(Color::Cyan)),
+                Span::styled(msg.as_str(), Style::default().fg(Color::White)),
+            ])
+        }
         Some(err) => Line::from(Span::styled(err.as_str(), Style::default().fg(Color::Red))),
         None => {
             let sel = state.selected;
@@ -238,6 +245,10 @@ pub async fn handle_event(
     let Screen::Picker(state) = &mut app.screen else {
         return Ok(());
     };
+    // Ignore input while runtime is loading.
+    if app.pending_runtime.is_some() {
+        return Ok(());
+    }
     state.error = None;
     let total = state.agents.len() + 1;
     match code {
@@ -390,6 +401,7 @@ pub fn discover_agents(app: &mut App) {
         selected,
         loading: false,
         error: None,
+        spinner_tick: 0,
     });
 
     // Background remote sync (network call).
@@ -501,13 +513,18 @@ async fn resolve_and_enter_chat(
         banner_mode,
     };
     // Save picker state for instant restore on Esc from chat.
-    if let Screen::Picker(state) = &app.screen {
+    if let Screen::Picker(state) = &mut app.screen {
         app.saved_picker = Some(state.agents.clone());
+        state.error = Some(format!("Loading {}...", agent.name));
     }
-    app.agent = Some(config);
-    app.screen = Screen::Chat(Box::default());
-    super::chat::start_banner_fetch(app);
-    super::chat::start_env_check(app);
+    app.agent = Some(config.clone());
+    // Spawn runtime build in background so the spinner can animate.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.pending_runtime = Some(rx);
+    tokio::spawn(async move {
+        let result = ops::build_agent_runtime(&config).await;
+        let _ = tx.send(result);
+    });
     Ok(())
 }
 
