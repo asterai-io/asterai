@@ -1,4 +1,4 @@
-use crate::artifact::ArtifactSyncTag;
+use crate::artifact::{ArtifactSummary, ArtifactSyncTag};
 use crate::auth::Auth;
 use crate::command::auth::validate_api_key;
 use crate::command::env::EnvArgs;
@@ -167,8 +167,7 @@ pub async fn pull_env(env_name: &str) -> eyre::Result<()> {
 pub async fn list_remote_components() -> eyre::Result<Vec<(String, String, String)>> {
     let api_key = Auth::read_stored_api_key().ok_or_else(|| eyre::eyre!("not authenticated"))?;
     let (api, _) = endpoints();
-    let components =
-        crate::command::component::list::fetch_remote_components(&api_key, &api).await?;
+    let components = ArtifactSummary::fetch_remote_components(&api_key, &api).await?;
     Ok(components
         .into_iter()
         .map(|c| (c.namespace, c.name, c.latest_version))
