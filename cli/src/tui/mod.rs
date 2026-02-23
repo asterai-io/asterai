@@ -41,7 +41,8 @@ pub async fn run() -> eyre::Result<()> {
     terminal.show_cursor()?;
     let _ = Write::flush(terminal.backend_mut());
     restore_stdio(saved);
-    result
+    result?;
+    std::process::exit(0);
 }
 
 async fn run_app(
