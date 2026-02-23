@@ -1,6 +1,6 @@
 use crate::tui::app::{
     App, CORE_COMPONENTS, ChatMessage, ChatState, DynamicItem, MessageRole, PROVIDERS, PickerState,
-    SLASH_COMMANDS, SPINNER_FRAMES, Screen, required_env_vars, resolve_state_dir,
+    SLASH_COMMANDS, SPINNER_FRAMES, Screen, resolve_state_dir, tool_env_vars,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -590,13 +590,14 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
                 .next_back()
                 .unwrap_or(full_name)
                 .to_string();
-            let env_vars = required_env_vars(full_name);
-            let style = if env_vars.is_empty() || !env_loaded {
+            let env_vars = tool_env_vars(full_name);
+            let required_vars: Vec<_> = env_vars.iter().filter(|v| v.required).collect();
+            let style = if required_vars.is_empty() || !env_loaded {
                 tool_plain
             } else {
-                let all_set = env_vars
+                let all_set = required_vars
                     .iter()
-                    .all(|v| env_status.get(*v).copied().unwrap_or(false));
+                    .all(|v| env_status.get(v.name).copied().unwrap_or(false));
                 match all_set {
                     true => tool_green,
                     false => tool_orange,
@@ -1078,8 +1079,8 @@ pub fn start_env_check(app: &mut App) {
             .unwrap_or_default();
         let mut status = std::collections::HashMap::new();
         for tool in &tools {
-            for v in required_env_vars(tool) {
-                status.insert(v.to_string(), var_values.contains_key(*v));
+            for v in tool_env_vars(tool) {
+                status.insert(v.name.to_string(), var_values.contains_key(v.name));
             }
         }
         let _ = tx.send(status);
@@ -1380,13 +1381,17 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
                     format!("  {tool}"),
                     Style::default().fg(Color::White),
                 )));
-                let needed = required_env_vars(tool);
-                let missing: Vec<&&str> = needed
+                let needed = tool_env_vars(tool);
+                let missing: Vec<_> = needed
                     .iter()
-                    .filter(|v| !var_values.contains_key(**v))
+                    .filter(|v| v.required && !var_values.contains_key(v.name))
                     .collect();
                 if !missing.is_empty() {
-                    let vars = missing.iter().map(|v| **v).collect::<Vec<_>>().join(", ");
+                    let vars = missing
+                        .iter()
+                        .map(|v| v.name)
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     warnings.push(Line::from(Span::styled(
                         format!("  {tool}: {vars}"),
                         Style::default().fg(Color::Rgb(255, 165, 0)),
@@ -1440,7 +1445,7 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
                     }
                 }
                 save_tools(app);
-                let env_vars = required_env_vars(&component);
+                let env_vars = tool_env_vars(&component);
                 if env_vars.is_empty() {
                     set_toast(app, &format!("+ {component}"));
                     start_env_check(app);
@@ -1450,8 +1455,8 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
                     let var_values = data.map(|d| d.var_values).unwrap_or_default();
                     let missing: Vec<String> = env_vars
                         .iter()
-                        .filter(|v| !var_values.contains_key(**v))
-                        .map(|v| v.to_string())
+                        .filter(|v| !var_values.contains_key(v.name))
+                        .map(|v| v.name.to_string())
                         .collect();
                     if missing.is_empty() {
                         set_toast(app, &format!("+ {component}"));
@@ -1481,11 +1486,11 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
                 }
                 save_tools(app);
                 // Clean up env vars associated with the removed tool.
-                let env_vars = required_env_vars(component);
+                let env_vars = tool_env_vars(component);
                 let mut removed_vars: Vec<&str> = Vec::new();
                 for v in env_vars {
-                    if ops::set_var(&env_name, v, "").is_ok() {
-                        removed_vars.push(v);
+                    if ops::set_var(&env_name, v.name, "").is_ok() {
+                        removed_vars.push(v.name);
                     }
                 }
                 if removed_vars.is_empty() {
@@ -1792,7 +1797,7 @@ async fn cmd_status(app: &mut App) -> eyre::Result<()> {
         lines.push(Line::from(Span::styled("  Tools:", label)));
         for tool in &agent.tools {
             let short = tool.split(':').next_back().unwrap_or(tool).to_string();
-            let env_vars = required_env_vars(tool);
+            let env_vars = tool_env_vars(tool);
             if env_vars.is_empty() {
                 lines.push(Line::from(Span::styled(
                     format!("    {short}"),
@@ -1806,10 +1811,14 @@ async fn cmd_status(app: &mut App) -> eyre::Result<()> {
                     if i > 0 {
                         spans.push(Span::styled(", ", tool_name_style));
                     }
-                    if var_values.contains_key(*v) {
-                        spans.push(Span::styled(format!("{v} \u{2713}"), ok));
-                    } else {
-                        spans.push(Span::styled(format!("{v} \u{2717}"), warn));
+                    let suffix = match v.required {
+                        true => "",
+                        false => " (optional)",
+                    };
+                    let name = v.name;
+                    match var_values.contains_key(name) {
+                        true => spans.push(Span::styled(format!("{name}{suffix} \u{2713}"), ok)),
+                        false => spans.push(Span::styled(format!("{name}{suffix} \u{2717}"), warn)),
                     }
                 }
                 lines.push(Line::from(spans));

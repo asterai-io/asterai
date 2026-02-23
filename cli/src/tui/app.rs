@@ -102,45 +102,34 @@ pub const CORE_COMPONENTS: &[&str] = &[
 pub const DEFAULT_TOOLS: &[&str] = &["asterbot:soul", "asterbot:memory", "asterbot:skills"];
 
 /// Maps tool short names to the environment variables they require.
-pub const TOOL_ENV_VARS: &[(&str, &[&str])] = &[
-    ("anthropic", &["ANTHROPIC_API_KEY"]),
-    ("openai", &["OPENAI_API_KEY"]),
-    ("google-gemini", &["GOOGLE_API_KEY"]),
-    ("mistral", &["MISTRAL_API_KEY"]),
-    ("perplexity", &["PERPLEXITY_API_KEY"]),
-    ("deepseek", &["DEEPSEEK_API_KEY"]),
-    ("openrouter", &["OPENROUTER_API_KEY"]),
-    ("xai", &["XAI_API_KEY"]),
-    ("huggingface", &["HF_API_TOKEN"]),
-    ("slack", &["SLACK_BOT_TOKEN"]),
-    ("telegram", &["TELEGRAM_TOKEN"]),
-    ("telegram-listener", &["TELEGRAM_TOKEN"]),
-    ("twitter", &["TWITTER_BEARER_TOKEN"]),
-    ("github", &["GITHUB_TOKEN"]),
-    ("notion", &["NOTION_API_KEY"]),
-    ("trello", &["TRELLO_API_KEY", "TRELLO_TOKEN"]),
-    ("home-assistant", &["HA_URL", "HA_ACCESS_TOKEN"]),
-    ("spotify", &["SPOTIFY_ACCESS_TOKEN"]),
-    ("image-gen", &["OPENAI_API_KEY"]),
-    ("email", &["SENDGRID_API_KEY"]),
-    ("gif-search", &["GIPHY_API_KEY"]),
-    ("firecrawl", &["FIRECRAWL_API_KEY"]),
-    ("brave-search", &["BRAVE_API_KEY"]),
-    ("weather", &["OPENWEATHERMAP_API_KEY"]),
-    (
-        "eight-sleep",
-        &["EIGHT_SLEEP_EMAIL", "EIGHT_SLEEP_PASSWORD"],
-    ),
-    ("hyperliquid", &["HYPERLIQUID_PRIVATE_KEY"]),
-    ("rocketchat-listener", &["RC_URL", "RC_USER", "RC_PASSWORD"]),
-];
+pub struct ComponentEnvVar {
+    pub name: &'static str,
+    pub required: bool,
+}
 
-/// Get required env vars for a tool by its short or full name.
-pub fn required_env_vars(tool: &str) -> &'static [&'static str] {
-    let short = tool.split(':').next_back().unwrap_or(tool);
+// TODO: fetch this from a proper data source.
+// The env/config feature has been implemented to demonstrate better UX,
+// but there is no infrastructure or ata storage for required/optional
+// env vars per componnet at the moment.
+pub const TOOL_ENV_VARS: &[(&str, &[ComponentEnvVar])] = &[(
+    "asterai:telegram",
+    &[
+        ComponentEnvVar {
+            name: "TELEGRAM_TOKEN",
+            required: true,
+        },
+        ComponentEnvVar {
+            name: "TELEGRAM_WEBHOOK_URL",
+            required: false,
+        },
+    ],
+)];
+
+/// Get env var definitions for a tool by its full component identifier.
+pub fn tool_env_vars(tool: &str) -> &'static [ComponentEnvVar] {
     TOOL_ENV_VARS
         .iter()
-        .find(|(name, _)| *name == short)
+        .find(|(name, _)| *name == tool)
         .map(|(_, vars)| *vars)
         .unwrap_or(&[])
 }
