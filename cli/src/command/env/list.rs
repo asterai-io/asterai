@@ -60,24 +60,7 @@ impl EnvArgs {
     }
 
     pub async fn list_entries(&self) -> eyre::Result<Vec<EnvListEntry>> {
-        // Dedup local envs by namespace:name, keeping the highest version.
-        let all_local = LocalStore::list_environments();
-        let mut local_map: HashMap<String, Environment> = HashMap::new();
-        for env in all_local {
-            let id = format!("{}:{}", env.namespace(), env.name());
-            let dominated = match local_map.get(&id) {
-                None => true,
-                Some(prev) => {
-                    let cur = Version::parse(env.version()).unwrap_or(Version::new(0, 0, 0));
-                    let old = Version::parse(prev.version()).unwrap_or(Version::new(0, 0, 0));
-                    cur > old
-                }
-            };
-            if dominated {
-                local_map.insert(id, env);
-            }
-        }
-        let local_envs: Vec<_> = local_map.into_values().collect();
+        let local_envs = deduplicate_local_envs(LocalStore::list_environments());
         let local_refs: HashSet<String> = local_envs
             .iter()
             .map(|e| format!("{}:{}", e.namespace(), e.name()))
@@ -141,6 +124,26 @@ impl EnvArgs {
         }
         Ok(entries)
     }
+}
+
+/// Deduplicate environments by namespace:name, keeping the highest semver version.
+pub fn deduplicate_local_envs(envs: Vec<Environment>) -> Vec<Environment> {
+    let mut map: HashMap<String, Environment> = HashMap::new();
+    for env in envs {
+        let id = format!("{}:{}", env.namespace(), env.name());
+        let is_newer = match map.get(&id) {
+            None => true,
+            Some(prev) => {
+                let cur = Version::parse(env.version()).unwrap_or(Version::new(0, 0, 0));
+                let old = Version::parse(prev.version()).unwrap_or(Version::new(0, 0, 0));
+                cur > old
+            }
+        };
+        if is_newer {
+            map.insert(id, env);
+        }
+    }
+    map.into_values().collect()
 }
 
 async fn fetch_remote_environments(

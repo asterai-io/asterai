@@ -3,11 +3,12 @@ use crate::auth::Auth;
 use crate::command::auth::validate_api_key;
 use crate::command::env::EnvArgs;
 use crate::command::env::inspect::InspectData;
-use crate::command::env::list::EnvListEntry;
+use crate::command::env::list::{EnvListEntry, deduplicate_local_envs};
 use crate::command::env::pull::PullArgs;
 use crate::command::env::push::PushArgs;
 use crate::command::env::set_var::SetVarArgs;
 use crate::config::{API_URL, REGISTRY_URL};
+use crate::local_store::LocalStore;
 use crate::tui::app::{AgentConfig, resolve_state_dir};
 use std::path::PathBuf;
 
@@ -36,35 +37,15 @@ pub async fn list_environments() -> eyre::Result<Vec<EnvListEntry>> {
 
 /// List only local environments (no network call). Fast.
 pub fn list_local_environments() -> Vec<EnvListEntry> {
-    use crate::local_store::LocalStore;
-    use std::collections::HashMap;
-    let all_local = LocalStore::list_environments();
-    let mut local_map: HashMap<String, asterai_runtime::environment::Environment> = HashMap::new();
-    for env in all_local {
-        let id = format!("{}:{}", env.namespace(), env.name());
-        let dominated = match local_map.get(&id) {
-            None => true,
-            Some(prev) => {
-                let cur =
-                    semver::Version::parse(env.version()).unwrap_or(semver::Version::new(0, 0, 0));
-                let old =
-                    semver::Version::parse(prev.version()).unwrap_or(semver::Version::new(0, 0, 0));
-                cur > old
-            }
-        };
-        if dominated {
-            local_map.insert(id, env);
-        }
-    }
-    local_map
-        .into_values()
+    deduplicate_local_envs(LocalStore::list_environments())
+        .into_iter()
         .map(|env| EnvListEntry {
             namespace: env.namespace().to_string(),
             name: env.name().to_string(),
             version: Some(env.version().to_string()),
             remote_version: None,
             component_count: env.components.len(),
-            sync_tag: ArtifactSyncTag::Unpushed, // Placeholder until remote sync check.
+            sync_tag: ArtifactSyncTag::Unpushed,
         })
         .collect()
 }
