@@ -110,9 +110,9 @@ pub async fn call_converse_via_process(
         output: Option<serde_json::Value>,
     }
     let data: CallResponse = resp.json().await?;
-    Ok(data.output.and_then(|v| match v {
-        serde_json::Value::String(s) => Some(s),
-        other => Some(other.to_string()),
+    Ok(data.output.map(|v| match v {
+        serde_json::Value::String(s) => s,
+        other => other.to_string(),
     }))
 }
 
@@ -213,13 +213,13 @@ pub fn delete_local_env(namespace: &str, name: &str) -> eyre::Result<usize> {
     let mut removed = 0;
     for entry in std::fs::read_dir(&ns_dir)? {
         let entry = entry?;
-        if let Some(fname) = entry.file_name().to_str() {
-            if fname.starts_with(&prefix) {
-                // Only delete if it contains env.toml (is an environment, not a component).
-                if entry.path().join("env.toml").exists() {
-                    std::fs::remove_dir_all(entry.path())?;
-                    removed += 1;
-                }
+        if let Some(fname) = entry.file_name().to_str()
+            && fname.starts_with(&prefix)
+        {
+            // Only delete if it contains env.toml (is an environment, not a component).
+            if entry.path().join("env.toml").exists() {
+                std::fs::remove_dir_all(entry.path())?;
+                removed += 1;
             }
         }
     }
@@ -318,12 +318,11 @@ fn parse_env_run_command(cmdline: &str, pid: u32) -> Option<crate::tui::app::Run
     // Extract port from -p/--port.
     let mut port: u16 = 8080;
     for (i, arg) in args.iter().enumerate() {
-        if *arg == "-p" || *arg == "--port" {
-            if let Some(val) = args.get(i + 1) {
-                if let Ok(p) = val.parse::<u16>() {
-                    port = p;
-                }
-            }
+        if (*arg == "-p" || *arg == "--port")
+            && let Some(val) = args.get(i + 1)
+            && let Ok(p) = val.parse::<u16>()
+        {
+            port = p;
         }
     }
     Some(crate::tui::app::RunningAgent {

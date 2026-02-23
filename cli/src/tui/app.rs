@@ -289,7 +289,7 @@ pub enum Screen {
     Auth(AuthState),
     Picker(PickerState),
     Setup(SetupState),
-    Chat(ChatState),
+    Chat(Box<ChatState>),
 }
 
 pub enum AuthState {
@@ -340,6 +340,8 @@ pub struct AgentConfig {
     pub preferred_port: Option<u16>,
 }
 
+pub type StartAgentResult = Result<(String, u16, u32), String>;
+
 #[derive(Debug, Clone)]
 pub struct RunningAgent {
     pub name: String,
@@ -373,7 +375,7 @@ pub struct App {
     /// Latest CLI version from crates.io (None = not yet checked).
     pub latest_cli_version: Option<String>,
     pub pending_version_check: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
-    pub pending_start: Option<tokio::sync::oneshot::Receiver<Result<(String, u16, u32), String>>>,
+    pub pending_start: Option<tokio::sync::oneshot::Receiver<StartAgentResult>>,
     pub pending_process_scan: Option<tokio::sync::oneshot::Receiver<Vec<RunningAgent>>>,
     pub pending_sync:
         Option<tokio::sync::oneshot::Receiver<Vec<crate::command::env::list::EnvListEntry>>>,
@@ -577,10 +579,10 @@ pub fn resolve_state_dir(env_name: &str) -> PathBuf {
 
 /// Default user display name: asterai namespace, falling back to OS username.
 pub fn default_user_name() -> String {
-    if let Some(ns) = crate::auth::Auth::read_stored_user_namespace() {
-        if ns != crate::auth::LOCAL_NAMESPACE {
-            return ns;
-        }
+    if let Some(ns) = crate::auth::Auth::read_stored_user_namespace()
+        && ns != crate::auth::LOCAL_NAMESPACE
+    {
+        return ns;
     }
     #[cfg(windows)]
     {

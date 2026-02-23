@@ -40,7 +40,7 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     };
     let content_len = prefix_len + input_text.len() + 1; // +1 for cursor
     let visual_lines = if inner_w > 0 {
-        ((content_len + inner_w - 1) / inner_w).max(1) as u16
+        content_len.div_ceil(inner_w).max(1) as u16
     } else {
         1
     };
@@ -132,11 +132,11 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
 pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
     // Handle paste events.
     if let Event::Paste(text) = &event {
-        if let Screen::Chat(state) = &mut app.screen {
-            if !state.waiting {
-                state.input.push_str(text);
-                update_menus(state);
-            }
+        if let Screen::Chat(state) = &mut app.screen
+            && !state.waiting
+        {
+            state.input.push_str(text);
+            update_menus(state);
         }
         return Ok(());
     }
@@ -624,7 +624,7 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
     let greeting_name = agent
         .map(|a| a.user_name.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "USER");
+        .unwrap_or("USER");
     let mut left_lines: Vec<Line> = Vec::new();
     left_lines.push(
         Line::from(Span::styled(
@@ -685,9 +685,7 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
                 .unwrap_or(full_name)
                 .to_string();
             let env_vars = required_env_vars(full_name);
-            let style = if env_vars.is_empty() {
-                tool_plain
-            } else if !env_loaded {
+            let style = if env_vars.is_empty() || !env_loaded {
                 tool_plain
             } else {
                 let all_set = env_vars
@@ -853,7 +851,7 @@ fn render_messages(f: &mut Frame, state: &ChatState, env_name: &str, area: Rect)
 
 fn render_input(f: &mut Frame, state: &ChatState, area: Rect) {
     // Blinking cursor: visible on even ticks, hidden on odd.
-    let cursor_visible = state.spinner_tick % 2 == 0;
+    let cursor_visible = state.spinner_tick.is_multiple_of(2);
     let cursor_ch = if cursor_visible { "_" } else { " " };
     let w = area.width as usize;
     if w == 0 {
@@ -1780,30 +1778,31 @@ async fn cmd_status(app: &mut App) -> eyre::Result<()> {
     let ok = Style::default().fg(Color::Green);
     let warn = Style::default().fg(Color::Rgb(255, 165, 0)); // orange
 
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    lines.push(Line::from(Span::styled("Agent Status:", heading)));
-    lines.push(Line::from(vec![
-        Span::styled("  Name:        ", label),
-        Span::styled(agent.bot_name.clone(), value),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Environment: ", label),
-        Span::styled(agent.env_name.clone(), value),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Model:       ", label),
-        Span::styled(
-            agent
-                .model
-                .clone()
-                .unwrap_or_else(|| "(not set)".to_string()),
-            value,
-        ),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Provider:    ", label),
-        Span::styled(agent.provider.clone(), value),
-    ]));
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled("Agent Status:", heading)),
+        Line::from(vec![
+            Span::styled("  Name:        ", label),
+            Span::styled(agent.bot_name.clone(), value),
+        ]),
+        Line::from(vec![
+            Span::styled("  Environment: ", label),
+            Span::styled(agent.env_name.clone(), value),
+        ]),
+        Line::from(vec![
+            Span::styled("  Model:       ", label),
+            Span::styled(
+                agent
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| "(not set)".to_string()),
+                value,
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Provider:    ", label),
+            Span::styled(agent.provider.clone(), value),
+        ]),
+    ];
 
     if !agent.tools.is_empty() {
         // Fetch env var values for status display.
@@ -2021,7 +2020,7 @@ fn build_model_items(current_model: Option<&str>) -> Vec<DynamicItem> {
     }];
     for &(provider_name, _key, models) in PROVIDERS {
         for &(model_id, model_label) in models {
-            let is_current = current_model.map_or(false, |m| m == model_id);
+            let is_current = current_model == Some(model_id);
             let label = if is_current {
                 format!("{model_label} *")
             } else {

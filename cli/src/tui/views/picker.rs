@@ -109,18 +109,14 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             agent
                 .model
                 .as_deref()
-                .map(|m| m.split('/').last().unwrap_or(m).to_string())
+                .map(|m| m.split('/').next_back().unwrap_or(m).to_string())
                 .unwrap_or_default()
         })
         .collect();
     let model_w = model_strs.iter().map(|m| m.len()).max().unwrap_or(0);
 
     // Build version display text for column width calculation.
-    let version_texts: Vec<String> = state
-        .agents
-        .iter()
-        .map(|agent| format_version_text(agent))
-        .collect();
+    let version_texts: Vec<String> = state.agents.iter().map(format_version_text).collect();
     let version_w = version_texts.iter().map(|v| v.len()).max().unwrap_or(0);
 
     // Build sync status text for column width calculation.
@@ -711,9 +707,11 @@ async fn resolve_and_enter_chat(
         });
     }
     app.agent = Some(config);
-    let mut chat_state = ChatState::default();
-    chat_state.running_process = initial_running;
-    app.screen = Screen::Chat(chat_state);
+    let chat_state = ChatState {
+        running_process: initial_running,
+        ..Default::default()
+    };
+    app.screen = Screen::Chat(Box::new(chat_state));
     super::chat::start_banner_fetch(app);
     super::chat::start_env_check(app);
     Ok(())

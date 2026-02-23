@@ -1,7 +1,7 @@
 use crate::tui::Tty;
 use crate::tui::app::{
-    AgentConfig, App, CORE_COMPONENTS, ChatState, DEFAULT_TOOLS, PROVIDERS, Screen, SetupState,
-    SetupStep, default_user_name, resolve_state_dir, sanitize_bot_name,
+    AgentConfig, App, CORE_COMPONENTS, DEFAULT_TOOLS, PROVIDERS, Screen, SetupState, SetupStep,
+    default_user_name, resolve_state_dir, sanitize_bot_name,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -459,11 +459,11 @@ async fn handle_push_prompt(
                 .map(|b| b.env_name.clone())
                 .unwrap_or_default();
             let _ = ops::push_env(&env_name).await;
-            app.screen = Screen::Chat(ChatState::default());
+            app.screen = Screen::Chat(Box::default());
             super::chat::start_banner_fetch(app);
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-            app.screen = Screen::Chat(ChatState::default());
+            app.screen = Screen::Chat(Box::default());
             super::chat::start_banner_fetch(app);
         }
         _ => {}

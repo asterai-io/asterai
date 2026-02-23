@@ -87,13 +87,12 @@ async fn run_app(
             return Ok(());
         }
         // Clear expired toasts.
-        if let Screen::Chat(state) = &mut app.screen {
-            if let Some(until) = state.toast_until {
-                if std::time::Instant::now() >= until {
-                    state.toast = None;
-                    state.toast_until = None;
-                }
-            }
+        if let Screen::Chat(state) = &mut app.screen
+            && let Some(until) = state.toast_until
+            && std::time::Instant::now() >= until
+        {
+            state.toast = None;
+            state.toast_until = None;
         }
         let has_toast = matches!(&app.screen, Screen::Chat(s) if s.toast.is_some());
         let has_pending = has_toast
@@ -120,10 +119,10 @@ async fn run_app(
             check_pending_response(app);
         }
         // Tick chat spinner (cursor blink + waiting animation).
-        if ev.is_none() {
-            if let Screen::Chat(state) = &mut app.screen {
-                state.spinner_tick = state.spinner_tick.wrapping_add(1);
-            }
+        if ev.is_none()
+            && let Screen::Chat(state) = &mut app.screen
+        {
+            state.spinner_tick = state.spinner_tick.wrapping_add(1);
         }
         if app.pending_banner.is_some() {
             check_pending_banner(app);
@@ -131,36 +130,36 @@ async fn run_app(
         if app.pending_components.is_some() {
             check_pending_components(app);
         }
-        if let Some(rx) = &mut app.pending_version_check {
-            if let Ok(ver) = rx.try_recv() {
-                app.latest_cli_version = ver;
-                app.pending_version_check = None;
+        if let Some(rx) = &mut app.pending_version_check
+            && let Ok(ver) = rx.try_recv()
+        {
+            app.latest_cli_version = ver;
+            app.pending_version_check = None;
+        }
+        if let Some(rx) = &mut app.pending_process_scan
+            && let Ok(running) = rx.try_recv()
+        {
+            app.pending_process_scan = None;
+            if let Screen::Picker(state) = &mut app.screen {
+                merge_running_agents(state, running);
             }
         }
-        if let Some(rx) = &mut app.pending_process_scan {
-            if let Ok(running) = rx.try_recv() {
-                app.pending_process_scan = None;
-                if let Screen::Picker(state) = &mut app.screen {
-                    merge_running_agents(state, running);
-                }
-            }
-        }
-        if let Some(rx) = &mut app.pending_sync {
-            if let Ok(remote_entries) = rx.try_recv() {
-                app.pending_sync = None;
-                if let Screen::Picker(state) = &mut app.screen {
-                    merge_sync_status(state, remote_entries);
-                }
+        if let Some(rx) = &mut app.pending_sync
+            && let Ok(remote_entries) = rx.try_recv()
+        {
+            app.pending_sync = None;
+            if let Screen::Picker(state) = &mut app.screen {
+                merge_sync_status(state, remote_entries);
             }
         }
         if let Some(rx) = &mut app.pending_auto_start {
             match rx.try_recv() {
                 Ok(result) => {
                     app.pending_auto_start = None;
-                    if let Some(ra) = result {
-                        if let Screen::Chat(state) = &mut app.screen {
-                            state.running_process = Some(ra);
-                        }
+                    if let Some(ra) = result
+                        && let Screen::Chat(state) = &mut app.screen
+                    {
+                        state.running_process = Some(ra);
                     }
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
@@ -215,10 +214,10 @@ async fn run_app(
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
                     // Still starting — tick spinner.
-                    if ev.is_none() {
-                        if let Screen::Picker(state) = &mut app.screen {
-                            state.spinner_tick = state.spinner_tick.wrapping_add(1);
-                        }
+                    if ev.is_none()
+                        && let Screen::Picker(state) = &mut app.screen
+                    {
+                        state.spinner_tick = state.spinner_tick.wrapping_add(1);
                     }
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
@@ -233,12 +232,11 @@ async fn run_app(
         }
         // Tick picker spinner while starting agent (covers gap between
         // pending_start resolving and process scan finding the process).
-        if ev.is_none() {
-            if let Screen::Picker(state) = &mut app.screen {
-                if state.starting_agent.is_some() {
-                    state.spinner_tick = state.spinner_tick.wrapping_add(1);
-                }
-            }
+        if ev.is_none()
+            && let Screen::Picker(state) = &mut app.screen
+            && state.starting_agent.is_some()
+        {
+            state.spinner_tick = state.spinner_tick.wrapping_add(1);
         }
         let Some(ev) = ev else {
             continue;
@@ -255,11 +253,11 @@ async fn run_app(
         }
         views::handle_event(app, ev, terminal).await?;
         // If we returned to the picker (e.g. Esc from chat), re-discover agents.
-        if let Screen::Picker(state) = &app.screen {
-            if state.loading {
-                terminal.draw(|f| views::render(f, app))?;
-                views::picker::discover_agents(app);
-            }
+        if let Screen::Picker(state) = &app.screen
+            && state.loading
+        {
+            terminal.draw(|f| views::render(f, app))?;
+            views::picker::discover_agents(app);
         }
     }
 }
@@ -445,23 +443,23 @@ fn prompt_stop_agents(
                 inner,
             );
         })?;
-        if let Ok(true) = event::poll(Duration::from_millis(200)) {
-            if let Ok(Event::Key(key)) = event::read() {
-                if key.kind != crossterm::event::KeyEventKind::Press {
-                    continue;
-                }
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => input = Some('y'),
-                    KeyCode::Char('n') | KeyCode::Char('N') => input = Some('n'),
-                    KeyCode::Backspace => input = None,
-                    KeyCode::Enter => match input {
-                        Some('y') => return Ok(true),
-                        Some('n') => return Ok(false),
-                        _ => {}
-                    },
-                    KeyCode::Esc => return Ok(false),
+        if let Ok(true) = event::poll(Duration::from_millis(200))
+            && let Ok(Event::Key(key)) = event::read()
+        {
+            if key.kind != crossterm::event::KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => input = Some('y'),
+                KeyCode::Char('n') | KeyCode::Char('N') => input = Some('n'),
+                KeyCode::Backspace => input = None,
+                KeyCode::Enter => match input {
+                    Some('y') => return Ok(true),
+                    Some('n') => return Ok(false),
                     _ => {}
-                }
+                },
+                KeyCode::Esc => return Ok(false),
+                _ => {}
             }
         }
     }
