@@ -1013,19 +1013,24 @@ pub fn start_banner_fetch(app: &mut App) {
     if let Screen::Chat(state) = &mut app.screen {
         state.banner_loading = true;
     }
-    let agent = agent.clone();
+    let runtime = app.runtime.clone();
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.pending_banner = Some(rx);
     tokio::spawn(async move {
-        let prompt = "In one brief line (under 80 chars), give a useful status update \
-            using your available tools. Examples: current weather, top task, latest price. \
-            No pleasantries, just the data.";
-        let result =
-            match tokio::task::spawn(async move { ops::call_converse(prompt, &agent).await }).await
-            {
-                Ok(r) => r.ok().flatten(),
-                Err(_) => None,
-            };
+        let prompt = "In one brief line (under 80 chars), infer a relevant status \
+            update from your conversation history and available tools. If there is \
+            nothing relevant, reply with an empty string.";
+        let result = match runtime {
+            Some(rt) => {
+                match tokio::task::spawn(async move { ops::call_with_runtime(rt, prompt).await })
+                    .await
+                {
+                    Ok(r) => r.ok().flatten(),
+                    Err(_) => None,
+                }
+            }
+            None => None,
+        };
         let _ = tx.send(result);
     });
 }
