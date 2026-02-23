@@ -47,10 +47,10 @@ pub fn conflicting_exports(components: &[ComponentBinary]) -> Vec<(String, Vec<S
     let mut imported: HashSet<String> = HashSet::new();
     for comp in components {
         for import in comp.imported_interfaces() {
-            if let Some(id) = extract_package_id(&import.name) {
-                if !is_host_provided_id(&id) {
-                    imported.insert(import.name.clone());
-                }
+            if let Some(id) = extract_package_id(&import.name)
+                && !is_host_provided_id(&id)
+            {
+                imported.insert(import.name.clone());
             }
         }
     }
