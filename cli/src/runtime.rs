@@ -2,9 +2,11 @@ use crate::auth::Auth;
 use crate::config::{API_URL, REGISTRY_URL};
 use crate::local_store::LocalStore;
 use crate::registry::RegistryClient;
+use crate::version_resolver;
 use asterai_runtime::component::binary::ComponentBinary;
 use asterai_runtime::component::{Component, ComponentId};
 use asterai_runtime::environment::Environment;
+use asterai_runtime::environment::deps;
 use asterai_runtime::runtime::ComponentRuntime;
 use eyre::Context;
 use std::path::PathBuf;
@@ -34,6 +36,21 @@ pub async fn build_runtime(
         let component = pull_component(&component_id, version).await?;
         components.push(component);
     }
+    // Auto-resolve missing dependencies.
+    resolve_dependencies(&mut components, &mut local_components).await?;
+    // Warn about imported interfaces exported by multiple components.
+    // Components are sorted alphabetically for instantiation, so the
+    // first provider in the sorted list is the one the linker will use.
+    for (interface, providers) in deps::conflicting_exports(&components) {
+        let default = &providers[0];
+        eprintln!(
+            "warning: interface {} is exported by multiple components: {}. \
+             {} was picked as the default implementor.",
+            interface,
+            providers.join(", "),
+            default,
+        );
+    }
     if !allow_dirs.is_empty() {
         println!("allowed directories:");
         for dir in allow_dirs {
@@ -55,6 +72,43 @@ pub async fn build_runtime(
         &environment.metadata.name,
     )
     .await
+}
+
+/// Iteratively resolves unsatisfied component imports by pulling missing
+/// dependencies from the registry. Runs until all imports are satisfied
+/// or a dependency cannot be found.
+async fn resolve_dependencies(
+    components: &mut Vec<ComponentBinary>,
+    local_components: &mut Vec<ComponentBinary>,
+) -> eyre::Result<()> {
+    const MAX_ITERATIONS: usize = 100;
+    for _ in 0..MAX_ITERATIONS {
+        let missing = deps::unsatisfied_import_packages(components);
+        if missing.is_empty() {
+            return Ok(());
+        }
+        for package_id in &missing {
+            let (namespace, name) = package_id
+                .split_once(':')
+                .ok_or_else(|| eyre::eyre!("invalid dependency package ID: {}", package_id))?;
+            let version =
+                version_resolver::resolve_latest_version(namespace, name, API_URL, REGISTRY_URL)
+                    .await?;
+            println!("  auto-resolved dependency: {}@{}", package_id, version);
+            let component_id = ComponentId::from_str(package_id)?;
+            let version_str = version.to_string();
+            let local_opt = find_component(&component_id, &version_str, local_components);
+            let binary = match local_opt {
+                Some(local) => local,
+                None => pull_component(&component_id, &version_str).await?,
+            };
+            components.push(binary);
+        }
+    }
+    Err(eyre::eyre!(
+        "dependency resolution exceeded {} iterations — possible cycle",
+        MAX_ITERATIONS
+    ))
 }
 
 async fn pull_component(id: &ComponentId, version: &str) -> eyre::Result<ComponentBinary> {

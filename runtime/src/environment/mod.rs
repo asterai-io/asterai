@@ -2,6 +2,8 @@ use crate::component::Component;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod deps;
+
 /// Environment manifest - the deployable unit in Asterai.
 ///
 /// An environment bundles one or more components with configuration
