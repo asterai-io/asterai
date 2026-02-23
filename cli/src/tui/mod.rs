@@ -41,28 +41,25 @@ pub async fn run() -> eyre::Result<()> {
     terminal.show_cursor()?;
     let _ = Write::flush(terminal.backend_mut());
     restore_stdio(saved);
-    // Exit immediately so background tokio tasks don't keep the process alive.
-    std::process::exit(match result {
-        Ok(_) => 0,
-        Err(_) => 1,
-    })
+    result?;
+    std::process::exit(0);
 }
 
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<Tty>>,
     app: &mut App,
 ) -> eyre::Result<()> {
+    // Fire async CLI version check (non-blocking).
+    let (vtx, vrx) = tokio::sync::oneshot::channel();
+    app.pending_version_check = Some(vrx);
+    tokio::spawn(async move {
+        let ver = ops::fetch_latest_cli_version().await;
+        let _ = vtx.send(ver);
+    });
     let username = ops::check_auth().await;
     match username {
         Some(_username) => {
-            app.screen = Screen::Picker(app::PickerState {
-                agents: Vec::new(),
-                selected: 0,
-                loading: true,
-                error: None,
-            });
-            terminal.draw(|f| views::render(f, app))?;
-            views::picker::discover_agents(app).await;
+            views::picker::discover_agents(app);
         }
         None => {
             app.screen = Screen::Auth(AuthState::NeedLogin {
@@ -74,11 +71,31 @@ async fn run_app(
     loop {
         terminal.draw(|f| views::render(f, app))?;
         if app.should_quit {
+            // Suppress panics from background wasmtime tasks during
+            // tokio shutdown — they're harmless but look scary.
+            std::panic::set_hook(Box::new(|_| {}));
             return Ok(());
         }
-        let has_pending = app.pending_response.is_some() || app.pending_banner.is_some();
-        let has_warmup = app.pending_warmup.is_some();
-        let needs_poll = has_pending || has_warmup;
+        // Clear expired toasts.
+        if let Screen::Chat(state) = &mut app.screen
+            && let Some(until) = state.toast_until
+            && std::time::Instant::now() >= until
+        {
+            state.toast = None;
+            state.toast_until = None;
+        }
+        let has_toast = matches!(&app.screen, Screen::Chat(s) if s.toast.is_some());
+        let has_pending = has_toast
+            || app.pending_response.is_some()
+            || app.pending_banner.is_some()
+            || app.pending_components.is_some()
+            || app.pending_version_check.is_some()
+            || app.pending_sync.is_some()
+            || app.pending_env_check.is_some()
+            || app.pending_runtime.is_some();
+        // Always poll with timeout so the cursor blink can advance.
+        let is_chat = matches!(&app.screen, Screen::Chat(_));
+        let needs_poll = has_pending || is_chat;
         let ev = match needs_poll {
             true => match event::poll(Duration::from_millis(100))? {
                 true => Some(event::read()?),
@@ -88,48 +105,109 @@ async fn run_app(
         };
         if app.pending_response.is_some() {
             check_pending_response(app);
-            if ev.is_none()
-                && let Screen::Chat(state) = &mut app.screen
-            {
-                state.spinner_tick = state.spinner_tick.wrapping_add(1);
+        }
+        // Tick spinners on timeout (no user event).
+        if ev.is_none() {
+            match &mut app.screen {
+                Screen::Chat(state) => {
+                    state.spinner_tick = state.spinner_tick.wrapping_add(1);
+                }
+                Screen::Picker(state) => {
+                    state.spinner_tick = state.spinner_tick.wrapping_add(1);
+                }
+                _ => {}
             }
         }
         if app.pending_banner.is_some() {
             check_pending_banner(app);
         }
-        if has_warmup && let Some(rx) = &mut app.pending_warmup {
+        if app.pending_components.is_some() {
+            check_pending_components(app);
+        }
+        if let Some(rx) = &mut app.pending_version_check
+            && let Ok(ver) = rx.try_recv()
+        {
+            app.latest_cli_version = ver;
+            app.pending_version_check = None;
+        }
+        if let Some(rx) = &mut app.pending_sync
+            && let Ok(remote_entries) = rx.try_recv()
+        {
+            app.pending_sync = None;
+            if let Screen::Picker(state) = &mut app.screen {
+                merge_sync_status(state, remote_entries);
+            }
+        }
+        if let Some(rx) = &mut app.pending_env_check {
             match rx.try_recv() {
-                Ok(()) => {
-                    app.pending_warmup = None;
-                    if let Screen::Setup(state) = &mut app.screen {
-                        state.step = app::SetupStep::PushPrompt;
+                Ok(status) => {
+                    app.pending_env_check = None;
+                    if let Screen::Chat(state) = &mut app.screen {
+                        state.tool_env_status = status;
                     }
                 }
-                _ => {
-                    if let Screen::Setup(state) = &mut app.screen {
-                        state.spinner_tick = state.spinner_tick.wrapping_add(1);
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    app.pending_env_check = None;
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(rx) = &mut app.pending_runtime {
+            match rx.try_recv() {
+                Ok(Ok(rt)) => {
+                    app.pending_runtime = None;
+                    app.runtime = Some(std::sync::Arc::new(tokio::sync::Mutex::new(rt)));
+                    app.screen = Screen::Chat(Box::default());
+                    views::chat::start_banner_fetch(app);
+                    views::chat::start_env_check(app);
+                }
+                Ok(Err(e)) => {
+                    app.pending_runtime = None;
+                    app.agent = None;
+                    if let Screen::Picker(state) = &mut app.screen {
+                        state.error = Some(format!("Failed to load: {e}"));
                     }
                 }
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    app.pending_runtime = None;
+                    app.agent = None;
+                    if let Screen::Picker(state) = &mut app.screen {
+                        state.error = Some("Runtime build cancelled.".to_string());
+                    }
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
             }
         }
         let Some(ev) = ev else {
             continue;
         };
-        // Ctrl+C quits from all screens on Unix.
-        // On Windows, Ctrl+C is reserved for copy in Windows Terminal,
-        // so it only quits from non-chat screens.
+        // Ctrl+C quits from any screen. On Windows, skip chat screen
+        // because Windows Terminal reserves Ctrl+C for copy.
         if let Event::Key(key) = &ev
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && key.code == KeyCode::Char('c')
         {
             #[cfg(windows)]
             if matches!(app.screen, Screen::Chat(_)) {
+                // Fall through to handle_event for Windows copy.
+            } else {
+                app.should_quit = true;
                 continue;
             }
-            app.should_quit = true;
-            continue;
+            #[cfg(not(windows))]
+            {
+                app.should_quit = true;
+                continue;
+            }
         }
         views::handle_event(app, ev, terminal).await?;
+        // If we returned to the picker (e.g. Esc from chat), re-discover agents.
+        if let Screen::Picker(state) = &app.screen
+            && state.loading
+        {
+            terminal.draw(|f| views::render(f, app))?;
+            views::picker::discover_agents(app);
+        }
     }
 }
 
@@ -147,18 +225,21 @@ fn check_pending_response(app: &mut App) {
                         state.messages.push(app::ChatMessage {
                             role: app::MessageRole::Assistant,
                             content: text,
+                            styled_lines: None,
                         });
                     }
                     Ok(None) => {
                         state.messages.push(app::ChatMessage {
                             role: app::MessageRole::System,
                             content: "(No response received)".to_string(),
+                            styled_lines: None,
                         });
                     }
                     Err(e) => {
                         state.messages.push(app::ChatMessage {
                             role: app::MessageRole::System,
                             content: format!("Error: {e:#}"),
+                            styled_lines: None,
                         });
                     }
                 }
@@ -172,7 +253,45 @@ fn check_pending_response(app: &mut App) {
                 state.messages.push(app::ChatMessage {
                     role: app::MessageRole::System,
                     content: "Request was cancelled.".to_string(),
+                    styled_lines: None,
                 });
+            }
+        }
+    }
+}
+
+fn check_pending_components(app: &mut App) {
+    let Some(rx) = &mut app.pending_components else {
+        return;
+    };
+    match rx.try_recv() {
+        Ok(Ok(items)) => {
+            app.pending_components = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.dynamic_loading = false;
+                state.dynamic_items = items;
+                state.dynamic_matches = (0..state.dynamic_items.len()).collect();
+                state.dynamic_selected = 0;
+            }
+        }
+        Ok(Err(e)) => {
+            app.pending_components = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.dynamic_loading = false;
+                state.dynamic_command = None;
+                state.messages.push(app::ChatMessage {
+                    role: app::MessageRole::System,
+                    content: format!("Failed to load components: {e:#}"),
+                    styled_lines: None,
+                });
+            }
+        }
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+            app.pending_components = None;
+            if let Screen::Chat(state) = &mut app.screen {
+                state.dynamic_loading = false;
+                state.dynamic_command = None;
             }
         }
     }
@@ -195,7 +314,7 @@ fn check_pending_banner(app: &mut App) {
             }
         }
         Ok(None) => {
-            // No data returned - keep the quote.
+            // No data returned — keep the quote.
             app.pending_banner = None;
             if let Screen::Chat(state) = &mut app.screen {
                 state.banner_loading = false;
@@ -207,6 +326,41 @@ fn check_pending_banner(app: &mut App) {
             if let Screen::Chat(state) = &mut app.screen {
                 state.banner_loading = false;
             }
+        }
+    }
+}
+
+/// Merge remote sync status into the picker. Updates sync tags and adds remote-only envs.
+fn merge_sync_status(
+    state: &mut app::PickerState,
+    remote_entries: Vec<crate::command::env::list::EnvListEntry>,
+) {
+    use crate::artifact::ArtifactSyncTag;
+    // Build a map of remote entries for quick lookup.
+    let remote_map: std::collections::HashMap<String, &crate::command::env::list::EnvListEntry> =
+        remote_entries.iter().map(|e| (e.name.clone(), e)).collect();
+    // Update sync tags on existing local agents.
+    for agent in &mut state.agents {
+        if let Some(remote) = remote_map.get(&agent.name) {
+            agent.sync_tag = remote.sync_tag;
+            agent.remote_version = remote.remote_version.clone();
+        }
+    }
+    // Add remote-only environments (not already in the local list).
+    let local_names: std::collections::HashSet<String> =
+        state.agents.iter().map(|a| a.name.clone()).collect();
+    for entry in &remote_entries {
+        if entry.sync_tag == ArtifactSyncTag::Remote && !local_names.contains(&entry.name) {
+            state.agents.push(app::AgentEntry {
+                name: entry.name.clone(),
+                namespace: entry.namespace.clone(),
+                component_count: 0,
+                bot_name: entry.name.clone(),
+                model: None,
+                sync_tag: ArtifactSyncTag::Remote,
+                local_version: None,
+                remote_version: entry.remote_version.clone(),
+            });
         }
     }
 }

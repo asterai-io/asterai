@@ -1,7 +1,7 @@
 use crate::tui::Tty;
 use crate::tui::app::{
-    AgentConfig, App, CORE_COMPONENTS, ChatState, DEFAULT_TOOLS, PROVIDERS, SPINNER_FRAMES, Screen,
-    SetupState, SetupStep, default_user_name, resolve_state_dir, sanitize_bot_name,
+    AgentConfig, App, CORE_COMPONENTS, DEFAULT_TOOLS, PROVIDERS, Screen, SetupState, SetupStep,
+    default_user_name, resolve_state_dir, sanitize_bot_name,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -37,15 +37,9 @@ pub fn render(f: &mut Frame, state: &SetupState) {
             render_provisioning(f, *current, *total, message, content_area);
         }
         SetupStep::WarmUp => {
-            let frame = SPINNER_FRAMES[state.spinner_tick % SPINNER_FRAMES.len()];
-            let line = Line::from(vec![
-                Span::styled(format!("{frame} "), Style::default().fg(Color::Cyan)),
-                Span::styled(
-                    "Warming up (first-time compilation may take a moment)...",
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]);
-            f.render_widget(Paragraph::new(line), content_area);
+            let text = Paragraph::new("Warming up (first-time compilation may take a moment)...")
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(text, content_area);
         }
         SetupStep::PushPrompt => render_push_prompt(f, content_area),
     }
@@ -63,6 +57,40 @@ pub async fn handle_event(
         return Ok(());
     }
     let code = key_event.code;
+
+    // Esc navigates back through setup steps, or returns to picker from first step.
+    if code == KeyCode::Esc {
+        let Screen::Setup(state) = &mut app.screen else {
+            return Ok(());
+        };
+        match &state.step {
+            SetupStep::Name => {
+                app.screen = Screen::Picker(crate::tui::app::PickerState::loading(0));
+                return Ok(());
+            }
+            SetupStep::Username => {
+                state.step = SetupStep::Name;
+                state.input = state.bot_name.clone();
+            }
+            SetupStep::Provider => {
+                state.step = SetupStep::Username;
+                state.input = state.user_name.clone();
+            }
+            SetupStep::ApiKey => {
+                state.step = SetupStep::Provider;
+                state.input.clear();
+                state.error = None;
+            }
+            SetupStep::Model => {
+                state.step = SetupStep::ApiKey;
+                state.input = state.api_key.clone();
+            }
+            // Non-interactive steps: ignore Esc.
+            _ => {}
+        }
+        return Ok(());
+    }
+
     let Screen::Setup(state) = &mut app.screen else {
         return Ok(());
     };
@@ -138,7 +166,12 @@ fn render_provider_step(f: &mut Frame, state: &SetupState, area: Rect) {
         Line::from(Span::styled("Which LLM provider?", Style::default().bold())),
         Line::from(""),
     ];
-    for (i, (name, _, _)) in PROVIDERS.iter().enumerate() {
+    let all_items: Vec<(&str, bool)> = PROVIDERS
+        .iter()
+        .map(|(name, _, _)| (*name, false))
+        .chain(std::iter::once(("asterai managed LLM (coming soon)", true)))
+        .collect();
+    for (i, (name, disabled)) in all_items.iter().enumerate() {
         let is_selected = i == state.provider_idx;
         let pointer = match is_selected {
             true => "▸ ",
@@ -149,16 +182,23 @@ fn render_provider_step(f: &mut Frame, state: &SetupState, area: Rect) {
             Span::styled(format!("{}. ", i + 1), Style::default().fg(Color::DarkGray)),
             Span::styled(
                 *name,
-                match is_selected {
-                    true => Style::default().fg(Color::Cyan).bold(),
-                    false => Style::default(),
+                if *disabled {
+                    if is_selected {
+                        Style::default().fg(Color::Rgb(255, 160, 50)).bold()
+                    } else {
+                        Style::default().fg(Color::Rgb(255, 160, 50))
+                    }
+                } else if is_selected {
+                    Style::default().fg(Color::Cyan).bold()
+                } else {
+                    Style::default()
                 },
             ),
         ]));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "↑↓ navigate · enter select",
+        "↑↓ navigate · enter select · esc back",
         Style::default().fg(Color::DarkGray),
     )));
     f.render_widget(Paragraph::new(lines), area);
@@ -221,7 +261,7 @@ fn render_model_step(f: &mut Frame, state: &SetupState, area: Rect) {
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "↑↓ navigate · enter select",
+        "↑↓ navigate · enter select · esc back",
         Style::default().fg(Color::DarkGray),
     )));
     f.render_widget(Paragraph::new(lines), area);
@@ -278,9 +318,7 @@ fn handle_name(state: &mut SetupState, code: KeyCode) {
             state.input.clear();
             state.step = SetupStep::Username;
         }
-        KeyCode::Esc => {
-            state.step = SetupStep::Name;
-        }
+        KeyCode::Esc => { /* handled above */ }
         _ => {}
     }
 }
@@ -307,7 +345,7 @@ fn handle_username(state: &mut SetupState, code: KeyCode) {
 }
 
 fn handle_provider(state: &mut SetupState, code: KeyCode) {
-    let total = PROVIDERS.len();
+    let total = PROVIDERS.len() + 1; // +1 for "coming soon" entry
     match code {
         KeyCode::Up | KeyCode::Char('k') => {
             if state.provider_idx > 0 {
@@ -320,12 +358,14 @@ fn handle_provider(state: &mut SetupState, code: KeyCode) {
             }
         }
         KeyCode::Enter => {
-            state.step = SetupStep::ApiKey;
-            state.input.clear();
+            if state.provider_idx < PROVIDERS.len() {
+                state.step = SetupStep::ApiKey;
+                state.input.clear();
+            }
         }
         KeyCode::Char(c) if c.is_ascii_digit() => {
             let num = c.to_digit(10).unwrap() as usize;
-            if num >= 1 && num <= total {
+            if num >= 1 && num <= PROVIDERS.len() {
                 state.provider_idx = num - 1;
                 state.step = SetupStep::ApiKey;
                 state.input.clear();
@@ -419,11 +459,11 @@ async fn handle_push_prompt(
                 .map(|b| b.env_name.clone())
                 .unwrap_or_default();
             let _ = ops::push_env(&env_name).await;
-            app.screen = Screen::Chat(ChatState::default());
+            app.screen = Screen::Chat(Box::default());
             super::chat::start_banner_fetch(app);
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-            app.screen = Screen::Chat(ChatState::default());
+            app.screen = Screen::Chat(Box::default());
             super::chat::start_banner_fetch(app);
         }
         _ => {}
@@ -503,8 +543,10 @@ async fn run_provisioning(
         current += 1;
     }
     // Build agent config.
+    let namespace = crate::auth::Auth::read_user_or_fallback_namespace();
     let agent = AgentConfig {
         env_name: env_name.clone(),
+        namespace,
         bot_name,
         user_name,
         model: Some(model),
@@ -513,17 +555,19 @@ async fn run_provisioning(
         allowed_dirs,
         banner_mode: "auto".to_string(),
     };
-    app.agent = Some(agent.clone());
+    app.agent = Some(agent);
     let Screen::Setup(state) = &mut app.screen else {
         return Ok(());
     };
     state.step = SetupStep::WarmUp;
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async move {
-        let _ = ops::call_converse("hello", &agent).await;
-        let _ = tx.send(());
-    });
-    app.pending_warmup = Some(rx);
+    terminal.draw(|f| super::render(f, app))?;
+    if let Some(agent) = &app.agent {
+        let _ = ops::call_converse("hello", agent).await;
+    }
+    let Screen::Setup(state) = &mut app.screen else {
+        return Ok(());
+    };
+    state.step = SetupStep::PushPrompt;
     Ok(())
 }
 

@@ -11,7 +11,7 @@ pub mod setup;
 pub fn render(f: &mut Frame, app: &App) {
     match &app.screen {
         Screen::Auth(state) => auth::render(f, state),
-        Screen::Picker(state) => picker::render(f, state),
+        Screen::Picker(state) => picker::render(f, state, app),
         Screen::Setup(state) => setup::render(f, state),
         Screen::Chat(state) => chat::render(f, state, app),
     }

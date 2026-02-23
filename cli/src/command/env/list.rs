@@ -1,24 +1,10 @@
-use crate::artifact::ArtifactSyncTag;
+use crate::artifact::{ArtifactSummary, ArtifactSyncTag};
 use crate::auth::Auth;
 use crate::command::env::EnvArgs;
 use crate::local_store::LocalStore;
-use eyre::Context;
-use serde::Deserialize;
-use std::collections::HashSet;
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ListEnvironmentsResponse {
-    environments: Vec<EnvironmentSummary>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EnvironmentSummary {
-    namespace: String,
-    name: String,
-    latest_version: String,
-}
+use asterai_runtime::environment::Environment;
+use semver::Version;
+use std::collections::{HashMap, HashSet};
 
 /// A single entry from the environment list.
 #[derive(Debug, Clone)]
@@ -26,6 +12,7 @@ pub struct EnvListEntry {
     pub namespace: String,
     pub name: String,
     pub version: Option<String>,
+    pub remote_version: Option<String>,
     pub component_count: usize,
     pub sync_tag: ArtifactSyncTag,
 }
@@ -39,7 +26,8 @@ impl EnvArgs {
             return Ok(());
         }
         for entry in &entries {
-            let ref_str = match &entry.version {
+            let display_ver = entry.version.as_deref().or(entry.remote_version.as_deref());
+            let ref_str = match display_ver {
                 Some(v) => format!("{}:{}@{}", entry.namespace, entry.name, v),
                 None => format!("{}:{}", entry.namespace, entry.name),
             };
@@ -56,39 +44,30 @@ impl EnvArgs {
     }
 
     pub async fn list_entries(&self) -> eyre::Result<Vec<EnvListEntry>> {
-        let local_envs = LocalStore::list_environments();
+        let local_envs = deduplicate_local_envs(LocalStore::list_environments());
         let local_refs: HashSet<String> = local_envs
             .iter()
             .map(|e| format!("{}:{}", e.namespace(), e.name()))
             .collect();
         let remote_result = if let Some(api_key) = Auth::read_stored_api_key() {
-            fetch_remote_environments(&api_key, &self.api_endpoint).await
+            ArtifactSummary::fetch_remote_environments(&api_key, &self.api_endpoint).await
         } else {
             Err(eyre::eyre!("not authenticated"))
         };
-        let remote_refs: HashSet<String> = match &remote_result {
-            Ok(remote) => remote
-                .iter()
-                .map(|e| format!("{}:{}", e.namespace, e.name))
-                .collect(),
-            Err(_) => HashSet::new(),
+        let remote_version_map = match &remote_result {
+            Ok(summaries) => ArtifactSummary::remote_version_map(summaries.iter()),
+            Err(_) => HashMap::new(),
         };
         let mut entries = Vec::new();
         for env in &local_envs {
             let id = format!("{}:{}", env.namespace(), env.name());
-            let is_synced = remote_refs.contains(&id) && !env.is_local();
-            let tag = match is_synced {
-                true => ArtifactSyncTag::Synced,
-                false => ArtifactSyncTag::Unpushed,
-            };
-            let version = match is_synced {
-                true => Some(env.version().to_string()),
-                false => None,
-            };
+            let remote_ver = remote_version_map.get(&id).copied();
+            let tag = ArtifactSyncTag::resolve(Some(env.version()), remote_ver);
             entries.push(EnvListEntry {
                 namespace: env.namespace().to_string(),
                 name: env.name().to_string(),
-                version,
+                version: Some(env.version().to_string()),
+                remote_version: remote_ver.map(|v| v.to_string()),
                 component_count: env.components.len(),
                 sync_tag: tag,
             });
@@ -100,9 +79,10 @@ impl EnvArgs {
                     entries.push(EnvListEntry {
                         namespace: env.namespace.clone(),
                         name: env.name.clone(),
-                        version: Some(env.latest_version.clone()),
+                        version: None,
+                        remote_version: Some(env.latest_version.clone()),
                         component_count: 0,
-                        sync_tag: ArtifactSyncTag::Remote,
+                        sync_tag: ArtifactSyncTag::resolve(None, Some(&env.latest_version)),
                     });
                 }
             }
@@ -111,26 +91,22 @@ impl EnvArgs {
     }
 }
 
-async fn fetch_remote_environments(
-    api_key: &str,
-    api_url: &str,
-) -> eyre::Result<Vec<EnvironmentSummary>> {
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/environments", api_url))
-        .header("Authorization", api_key.trim())
-        .send()
-        .await
-        .wrap_err("failed to fetch environments")?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "unknown error".to_string());
-        eyre::bail!("{}: {}", status, error_text);
+/// Deduplicate environments by namespace:name, keeping the highest semver version.
+pub fn deduplicate_local_envs(envs: Vec<Environment>) -> Vec<Environment> {
+    let mut map: HashMap<String, Environment> = HashMap::new();
+    for env in envs {
+        let id = format!("{}:{}", env.namespace(), env.name());
+        let is_newer = match map.get(&id) {
+            None => true,
+            Some(prev) => {
+                let cur = Version::parse(env.version()).unwrap_or(Version::new(0, 0, 0));
+                let old = Version::parse(prev.version()).unwrap_or(Version::new(0, 0, 0));
+                cur > old
+            }
+        };
+        if is_newer {
+            map.insert(id, env);
+        }
     }
-    let result: ListEnvironmentsResponse =
-        response.json().await.wrap_err("failed to parse response")?;
-    Ok(result.environments)
+    map.into_values().collect()
 }

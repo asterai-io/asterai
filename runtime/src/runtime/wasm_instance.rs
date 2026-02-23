@@ -34,7 +34,12 @@ pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
 /// Using a sync engine avoids the nested `run_concurrent` assertion
 /// that occurs when forwarding stubs call `Func::call_async` inside
 /// an active guest thread.
-pub(crate) static SYNC_ENGINE: Lazy<Engine> = Lazy::new(|| Engine::new(&Config::new()).unwrap());
+pub(crate) static SYNC_ENGINE: Lazy<Engine> = Lazy::new(|| {
+    let mut config = Config::new();
+    let cache = Cache::from_file(None).unwrap();
+    config.cache(Some(cache));
+    Engine::new(&config).unwrap()
+});
 
 pub type SharedStore = Arc<tokio::sync::Mutex<Store<StoreState>>>;
 

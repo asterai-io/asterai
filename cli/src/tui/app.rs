@@ -1,5 +1,12 @@
+use crate::artifact::ArtifactSyncTag;
+use crate::command::env::list::EnvListEntry;
+use asterai_runtime::runtime::ComponentRuntime;
+use ratatui::prelude::*;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::{Mutex, oneshot};
 
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -21,7 +28,7 @@ pub const QUOTES: &[&str] = &[
     "\"We can only see a short distance ahead, but we can see plenty there that needs to be done.\" — Alan Turing",
     "\"A computer once beat me at chess, but it was no match for me at kickboxing.\" — Emo Philips",
     "\"The Net is a waste of time, and that's exactly what's right about it.\" — William Gibson",
-    "\"The future is already here - it's just not evenly distributed.\" — William Gibson",
+    "\"The future is already here — it's just not evenly distributed.\" — William Gibson",
     "\"Never trust a computer you can't throw out a window.\" — Steve Wozniak",
     "\"People who are really serious about software should make their own hardware.\" — Alan Kay",
     "\"In the beginning the Universe was created. This made a lot of people angry.\" — Douglas Adams",
@@ -68,33 +75,27 @@ pub const PROVIDERS: &[Provider] = &[
         "OpenAI (GPT)",
         "OPENAI_KEY",
         &[
-            ("openai/gpt-5-mini", "GPT-5 Mini (recommended)"),
-            ("openai/gpt-5.2", "GPT-5.2"),
-            ("openai/gpt-5-nano", "GPT-5 Nano"),
+            ("openai/gpt-4o", "GPT-4o (recommended)"),
+            ("openai/gpt-4o-mini", "GPT-4o Mini"),
         ],
     ),
     (
         "Google (Gemini)",
         "GOOGLE_KEY",
         &[
-            (
-                "google/gemini-3-flash-preview",
-                "Gemini 3 Flash Preview (recommended)",
-            ),
-            ("google/gemini-2.5-flash", "Gemini 2.5 Flash"),
+            ("google/gemini-2.0-flash", "Gemini 2.0 Flash (recommended)"),
             ("google/gemini-2.5-pro", "Gemini 2.5 Pro"),
         ],
     ),
-    (
-        "Venice",
-        "VENICE_KEY",
-        &[
-            ("venice/kimi-k2-5", "Kimi K2.5 (recommended)"),
-            ("venice/zai-org-glm-5", "GLM 5"),
-            ("venice/venice-uncensored", "Venice Uncensored 1.1"),
-        ],
-    ),
 ];
+
+#[derive(Debug, Clone)]
+pub struct DynamicItem {
+    pub value: String,
+    pub label: String,
+    pub description: String,
+    pub disabled: bool,
+}
 
 pub const CORE_COMPONENTS: &[&str] = &[
     "asterbot:agent",
@@ -104,6 +105,39 @@ pub const CORE_COMPONENTS: &[&str] = &[
 ];
 
 pub const DEFAULT_TOOLS: &[&str] = &["asterbot:soul", "asterbot:memory", "asterbot:skills"];
+
+/// Maps tool short names to the environment variables they require.
+pub struct ComponentEnvVar {
+    pub name: &'static str,
+    pub required: bool,
+}
+
+// TODO: fetch this from a proper data source.
+// The env/config feature has been implemented to demonstrate better UX,
+// but there is no infrastructure or ata storage for required/optional
+// env vars per componnet at the moment.
+pub const TOOL_ENV_VARS: &[(&str, &[ComponentEnvVar])] = &[(
+    "asterai:telegram",
+    &[
+        ComponentEnvVar {
+            name: "TELEGRAM_TOKEN",
+            required: true,
+        },
+        ComponentEnvVar {
+            name: "TELEGRAM_WEBHOOK_URL",
+            required: false,
+        },
+    ],
+)];
+
+/// Get env var definitions for a tool by its full component identifier.
+pub fn tool_env_vars(tool: &str) -> &'static [ComponentEnvVar] {
+    TOOL_ENV_VARS
+        .iter()
+        .find(|(name, _)| *name == tool)
+        .map(|(_, vars)| *vars)
+        .unwrap_or(&[])
+}
 
 pub const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
@@ -148,7 +182,7 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         subs: &[],
     },
     SlashCommand {
-        name: "username",
+        name: "me",
         description: "View or change your display name",
         subs: &[],
     },
@@ -225,6 +259,11 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Pull agent from cloud",
         subs: &[],
     },
+    SlashCommand {
+        name: "quit",
+        description: "Exit the application",
+        subs: &[],
+    },
 ];
 
 pub struct SlashCommand {
@@ -244,7 +283,7 @@ pub enum Screen {
     Auth(AuthState),
     Picker(PickerState),
     Setup(SetupState),
-    Chat(ChatState),
+    Chat(Box<ChatState>),
 }
 
 pub enum AuthState {
@@ -283,6 +322,7 @@ pub enum MessageRole {
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
     pub env_name: String,
+    pub namespace: String,
     pub bot_name: String,
     pub user_name: String,
     pub model: Option<String>,
@@ -300,16 +340,28 @@ pub struct AgentEntry {
     pub component_count: usize,
     pub bot_name: String,
     pub model: Option<String>,
-    pub is_remote: bool,
+    pub sync_tag: ArtifactSyncTag,
+    pub local_version: Option<String>,
+    pub remote_version: Option<String>,
 }
+
+pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct App {
     pub screen: Screen,
     pub should_quit: bool,
     pub agent: Option<AgentConfig>,
-    pub pending_response: Option<tokio::sync::oneshot::Receiver<eyre::Result<Option<String>>>>,
-    pub pending_banner: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
-    pub pending_warmup: Option<tokio::sync::oneshot::Receiver<()>>,
+    pub pending_response: Option<oneshot::Receiver<eyre::Result<Option<String>>>>,
+    pub pending_banner: Option<oneshot::Receiver<Option<String>>>,
+    pub pending_components: Option<oneshot::Receiver<eyre::Result<Vec<DynamicItem>>>>,
+    /// Latest CLI version from crates.io (None = not yet checked).
+    pub latest_cli_version: Option<String>,
+    pub pending_version_check: Option<oneshot::Receiver<Option<String>>>,
+    pub pending_sync: Option<oneshot::Receiver<Vec<EnvListEntry>>>,
+    pub pending_env_check: Option<oneshot::Receiver<HashMap<String, bool>>>,
+    pub saved_picker: Option<Vec<AgentEntry>>,
+    pub runtime: Option<Arc<Mutex<ComponentRuntime>>>,
+    pub pending_runtime: Option<oneshot::Receiver<eyre::Result<ComponentRuntime>>>,
 }
 
 impl Default for App {
@@ -320,7 +372,14 @@ impl Default for App {
             agent: None,
             pending_response: None,
             pending_banner: None,
-            pending_warmup: None,
+            pending_components: None,
+            latest_cli_version: None,
+            pending_version_check: None,
+            pending_sync: None,
+            pending_env_check: None,
+            saved_picker: None,
+            runtime: None,
+            pending_runtime: None,
         }
     }
 }
@@ -328,7 +387,18 @@ impl Default for App {
 impl App {
     pub fn push_message(&mut self, role: MessageRole, content: String) {
         if let Screen::Chat(state) = &mut self.screen {
-            state.messages.push(ChatMessage { role, content });
+            state.messages.push(ChatMessage {
+                role,
+                content,
+                styled_lines: None,
+            });
+        }
+    }
+
+    pub fn show_info_overlay(&mut self, lines: Vec<Line<'static>>) {
+        if let Screen::Chat(state) = &mut self.screen {
+            state.info_overlay = Some(lines);
+            state.info_overlay_scroll = 0;
         }
     }
 }
@@ -338,6 +408,19 @@ pub struct PickerState {
     pub selected: usize,
     pub loading: bool,
     pub error: Option<String>,
+    pub spinner_tick: usize,
+}
+
+impl PickerState {
+    pub fn loading(selected: usize) -> Self {
+        Self {
+            agents: Vec::new(),
+            selected,
+            loading: true,
+            error: None,
+            spinner_tick: 0,
+        }
+    }
 }
 
 pub struct SetupState {
@@ -352,7 +435,6 @@ pub struct SetupState {
     pub allowed_dirs: Vec<String>,
     pub input: String,
     pub error: Option<String>,
-    pub spinner_tick: usize,
 }
 
 impl Default for SetupState {
@@ -369,7 +451,6 @@ impl Default for SetupState {
             allowed_dirs: Vec::new(),
             input: String::new(),
             error: None,
-            spinner_tick: 0,
         }
     }
 }
@@ -377,6 +458,8 @@ impl Default for SetupState {
 pub struct ChatMessage {
     pub role: MessageRole,
     pub content: String,
+    /// Optional pre-styled lines (overrides plain `content` rendering).
+    pub styled_lines: Option<Vec<Line<'static>>>,
 }
 
 pub struct ChatState {
@@ -395,6 +478,31 @@ pub struct ChatState {
     pub scroll_offset: u16,
     pub banner_text: String,
     pub banner_loading: bool,
+    /// Dynamic picker (third-level menu for browsable item selection).
+    pub dynamic_items: Vec<DynamicItem>,
+    pub dynamic_matches: Vec<usize>,
+    pub dynamic_selected: usize,
+    pub dynamic_loading: bool,
+    pub dynamic_command: Option<String>,
+    /// Toast notification.
+    pub toast: Option<String>,
+    pub toast_color: Color,
+    pub toast_until: Option<Instant>,
+    /// Info overlay.
+    pub info_overlay: Option<Vec<Line<'static>>>,
+    pub info_overlay_scroll: u16,
+    /// Env var prompt (for tools requiring env vars on first use).
+    pub env_prompt_vars: Vec<String>,
+    pub env_prompt_idx: usize,
+    pub env_prompt_input: String,
+    /// Cached env var presence for banner display: var_name -> is_set.
+    pub tool_env_status: std::collections::HashMap<String, bool>,
+}
+
+impl ChatState {
+    pub fn has_env_prompt(&self) -> bool {
+        self.env_prompt_idx < self.env_prompt_vars.len()
+    }
 }
 
 impl Default for ChatState {
@@ -414,6 +522,20 @@ impl Default for ChatState {
             scroll_offset: 0,
             banner_text: random_quote().to_string(),
             banner_loading: false,
+            dynamic_items: Vec::new(),
+            dynamic_matches: Vec::new(),
+            dynamic_selected: 0,
+            dynamic_loading: false,
+            dynamic_command: None,
+            toast: None,
+            toast_color: Color::Yellow,
+            toast_until: None,
+            info_overlay: None,
+            info_overlay_scroll: 0,
+            env_prompt_vars: Vec::new(),
+            env_prompt_idx: 0,
+            env_prompt_input: String::new(),
+            tool_env_status: std::collections::HashMap::new(),
         }
     }
 }

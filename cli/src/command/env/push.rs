@@ -1,10 +1,12 @@
 use crate::auth::Auth;
 use crate::local_store::LocalStore;
+use asterai_runtime::environment::Environment;
 use asterai_runtime::resource::ResourceId;
 use eyre::{Context, OptionExt, bail};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::str::FromStr;
 
 #[derive(Debug)]
@@ -144,8 +146,32 @@ impl PushArgs {
                 result.namespace, result.name, result.version
             );
         }
-
+        save_pushed_version(&environment, result.namespace, result.version)?;
         Ok(())
+    }
+}
+
+/// Save the pushed version locally and remove the old directory if it changed.
+fn save_pushed_version(
+    environment: &Environment,
+    namespace: String,
+    version: String,
+) -> eyre::Result<()> {
+    let old_dir = LocalStore::environment_dir(environment);
+    let mut environment = environment.clone();
+    environment.metadata.namespace = namespace;
+    environment.metadata.version = version;
+    LocalStore::write_environment(&environment)
+        .wrap_err("failed to save updated environment locally")?;
+    remove_stale_env_dir(&old_dir, &environment);
+    Ok(())
+}
+
+/// Remove old artifact directory if it differs from the current one.
+fn remove_stale_env_dir(old_dir: &Path, environment: &Environment) {
+    let new_dir = LocalStore::environment_dir(environment);
+    if *old_dir != new_dir {
+        let _ = std::fs::remove_dir_all(old_dir);
     }
 }
 
