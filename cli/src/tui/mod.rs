@@ -147,15 +147,24 @@ async fn run_app(
         let Some(ev) = ev else {
             continue;
         };
-        // Ctrl+C quits only from non-chat screens (picker, auth, setup).
-        // In chat, Ctrl+C is reserved for copy on Windows Terminal.
+        // Ctrl+C quits from any screen. On Windows, skip chat screen
+        // because Windows Terminal reserves Ctrl+C for copy.
         if let Event::Key(key) = &ev
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && key.code == KeyCode::Char('c')
-            && !matches!(app.screen, Screen::Chat(_))
         {
-            app.should_quit = true;
-            continue;
+            #[cfg(windows)]
+            if matches!(app.screen, Screen::Chat(_)) {
+                // Fall through to handle_event for Windows copy.
+            } else {
+                app.should_quit = true;
+                continue;
+            }
+            #[cfg(not(windows))]
+            {
+                app.should_quit = true;
+                continue;
+            }
         }
         views::handle_event(app, ev, terminal).await?;
         // If we returned to the picker (e.g. Esc from chat), re-discover agents.
