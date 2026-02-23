@@ -1,4 +1,6 @@
 use crate::component::Component;
+use crate::component::wit::ComponentInterface;
+use crate::resource::ResourceId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -150,5 +152,13 @@ impl Environment {
             .iter()
             .map(|(id, version)| format!("{}@{}", id, version))
             .collect()
+    }
+
+    /// Returns package IDs (e.g. "asterai:fs") of components that are
+    /// imported by the loaded components but not exported by any component
+    /// in the set. These are dependencies that must be resolved before
+    /// the environment can run.
+    pub fn dependencies(&self, components: &[impl ComponentInterface]) -> Vec<ResourceId> {
+        deps::unsatisfied_import_packages(components)
     }
 }

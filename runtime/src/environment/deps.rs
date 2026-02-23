@@ -1,43 +1,37 @@
 use crate::component::binary::ComponentBinary;
 use crate::component::wit::ComponentInterface;
+use crate::resource::ResourceId;
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
-/// Returns component package IDs (e.g. "asterai:fs") whose interfaces are
-/// imported by at least one component but not exported by any component in
-/// the set. These represent dependencies that must be auto-resolved.
-pub fn unsatisfied_import_packages(components: &[ComponentBinary]) -> Vec<String> {
-    let mut provided: HashSet<String> = HashSet::new();
+/// Returns package IDs (e.g. "asterai:fs") whose interfaces are imported by
+/// at least one component but not exported by any component in the set.
+/// These represent dependencies that must be auto-resolved.
+pub fn unsatisfied_import_packages(components: &[impl ComponentInterface]) -> Vec<ResourceId> {
+    let mut provided: HashSet<ResourceId> = HashSet::new();
     for comp in components {
-        // The component's own package counts as provided.
-        let comp_id = format!(
-            "{}:{}",
-            comp.component().namespace(),
-            comp.component().name()
-        );
-        provided.insert(comp_id);
-        // Every exported interface's package is also provided.
         for export in comp.exported_interfaces() {
-            if let Some(pkg) = extract_package_id(&export.name) {
-                provided.insert(pkg);
+            if let Some(id) = extract_package_id(&export.name) {
+                provided.insert(id);
             }
         }
     }
 
-    let mut missing: Vec<String> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut missing: Vec<ResourceId> = Vec::new();
+    let mut seen: HashSet<ResourceId> = HashSet::new();
     for comp in components {
         for import in comp.imported_interfaces() {
-            let Some(pkg) = extract_package_id(&import.name) else {
+            let Some(id) = extract_package_id(&import.name) else {
                 continue;
             };
-            if is_host_provided(&pkg) {
+            if is_host_provided_id(&id) {
                 continue;
             }
-            if provided.contains(&pkg) {
+            if provided.contains(&id) {
                 continue;
             }
-            if seen.insert(pkg.clone()) {
-                missing.push(pkg);
+            if seen.insert(id.clone()) {
+                missing.push(id);
             }
         }
     }
@@ -53,11 +47,10 @@ pub fn conflicting_exports(components: &[ComponentBinary]) -> Vec<(String, Vec<S
     let mut imported: HashSet<String> = HashSet::new();
     for comp in components {
         for import in comp.imported_interfaces() {
-            let Some(pkg) = extract_package_id(&import.name) else {
-                continue;
-            };
-            if !is_host_provided(&pkg) {
-                imported.insert(import.name.clone());
+            if let Some(id) = extract_package_id(&import.name) {
+                if !is_host_provided_id(&id) {
+                    imported.insert(import.name.clone());
+                }
             }
         }
     }
@@ -93,13 +86,15 @@ pub fn conflicting_exports(components: &[ComponentBinary]) -> Vec<(String, Vec<S
 
 /// Returns true if the package is provided by the runtime host rather than
 /// by a component. These imports should not trigger dependency resolution.
-fn is_host_provided(package: &str) -> bool {
+fn is_host_provided_id(id: &ResourceId) -> bool {
+    let ns = id.namespace();
+    let name = id.name();
     // All WASI interfaces are host-provided.
-    if package.starts_with("wasi:") {
+    if ns == "wasi" {
         return true;
     }
     // asterai host interfaces provided by the runtime.
-    if package.starts_with("asterai:host") {
+    if ns == "asterai" && name.starts_with("host") {
         return true;
     }
     false
@@ -107,16 +102,12 @@ fn is_host_provided(package: &str) -> bool {
 
 /// Extracts the package identifier ("namespace:package") from a fully
 /// qualified interface name like "namespace:package/interface@version".
-fn extract_package_id(interface_name: &str) -> Option<String> {
+fn extract_package_id(interface_name: &str) -> Option<ResourceId> {
     let pkg = interface_name.split('/').next()?;
     // Strip any version suffix from the package part itself
     // (e.g. "asterai:fs@1.0.0" → "asterai:fs"), though this is uncommon.
     let pkg = pkg.split('@').next().unwrap_or(pkg);
-    if pkg.contains(':') {
-        Some(pkg.to_string())
-    } else {
-        None
-    }
+    ResourceId::from_str(pkg).ok()
 }
 
 #[cfg(test)]
@@ -125,33 +116,37 @@ mod tests {
 
     #[test]
     fn test_extract_package_id() {
-        assert_eq!(
-            extract_package_id("asterai:fs/fs@1.0.0"),
-            Some("asterai:fs".to_string())
-        );
-        assert_eq!(
-            extract_package_id("asterai:host/api@1.0.0"),
-            Some("asterai:host".to_string())
-        );
-        assert_eq!(
-            extract_package_id("wasi:http/outgoing-handler@0.2.0"),
-            Some("wasi:http".to_string())
-        );
-        assert_eq!(extract_package_id("bare-name"), None);
+        let id = extract_package_id("asterai:fs/fs@1.0.0").unwrap();
+        assert_eq!(id.namespace(), "asterai");
+        assert_eq!(id.name(), "fs");
+
+        let id = extract_package_id("asterai:host/api@1.0.0").unwrap();
+        assert_eq!(id.namespace(), "asterai");
+        assert_eq!(id.name(), "host");
+
+        let id = extract_package_id("wasi:http/outgoing-handler@0.2.0").unwrap();
+        assert_eq!(id.namespace(), "wasi");
+        assert_eq!(id.name(), "http");
+
+        assert!(extract_package_id("bare-name").is_none());
     }
 
     #[test]
     fn test_is_host_provided() {
-        assert!(is_host_provided("wasi:cli"));
-        assert!(is_host_provided("wasi:http"));
-        assert!(is_host_provided("wasi:filesystem"));
-        assert!(is_host_provided("asterai:host"));
-        assert!(is_host_provided("asterai:host-ws"));
-        assert!(is_host_provided("asterai:host-cron"));
-        assert!(is_host_provided("asterai:host-abc123"));
-        assert!(!is_host_provided("asterai:fs"));
-        assert!(!is_host_provided("asterai:telegram"));
-        assert!(!is_host_provided("asterai:s3"));
-        assert!(!is_host_provided("asterbot:host"));
+        let check = |s: &str| -> bool {
+            let id = ResourceId::from_str(s).unwrap();
+            is_host_provided_id(&id)
+        };
+        assert!(check("wasi:cli"));
+        assert!(check("wasi:http"));
+        assert!(check("wasi:filesystem"));
+        assert!(check("asterai:host"));
+        assert!(check("asterai:host-ws"));
+        assert!(check("asterai:host-cron"));
+        assert!(check("asterai:host-abc123"));
+        assert!(!check("asterai:fs"));
+        assert!(!check("asterai:telegram"));
+        assert!(!check("asterai:s3"));
+        assert!(!check("asterbot:host"));
     }
 }

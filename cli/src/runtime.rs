@@ -87,15 +87,16 @@ async fn resolve_dependencies(
         if missing.is_empty() {
             return Ok(());
         }
-        for package_id in &missing {
-            let (namespace, name) = package_id
-                .split_once(':')
-                .ok_or_else(|| eyre::eyre!("invalid dependency package ID: {}", package_id))?;
-            let version =
-                version_resolver::resolve_latest_version(namespace, name, API_URL, REGISTRY_URL)
-                    .await?;
-            println!("  auto-resolved dependency: {}@{}", package_id, version);
-            let component_id = ComponentId::from_str(package_id)?;
+        for resource_id in &missing {
+            let version = version_resolver::resolve_latest_version(
+                resource_id.namespace(),
+                resource_id.name(),
+                API_URL,
+                REGISTRY_URL,
+            )
+            .await?;
+            println!("  auto-resolved dependency: {}@{}", resource_id, version);
+            let component_id = ComponentId::from_str(&resource_id.to_string())?;
             let version_str = version.to_string();
             let local_opt = find_component(&component_id, &version_str, local_components);
             let binary = match local_opt {
