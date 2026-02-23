@@ -265,17 +265,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 }
                 let cmd = state.dynamic_command.clone().unwrap();
                 let full = format!("/{} {}", cmd, item.value);
-                state.dynamic_items.clear();
-                state.dynamic_matches.clear();
-                state.dynamic_selected = 0;
-                state.dynamic_command = None;
-                state.dynamic_loading = false;
-                state.active_command = None;
-                state.sub_matches.clear();
-                state.sub_selected = 0;
-                state.slash_matches.clear();
-                state.slash_selected = 0;
-                state.input.clear();
+                clear_dynamic_state(state);
                 dispatch_slash(app, &full).await?;
             }
         }
@@ -294,18 +284,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
             }
             let cmd = state.dynamic_command.clone().unwrap();
             let full = format!("/{} {}", cmd, item.value);
-            // Clear dynamic picker state.
-            state.dynamic_items.clear();
-            state.dynamic_matches.clear();
-            state.dynamic_selected = 0;
-            state.dynamic_command = None;
-            state.dynamic_loading = false;
-            state.active_command = None;
-            state.sub_matches.clear();
-            state.sub_selected = 0;
-            state.slash_matches.clear();
-            state.slash_selected = 0;
-            state.input.clear();
+            clear_dynamic_state(state);
             dispatch_slash(app, &full).await?;
         }
         KeyCode::Char(c) if has_dynamic && !state.dynamic_loading => {
@@ -317,17 +296,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
             update_dynamic_filter(state);
         }
         KeyCode::Esc if has_dynamic => {
-            state.dynamic_items.clear();
-            state.dynamic_matches.clear();
-            state.dynamic_selected = 0;
-            state.dynamic_command = None;
-            state.dynamic_loading = false;
-            state.active_command = None;
-            state.sub_matches.clear();
-            state.sub_selected = 0;
-            state.slash_matches.clear();
-            state.slash_selected = 0;
-            state.input.clear();
+            clear_dynamic_state(state);
             app.pending_components = None;
         }
         // --- Sub-menu navigation ---
@@ -341,39 +310,11 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 let sub = &SLASH_COMMANDS[cmd_idx].subs[sub_idx];
                 let cmd_name = SLASH_COMMANDS[cmd_idx].name;
                 if sub.needs_arg && cmd_name == "tools" {
-                    let sub_name = sub.name.to_string();
-                    state.input.clear();
-                    state.active_command = None;
-                    state.sub_matches.clear();
-                    state.sub_selected = 0;
-                    state.slash_matches.clear();
-                    state.slash_selected = 0;
-                    if sub_name == "add" {
-                        state.dynamic_command = Some("tools add".to_string());
-                        state.dynamic_loading = true;
-                        start_component_fetch(app);
-                    } else if sub_name == "remove" {
-                        state.dynamic_command = Some("tools remove".to_string());
-                        state.dynamic_items = build_remove_items(&agent_tools);
-                        state.dynamic_matches = (0..state.dynamic_items.len()).collect();
-                        state.dynamic_selected = 0;
-                    }
+                    enter_tools_picker(app, sub.name, &agent_tools);
                 } else if sub.needs_arg {
-                    state.input = format!("/{cmd_name} {} ", sub.name);
-                    state.active_command = None;
-                    state.sub_matches.clear();
-                    state.sub_selected = 0;
-                    state.slash_matches.clear();
-                    state.slash_selected = 0;
+                    enter_sub_arg_input(state, cmd_name, sub.name);
                 } else {
-                    let full = format!("/{cmd_name} {}", sub.name);
-                    state.active_command = None;
-                    state.sub_matches.clear();
-                    state.sub_selected = 0;
-                    state.slash_matches.clear();
-                    state.slash_selected = 0;
-                    state.input.clear();
-                    dispatch_slash(app, &full).await?;
+                    dispatch_sub_command(app, cmd_name, sub.name).await?;
                 }
             }
         }
@@ -388,51 +329,16 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
             let sub = &SLASH_COMMANDS[cmd_idx].subs[sub_idx];
             let cmd_name = SLASH_COMMANDS[cmd_idx].name;
             if sub.needs_arg && cmd_name == "tools" {
-                // Dynamic picker for /tools add and /tools remove.
-                let sub_name = sub.name.to_string();
-                state.input.clear();
-                state.active_command = None;
-                state.sub_matches.clear();
-                state.sub_selected = 0;
-                state.slash_matches.clear();
-                state.slash_selected = 0;
-                if sub_name == "add" {
-                    state.dynamic_command = Some("tools add".to_string());
-                    state.dynamic_loading = true;
-                    start_component_fetch(app);
-                } else if sub_name == "remove" {
-                    state.dynamic_command = Some("tools remove".to_string());
-                    state.dynamic_items = build_remove_items(&agent_tools);
-                    state.dynamic_matches = (0..state.dynamic_items.len()).collect();
-                    state.dynamic_selected = 0;
-                }
+                enter_tools_picker(app, sub.name, &agent_tools);
             } else if sub.needs_arg {
-                // Fill in command + subcommand, let user type the argument.
-                state.input = format!("/{cmd_name} {} ", sub.name);
-                state.active_command = None;
-                state.sub_matches.clear();
-                state.sub_selected = 0;
-                state.slash_matches.clear();
-                state.slash_selected = 0;
+                enter_sub_arg_input(state, cmd_name, sub.name);
             } else {
-                // Dispatch immediately (e.g. /tools list, /banner off).
-                let full = format!("/{cmd_name} {}", sub.name);
-                state.active_command = None;
-                state.sub_matches.clear();
-                state.sub_selected = 0;
-                state.slash_matches.clear();
-                state.slash_selected = 0;
-                state.input.clear();
-                dispatch_slash(app, &full).await?;
+                dispatch_sub_command(app, cmd_name, sub.name).await?;
             }
         }
         KeyCode::Esc if has_sub_menu => {
-            state.active_command = None;
-            state.sub_matches.clear();
-            state.sub_selected = 0;
             state.input.clear();
-            state.slash_matches.clear();
-            state.slash_selected = 0;
+            clear_menu_state(state);
         }
         // --- Top-level slash menu navigation ---
         KeyCode::Up if has_slash_menu => {
@@ -1252,6 +1158,66 @@ async fn dispatch_slash(app: &mut App, input: &str) -> eyre::Result<()> {
             Ok(())
         }
     }
+}
+
+/// Reset all dynamic picker, sub-menu, slash menu, and input state.
+fn clear_dynamic_state(state: &mut ChatState) {
+    state.dynamic_items.clear();
+    state.dynamic_matches.clear();
+    state.dynamic_selected = 0;
+    state.dynamic_command = None;
+    state.dynamic_loading = false;
+    state.active_command = None;
+    state.sub_matches.clear();
+    state.sub_selected = 0;
+    state.slash_matches.clear();
+    state.slash_selected = 0;
+    state.input.clear();
+}
+
+/// Open the dynamic picker for `/tools add` or `/tools remove`.
+fn enter_tools_picker(app: &mut App, sub_name: &str, agent_tools: &[String]) {
+    if let Screen::Chat(state) = &mut app.screen {
+        state.input.clear();
+        clear_menu_state(state);
+        if sub_name == "add" {
+            state.dynamic_command = Some("tools add".to_string());
+            state.dynamic_loading = true;
+        } else if sub_name == "remove" {
+            state.dynamic_command = Some("tools remove".to_string());
+            state.dynamic_items = build_remove_items(agent_tools);
+            state.dynamic_matches = (0..state.dynamic_items.len()).collect();
+            state.dynamic_selected = 0;
+        }
+    }
+    if sub_name == "add" {
+        start_component_fetch(app);
+    }
+}
+
+/// Fill input with `/{cmd} {sub} ` and clear menu state for sub-commands needing a typed argument.
+fn enter_sub_arg_input(state: &mut ChatState, cmd_name: &str, sub_name: &str) {
+    state.input = format!("/{cmd_name} {sub_name} ");
+    clear_menu_state(state);
+}
+
+/// Clear menu state and dispatch a no-arg sub-command.
+async fn dispatch_sub_command(app: &mut App, cmd_name: &str, sub_name: &str) -> eyre::Result<()> {
+    if let Screen::Chat(state) = &mut app.screen {
+        clear_menu_state(state);
+        state.input.clear();
+    }
+    let full = format!("/{cmd_name} {sub_name}");
+    dispatch_slash(app, &full).await
+}
+
+/// Clear active_command, sub_matches, and slash menu state.
+fn clear_menu_state(state: &mut ChatState) {
+    state.active_command = None;
+    state.sub_matches.clear();
+    state.sub_selected = 0;
+    state.slash_matches.clear();
+    state.slash_selected = 0;
 }
 
 fn update_menus(state: &mut ChatState) {

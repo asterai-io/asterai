@@ -333,9 +333,7 @@ pub async fn handle_event(
             app.should_quit = true;
         }
         KeyCode::Char('r') => {
-            app.screen = Screen::Picker(PickerState::loading(0));
-            terminal.draw(|f| super::render(f, app))?;
-            discover_agents(app);
+            reload_picker(app, terminal, 0)?;
         }
         KeyCode::Char('p') => {
             let selected = state.selected;
@@ -349,12 +347,7 @@ pub async fn handle_event(
                     state.error = Some(format!("Pulling {name}..."));
                     terminal.draw(|f| super::render(f, app))?;
                     match ops::pull_env(&name).await {
-                        Ok(()) => {
-                            // Refresh the list after pull.
-                            app.screen = Screen::Picker(PickerState::loading(selected));
-                            terminal.draw(|f| super::render(f, app))?;
-                            discover_agents(app);
-                        }
+                        Ok(()) => reload_picker(app, terminal, selected)?,
                         Err(e) => set_picker_error(app, format!("Pull failed: {e}")),
                     }
                 }
@@ -369,12 +362,7 @@ pub async fn handle_event(
                     state.error = Some(format!("Pushing {name}..."));
                     terminal.draw(|f| super::render(f, app))?;
                     match ops::push_env(&name).await {
-                        Ok(()) => {
-                            // Refresh the list after push.
-                            app.screen = Screen::Picker(PickerState::loading(selected));
-                            terminal.draw(|f| super::render(f, app))?;
-                            discover_agents(app);
-                        }
+                        Ok(()) => reload_picker(app, terminal, selected)?,
                         Err(e) => set_picker_error(app, format!("Push failed: {e}")),
                     }
                 }
@@ -394,14 +382,10 @@ pub async fn handle_event(
                     let ns = agent.namespace.clone();
                     match ops::delete_local_env(&ns, &name) {
                         Ok(n) if n > 0 => {
-                            // Also remove state dir.
                             let state_dir = resolve_state_dir(&name);
                             let _ = std::fs::remove_dir_all(&state_dir);
-                            // Refresh list.
                             let new_selected = selected.min(state.agents.len().saturating_sub(2));
-                            app.screen = Screen::Picker(PickerState::loading(new_selected));
-                            terminal.draw(|f| super::render(f, app))?;
-                            discover_agents(app);
+                            reload_picker(app, terminal, new_selected)?;
                         }
                         Ok(_) => set_picker_error(app, format!("No local data found for {name}")),
                         Err(e) => set_picker_error(app, format!("Delete failed: {e}")),
@@ -427,9 +411,7 @@ pub async fn handle_event(
                 match ops::kill_process(pid) {
                     Ok(()) => {
                         let sel = selected.min(total.saturating_sub(2));
-                        app.screen = Screen::Picker(PickerState::loading(sel));
-                        terminal.draw(|f| super::render(f, app))?;
-                        discover_agents(app);
+                        reload_picker(app, terminal, sel)?;
                     }
                     Err(e) => set_picker_error(app, format!("Stop failed: {e}")),
                 }
@@ -714,6 +696,18 @@ async fn resolve_and_enter_chat(
     app.screen = Screen::Chat(Box::new(chat_state));
     super::chat::start_banner_fetch(app);
     super::chat::start_env_check(app);
+    Ok(())
+}
+
+/// Set loading state, redraw, and fire agent discovery.
+pub fn reload_picker(
+    app: &mut App,
+    terminal: &mut Terminal<CrosstermBackend<Tty>>,
+    selected: usize,
+) -> eyre::Result<()> {
+    app.screen = Screen::Picker(PickerState::loading(selected));
+    terminal.draw(|f| super::render(f, app))?;
+    discover_agents(app);
     Ok(())
 }
 

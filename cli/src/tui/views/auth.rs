@@ -1,5 +1,5 @@
 use crate::tui::Tty;
-use crate::tui::app::{App, AuthState, PickerState, Screen};
+use crate::tui::app::{App, AuthState, Screen};
 use crate::tui::ops;
 use crate::tui::views::picker;
 use crossterm::event::{Event, KeyCode};
@@ -123,9 +123,7 @@ pub async fn handle_event(
                 terminal.draw(|f| super::render(f, app))?;
                 match ops::login(&key).await {
                     Ok(_) => {
-                        app.screen = Screen::Picker(PickerState::loading(0));
-                        terminal.draw(|f| super::render(f, app))?;
-                        picker::discover_agents(app);
+                        picker::reload_picker(app, terminal, 0)?;
                     }
                     Err(e) => {
                         let msg = format!("{e:#}");
