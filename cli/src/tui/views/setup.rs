@@ -554,7 +554,6 @@ async fn run_provisioning(
         tools: DEFAULT_TOOLS.iter().map(|s| s.to_string()).collect(),
         allowed_dirs,
         banner_mode: "auto".to_string(),
-        preferred_port: None,
     };
     app.agent = Some(agent);
     let Screen::Setup(state) = &mut app.screen else {

@@ -459,27 +459,13 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 app.pending_response = None;
                 app.pending_banner = None;
                 app.pending_components = None;
-                app.pending_auto_start = None;
                 // Restore saved picker state instantly (no loading screen).
-                if let Some((agents, orphans)) = app.saved_picker.take() {
+                if let Some(agents) = app.saved_picker.take() {
                     app.screen = Screen::Picker(PickerState {
                         agents,
                         selected: 0,
                         loading: false,
                         error: None,
-                        running_agents: orphans,
-                        starting_agent: None,
-                        spinner_tick: 0,
-                    });
-                    // Fire async process scan to refresh running status.
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    app.pending_process_scan = Some(rx);
-                    tokio::spawn(async move {
-                        let result =
-                            tokio::task::spawn_blocking(crate::tui::ops::scan_running_agents)
-                                .await
-                                .unwrap_or_default();
-                        let _ = tx.send(result);
                     });
                 } else {
                     app.screen = Screen::Picker(PickerState::loading(0));
@@ -493,7 +479,6 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
 
 fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: Rect) {
     let agent = app.agent.as_ref();
-    let process_starting = app.pending_auto_start.is_some();
     let banner_text = &chat.banner_text;
     let banner_loading = chat.banner_loading;
     let model = agent.and_then(|b| b.model.as_deref()).unwrap_or("not set");
@@ -657,26 +642,6 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
         right_lines.push(Line::from(vec![
             Span::styled("DIRS    ", label_style),
             Span::styled(dirs_label, value_style),
-        ]));
-    }
-    // Show running process info.
-    if let Some(ra) = &chat.running_process {
-        right_lines.push(Line::from(vec![
-            Span::styled("PROCESS ", label_style),
-            Span::styled(
-                format!(":{} (pid {})", ra.port, ra.pid),
-                Style::default().fg(Color::Rgb(80, 220, 120)),
-            ),
-        ]));
-    } else if process_starting {
-        let frame = crate::tui::app::SPINNER_FRAMES
-            [chat.spinner_tick % crate::tui::app::SPINNER_FRAMES.len()];
-        right_lines.push(Line::from(vec![
-            Span::styled("PROCESS ", label_style),
-            Span::styled(
-                format!("{frame} starting..."),
-                Style::default().fg(Color::Rgb(255, 200, 60)),
-            ),
         ]));
     }
     right_lines.push(Line::from(""));
@@ -1098,38 +1063,26 @@ fn send_message(app: &mut App, input: &str) {
     });
     state.waiting = true;
     let agent = app.agent.clone();
-    let running = state.running_process.clone();
     let message = input.to_string();
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.pending_response = Some(rx);
     tokio::spawn(async move {
         let result = match agent {
-            Some(ref a) => {
-                // Route through running process if available.
-                if let Some(ra) = &running {
-                    let ns = a.namespace.clone();
-                    let env = a.env_name.clone();
-                    let port = ra.port;
-                    let msg = message.clone();
-                    ops::call_converse_via_process(&msg, &ns, &env, port).await
-                } else {
-                    let a = a.clone();
-                    let msg = message.clone();
-                    match tokio::task::spawn(async move { ops::call_converse(&msg, &a).await })
-                        .await
-                    {
-                        Ok(r) => r,
-                        Err(e) => {
-                            let panic_msg = if let Ok(s) = e.try_into_panic() {
-                                s.downcast_ref::<String>()
-                                    .cloned()
-                                    .or_else(|| s.downcast_ref::<&str>().map(|s| s.to_string()))
-                                    .unwrap_or_else(|| "internal error".to_string())
-                            } else {
-                                "request was cancelled".to_string()
-                            };
-                            Err(eyre::eyre!("{panic_msg}"))
-                        }
+            Some(a) => {
+                match tokio::task::spawn(async move { ops::call_converse(&message, &a).await })
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let panic_msg = if let Ok(s) = e.try_into_panic() {
+                            s.downcast_ref::<String>()
+                                .cloned()
+                                .or_else(|| s.downcast_ref::<&str>().map(|s| s.to_string()))
+                                .unwrap_or_else(|| "internal error".to_string())
+                        } else {
+                            "request was cancelled".to_string()
+                        };
+                        Err(eyre::eyre!("{panic_msg}"))
                     }
                 }
             }

@@ -70,17 +70,6 @@ async fn run_app(
     loop {
         terminal.draw(|f| views::render(f, app))?;
         if app.should_quit {
-            // Check for running agents before exiting.
-            let running = collect_running_agents(app);
-            if !running.is_empty() {
-                app.should_quit = false;
-                if prompt_stop_agents(terminal, app, &running)? {
-                    // User chose to stop all.
-                    for ra in &running {
-                        let _ = ops::kill_process(ra.pid);
-                    }
-                }
-            }
             // Suppress panics from background wasmtime tasks during
             // tokio shutdown — they're harmless but look scary.
             std::panic::set_hook(Box::new(|_| {}));
@@ -100,9 +89,6 @@ async fn run_app(
             || app.pending_banner.is_some()
             || app.pending_components.is_some()
             || app.pending_version_check.is_some()
-            || app.pending_process_scan.is_some()
-            || app.pending_start.is_some()
-            || app.pending_auto_start.is_some()
             || app.pending_sync.is_some()
             || app.pending_env_check.is_some();
         // Always poll with timeout so the cursor blink can advance.
@@ -136,36 +122,12 @@ async fn run_app(
             app.latest_cli_version = ver;
             app.pending_version_check = None;
         }
-        if let Some(rx) = &mut app.pending_process_scan
-            && let Ok(running) = rx.try_recv()
-        {
-            app.pending_process_scan = None;
-            if let Screen::Picker(state) = &mut app.screen {
-                merge_running_agents(state, running);
-            }
-        }
         if let Some(rx) = &mut app.pending_sync
             && let Ok(remote_entries) = rx.try_recv()
         {
             app.pending_sync = None;
             if let Screen::Picker(state) = &mut app.screen {
                 merge_sync_status(state, remote_entries);
-            }
-        }
-        if let Some(rx) = &mut app.pending_auto_start {
-            match rx.try_recv() {
-                Ok(result) => {
-                    app.pending_auto_start = None;
-                    if let Some(ra) = result
-                        && let Screen::Chat(state) = &mut app.screen
-                    {
-                        state.running_process = Some(ra);
-                    }
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    app.pending_auto_start = None;
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
             }
         }
         if let Some(rx) = &mut app.pending_env_check {
@@ -181,62 +143,6 @@ async fn run_app(
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
             }
-        }
-        if let Some(rx) = &mut app.pending_start {
-            match rx.try_recv() {
-                Ok(result) => {
-                    app.pending_start = None;
-                    match result {
-                        Ok((name, port, pid)) => {
-                            // Keep starting_agent set so spinner persists until
-                            // merge_running_agents confirms the process is running.
-                            let starting = Some(name.clone());
-                            let tick = if let Screen::Picker(state) = &app.screen {
-                                state.spinner_tick
-                            } else {
-                                0
-                            };
-                            views::picker::discover_agents(app);
-                            if let Screen::Picker(state) = &mut app.screen {
-                                state.error =
-                                    Some(format!("Started {name} on :{port} (pid {pid})"));
-                                state.starting_agent = starting;
-                                state.spinner_tick = tick;
-                            }
-                        }
-                        Err(msg) => {
-                            if let Screen::Picker(state) = &mut app.screen {
-                                state.starting_agent = None;
-                                state.error = Some(msg);
-                            }
-                        }
-                    }
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
-                    // Still starting — tick spinner.
-                    if ev.is_none()
-                        && let Screen::Picker(state) = &mut app.screen
-                    {
-                        state.spinner_tick = state.spinner_tick.wrapping_add(1);
-                    }
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    // Sender dropped without sending — shouldn't happen.
-                    app.pending_start = None;
-                    if let Screen::Picker(state) = &mut app.screen {
-                        state.starting_agent = None;
-                        state.error = Some("Start failed unexpectedly.".to_string());
-                    }
-                }
-            }
-        }
-        // Tick picker spinner while starting agent (covers gap between
-        // pending_start resolving and process scan finding the process).
-        if ev.is_none()
-            && let Screen::Picker(state) = &mut app.screen
-            && state.starting_agent.is_some()
-        {
-            state.spinner_tick = state.spinner_tick.wrapping_add(1);
         }
         let Some(ev) = ev else {
             continue;
@@ -381,93 +287,6 @@ fn check_pending_banner(app: &mut App) {
     }
 }
 
-/// Collect all known running agents (from picker or chat state).
-fn collect_running_agents(app: &App) -> Vec<app::RunningAgent> {
-    match &app.screen {
-        Screen::Picker(state) => {
-            let mut running = Vec::new();
-            for agent in &state.agents {
-                if let Some(ra) = &agent.running_info {
-                    running.push(ra.clone());
-                }
-            }
-            running.extend(state.running_agents.iter().cloned());
-            running
-        }
-        Screen::Chat(state) => state.running_process.iter().cloned().collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// Show a prompt asking whether to stop running agents. Returns true if user chose yes.
-fn prompt_stop_agents(
-    terminal: &mut Terminal<CrosstermBackend<Tty>>,
-    _app: &App,
-    running: &[app::RunningAgent],
-) -> eyre::Result<bool> {
-    use ratatui::prelude::*;
-    use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-    let count = running.len();
-    let names: Vec<String> = running
-        .iter()
-        .map(|r| format!("{} :{}", r.name, r.port))
-        .collect();
-    let base_msg = format!(
-        "{} agent{} still running:\n{}\n\nStop all before exiting? (y/n): ",
-        count,
-        match count {
-            1 => "",
-            _ => "s",
-        },
-        names.join("\n"),
-    );
-    let mut input: Option<char> = None;
-    loop {
-        let display = match input {
-            Some(c) => format!("{}{}", base_msg, c),
-            None => base_msg.clone(),
-        };
-        terminal.draw(|f| {
-            let area = f.area();
-            let height = (count as u16 + 5).min(area.height.saturating_sub(4));
-            let width = 50.min(area.width.saturating_sub(4));
-            let x = (area.width.saturating_sub(width)) / 2;
-            let y = (area.height.saturating_sub(height)) / 2;
-            let popup = ratatui::layout::Rect::new(x, y, width, height);
-            f.render_widget(Clear, popup);
-            let block = Block::default()
-                .title(" Exit ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow));
-            let inner = block.inner(popup);
-            f.render_widget(block, popup);
-            f.render_widget(
-                Paragraph::new(display.as_str()).wrap(ratatui::widgets::Wrap { trim: false }),
-                inner,
-            );
-        })?;
-        if let Ok(true) = event::poll(Duration::from_millis(200))
-            && let Ok(Event::Key(key)) = event::read()
-        {
-            if key.kind != crossterm::event::KeyEventKind::Press {
-                continue;
-            }
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => input = Some('y'),
-                KeyCode::Char('n') | KeyCode::Char('N') => input = Some('n'),
-                KeyCode::Backspace => input = None,
-                KeyCode::Enter => match input {
-                    Some('y') => return Ok(true),
-                    Some('n') => return Ok(false),
-                    _ => {}
-                },
-                KeyCode::Esc => return Ok(false),
-                _ => {}
-            }
-        }
-    }
-}
-
 /// Merge remote sync status into the picker. Updates sync tags and adds remote-only envs.
 fn merge_sync_status(
     state: &mut app::PickerState,
@@ -498,27 +317,9 @@ fn merge_sync_status(
                 sync_tag: ArtifactSyncTag::Remote,
                 local_version: None,
                 remote_version: entry.remote_version.clone(),
-                running_info: None,
-                preferred_port: None,
             });
         }
     }
-}
-
-fn merge_running_agents(state: &mut app::PickerState, running: Vec<app::RunningAgent>) {
-    let mut orphans = Vec::new();
-    for ra in running {
-        if let Some(agent) = state.agents.iter_mut().find(|a| a.name == ra.name) {
-            // Clear spinner if this is the agent we were starting.
-            if state.starting_agent.as_ref().is_some_and(|n| n == &ra.name) {
-                state.starting_agent = None;
-            }
-            agent.running_info = Some(ra);
-        } else {
-            orphans.push(ra);
-        }
-    }
-    state.running_agents = orphans;
 }
 
 #[cfg(unix)]

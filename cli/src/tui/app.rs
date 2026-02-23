@@ -326,16 +326,6 @@ pub struct AgentConfig {
     pub allowed_dirs: Vec<String>,
     /// Banner mode: "auto", "quote", or "off".
     pub banner_mode: String,
-    pub preferred_port: Option<u16>,
-}
-
-pub type StartAgentResult = Result<(String, u16, u32), String>;
-
-#[derive(Debug, Clone)]
-pub struct RunningAgent {
-    pub name: String,
-    pub port: u16,
-    pub pid: u32,
 }
 
 #[derive(Clone)]
@@ -348,8 +338,6 @@ pub struct AgentEntry {
     pub sync_tag: ArtifactSyncTag,
     pub local_version: Option<String>,
     pub remote_version: Option<String>,
-    pub running_info: Option<RunningAgent>,
-    pub preferred_port: Option<u16>,
 }
 
 pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -364,14 +352,11 @@ pub struct App {
     /// Latest CLI version from crates.io (None = not yet checked).
     pub latest_cli_version: Option<String>,
     pub pending_version_check: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
-    pub pending_start: Option<tokio::sync::oneshot::Receiver<StartAgentResult>>,
-    pub pending_process_scan: Option<tokio::sync::oneshot::Receiver<Vec<RunningAgent>>>,
     pub pending_sync:
         Option<tokio::sync::oneshot::Receiver<Vec<crate::command::env::list::EnvListEntry>>>,
-    pub pending_auto_start: Option<tokio::sync::oneshot::Receiver<Option<RunningAgent>>>,
     pub pending_env_check:
         Option<tokio::sync::oneshot::Receiver<std::collections::HashMap<String, bool>>>,
-    pub saved_picker: Option<(Vec<AgentEntry>, Vec<RunningAgent>)>,
+    pub saved_picker: Option<Vec<AgentEntry>>,
 }
 
 impl Default for App {
@@ -385,10 +370,7 @@ impl Default for App {
             pending_components: None,
             latest_cli_version: None,
             pending_version_check: None,
-            pending_start: None,
-            pending_process_scan: None,
             pending_sync: None,
-            pending_auto_start: None,
             pending_env_check: None,
             saved_picker: None,
         }
@@ -419,9 +401,6 @@ pub struct PickerState {
     pub selected: usize,
     pub loading: bool,
     pub error: Option<String>,
-    pub running_agents: Vec<RunningAgent>,
-    pub starting_agent: Option<String>,
-    pub spinner_tick: usize,
 }
 
 impl PickerState {
@@ -431,9 +410,6 @@ impl PickerState {
             selected,
             loading: true,
             error: None,
-            running_agents: Vec::new(),
-            starting_agent: None,
-            spinner_tick: 0,
         }
     }
 }
@@ -506,8 +482,6 @@ pub struct ChatState {
     /// Info overlay.
     pub info_overlay: Option<Vec<Line<'static>>>,
     pub info_overlay_scroll: u16,
-    /// Running background process.
-    pub running_process: Option<RunningAgent>,
     /// Env var prompt (for tools requiring env vars on first use).
     pub env_prompt_vars: Vec<String>,
     pub env_prompt_idx: usize,
@@ -549,7 +523,6 @@ impl Default for ChatState {
             toast_until: None,
             info_overlay: None,
             info_overlay_scroll: 0,
-            running_process: None,
             env_prompt_vars: Vec::new(),
             env_prompt_idx: 0,
             env_prompt_input: String::new(),

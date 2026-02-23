@@ -1,8 +1,8 @@
 use crate::artifact::ArtifactSyncTag;
 use crate::tui::Tty;
 use crate::tui::app::{
-    AgentConfig, AgentEntry, App, CLI_VERSION, CORE_COMPONENTS, ChatState, PickerState, Screen,
-    SetupState, default_user_name, resolve_state_dir,
+    AgentConfig, AgentEntry, App, CLI_VERSION, CORE_COMPONENTS, PickerState, Screen, SetupState,
+    default_user_name, resolve_state_dir,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -132,15 +132,8 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
         .collect();
     let sync_w = sync_texts.iter().map(|s| s.len()).max().unwrap_or(0);
 
-    // Spinner frames for starting animation.
-    const SPINNER: &[char] = &[
-        '\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}',
-        '\u{2827}', '\u{2807}', '\u{280F}',
-    ];
-
     // Agent rows.
-    let orphan_count = state.running_agents.len();
-    let total = state.agents.len() + orphan_count + 1;
+    let total = state.agents.len() + 1;
     let mut items: Vec<ListItem> = Vec::with_capacity(total);
     for (i, agent) in state.agents.iter().enumerate() {
         let is_selected = i == state.selected;
@@ -164,25 +157,6 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             ArtifactSyncTag::Unpushed => Style::default().fg(Color::DarkGray),
             ArtifactSyncTag::Remote => Style::default().fg(Color::Blue),
         };
-        let is_starting = state
-            .starting_agent
-            .as_ref()
-            .is_some_and(|n| n == &agent.name);
-        let running_span = if is_starting {
-            let frame = SPINNER[state.spinner_tick % SPINNER.len()];
-            Span::styled(
-                format!("  {frame} starting..."),
-                Style::default().fg(Color::Yellow),
-            )
-        } else {
-            match &agent.running_info {
-                Some(ra) => Span::styled(
-                    format!("  \u{25B6} :{}", ra.port),
-                    Style::default().fg(Color::Green).bold(),
-                ),
-                None => Span::raw(""),
-            }
-        };
         let line = Line::from(vec![
             Span::raw(pointer),
             Span::styled(format!("{}. ", i + 1), Style::default().fg(Color::DarkGray)),
@@ -199,42 +173,12 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             Span::styled(ver_str, ver_style),
             Span::raw("  "),
             Span::styled(sync_str, sync_style),
-            running_span,
-        ]);
-        items.push(ListItem::new(line));
-    }
-    // Orphan running agents (running but no local env).
-    for (i, ra) in state.running_agents.iter().enumerate() {
-        let idx = state.agents.len() + i;
-        let is_selected = idx == state.selected;
-        let pointer = match is_selected {
-            true => "▸ ",
-            false => "  ",
-        };
-        let line = Line::from(vec![
-            Span::raw(pointer),
-            Span::styled(
-                format!("{}. ", idx + 1),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                ra.name.clone(),
-                match is_selected {
-                    true => Style::default().fg(Color::Yellow).bold(),
-                    false => Style::default().fg(Color::Yellow),
-                },
-            ),
-            Span::styled(
-                format!("  \u{25B6} :{} (pid {})", ra.port, ra.pid),
-                Style::default().fg(Color::Green).bold(),
-            ),
-            Span::styled(" [no env]", Style::default().fg(Color::Red)),
         ]);
         items.push(ListItem::new(line));
     }
 
     // "+ Create a new agent" row.
-    let create_idx = state.agents.len() + orphan_count;
+    let create_idx = state.agents.len();
     let is_selected = state.selected == create_idx;
     let pointer = match is_selected {
         true => "▸ ",
@@ -265,25 +209,13 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             let sel = state.selected;
             let hint = if sel == create_idx {
                 "↑↓ navigate · enter create · esc quit".to_string()
-            } else if sel >= state.agents.len() {
-                // Orphan running agent.
-                "↑↓ navigate · space stop · r refresh · esc quit".to_string()
             } else {
                 let agent = &state.agents[sel];
                 let sync_hint = match agent.sync_tag {
                     ArtifactSyncTag::Remote | ArtifactSyncTag::Behind => " · p pull",
                     _ => "",
                 };
-                let run_hint = if agent.running_info.is_some() {
-                    " · space stop"
-                } else if agent.sync_tag != ArtifactSyncTag::Remote {
-                    " · space run"
-                } else {
-                    ""
-                };
-                format!(
-                    "↑↓ navigate · enter chat{sync_hint}{run_hint} · d delete · r refresh · esc quit"
-                )
+                format!("↑↓ navigate · enter chat{sync_hint} · d delete · r refresh · esc quit")
             };
             Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray)))
         }
@@ -307,8 +239,7 @@ pub async fn handle_event(
         return Ok(());
     };
     state.error = None;
-    let orphan_count = state.running_agents.len();
-    let total = state.agents.len() + orphan_count + 1;
+    let total = state.agents.len() + 1;
     match code {
         KeyCode::Up | KeyCode::Char('k') => {
             if state.selected > 0 {
@@ -322,14 +253,9 @@ pub async fn handle_event(
         }
         KeyCode::Enter => {
             let selected = state.selected;
-            let create_idx = state.agents.len() + orphan_count;
+            let create_idx = state.agents.len();
             if selected == create_idx {
                 app.screen = Screen::Setup(SetupState::default());
-            } else if selected >= state.agents.len() {
-                set_picker_error(
-                    app,
-                    "No local env. Press space to stop this process.".to_string(),
-                );
             } else {
                 let agent = state.agents[selected].clone();
                 resolve_and_enter_chat(app, agent, terminal).await?;
@@ -380,10 +306,6 @@ pub async fn handle_event(
                 let agent = &state.agents[selected];
                 // Only allow deleting local envs (not remote-only).
                 if agent.sync_tag != ArtifactSyncTag::Remote {
-                    // Kill running process first if any.
-                    if let Some(ra) = &agent.running_info {
-                        let _ = ops::kill_process(ra.pid);
-                    }
                     let name = agent.name.clone();
                     let ns = agent.namespace.clone();
                     match ops::delete_local_env(&ns, &name) {
@@ -399,74 +321,11 @@ pub async fn handle_event(
                 }
             }
         }
-        KeyCode::Char(' ') => {
-            let selected = state.selected;
-            // Determine if the selected item is running.
-            let running = if selected < state.agents.len() {
-                state.agents[selected].running_info.clone()
-            } else {
-                let orphan_idx = selected - state.agents.len();
-                state.running_agents.get(orphan_idx).cloned()
-            };
-            if let Some(ra) = running {
-                // Stop the running process.
-                let name = ra.name.clone();
-                let pid = ra.pid;
-                state.error = Some(format!("Stopping {name} (pid {pid})..."));
-                terminal.draw(|f| super::render(f, app))?;
-                match ops::kill_process(pid) {
-                    Ok(()) => {
-                        let sel = selected.min(total.saturating_sub(2));
-                        reload_picker(app, terminal, sel)?;
-                    }
-                    Err(e) => set_picker_error(app, format!("Stop failed: {e}")),
-                }
-            } else if selected < state.agents.len() {
-                // Start the agent as a background process.
-                let agent = &state.agents[selected];
-                if agent.sync_tag == ArtifactSyncTag::Remote {
-                    set_picker_error(app, "Pull the agent first (p) before running.".to_string());
-                } else if state.starting_agent.is_some() {
-                    // Already starting an agent — ignore double-press.
-                } else {
-                    let name = agent.name.clone();
-                    let preferred_port = agent.preferred_port;
-                    // Collect running ports before releasing borrow.
-                    let mut all_running: Vec<crate::tui::app::RunningAgent> = state
-                        .agents
-                        .iter()
-                        .filter_map(|a| a.running_info.clone())
-                        .collect();
-                    all_running.extend(state.running_agents.iter().cloned());
-                    let port =
-                        preferred_port.unwrap_or_else(|| ops::next_available_port(&all_running));
-                    // Set starting state for spinner.
-                    state.starting_agent = Some(name.clone());
-                    state.spinner_tick = 0;
-                    // Fire async start in background.
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    app.pending_start = Some(rx);
-                    tokio::spawn(async move {
-                        let dirs = ops::get_agent_allowed_dirs(&name).await;
-                        match ops::start_agent_process(&name, port, &dirs) {
-                            Ok(pid) => {
-                                // Brief pause to let the process register before scan.
-                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                let _ = tx.send(Ok((name, port, pid)));
-                            }
-                            Err(e) => {
-                                let _ = tx.send(Err(format!("Start failed: {e}")));
-                            }
-                        }
-                    });
-                }
-            }
-        }
         KeyCode::Char(c) if c.is_ascii_digit() => {
             let num = c.to_digit(10).unwrap() as usize;
             if num >= 1 && num <= total {
                 let idx = num - 1;
-                let create_idx = state.agents.len() + orphan_count;
+                let create_idx = state.agents.len();
                 if idx == create_idx {
                     app.screen = Screen::Setup(SetupState::default());
                 } else if idx < state.agents.len() {
@@ -513,10 +372,6 @@ pub fn discover_agents(app: &mut App) {
             .cloned()
             .unwrap_or_else(|| env_name.clone());
         let model = data.var_values.get("ASTERBOT_MODEL").cloned();
-        let preferred_port = data
-            .var_values
-            .get("AGENT_PORT")
-            .and_then(|v| v.parse::<u16>().ok());
         agents.push(AgentEntry {
             name: env_name.clone(),
             namespace: entry.namespace.clone(),
@@ -526,8 +381,6 @@ pub fn discover_agents(app: &mut App) {
             sync_tag: entry.sync_tag,
             local_version: entry.version.clone(),
             remote_version: entry.remote_version.clone(),
-            running_info: None,
-            preferred_port,
         });
     }
 
@@ -537,22 +390,9 @@ pub fn discover_agents(app: &mut App) {
         selected,
         loading: false,
         error: None,
-        running_agents: Vec::new(),
-        starting_agent: None,
-        spinner_tick: 0,
     });
 
-    // Phase 2: background process scan.
-    let (scan_tx, scan_rx) = tokio::sync::oneshot::channel();
-    app.pending_process_scan = Some(scan_rx);
-    tokio::spawn(async move {
-        let result = tokio::task::spawn_blocking(ops::scan_running_agents)
-            .await
-            .unwrap_or_default();
-        let _ = scan_tx.send(result);
-    });
-
-    // Phase 3: background remote sync (network call).
+    // Background remote sync (network call).
     let (sync_tx, sync_rx) = tokio::sync::oneshot::channel();
     app.pending_sync = Some(sync_rx);
     tokio::spawn(async move {
@@ -645,10 +485,6 @@ async fn resolve_and_enter_chat(
         .get("ASTERBOT_BANNER")
         .cloned()
         .unwrap_or_else(|| "auto".to_string());
-    let preferred_port = data
-        .var_values
-        .get("AGENT_PORT")
-        .and_then(|v| v.parse::<u16>().ok());
     let config = AgentConfig {
         env_name: agent.name.clone(),
         namespace: agent.namespace.clone(),
@@ -663,43 +499,13 @@ async fn resolve_and_enter_chat(
         tools,
         allowed_dirs,
         banner_mode,
-        preferred_port,
     };
     // Save picker state for instant restore on Esc from chat.
     if let Screen::Picker(state) = &app.screen {
-        app.saved_picker = Some((state.agents.clone(), state.running_agents.clone()));
-    }
-    // Auto-start background process if not already running.
-    let initial_running = agent.running_info.clone();
-    if agent.running_info.is_none() {
-        let mut all_running: Vec<crate::tui::app::RunningAgent> = Vec::new();
-        if let Screen::Picker(state) = &app.screen {
-            all_running.extend(state.agents.iter().filter_map(|a| a.running_info.clone()));
-            all_running.extend(state.running_agents.iter().cloned());
-        }
-        let port = preferred_port.unwrap_or_else(|| ops::next_available_port(&all_running));
-        let name = agent.name.clone();
-        let dirs = config.allowed_dirs.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        app.pending_auto_start = Some(rx);
-        tokio::spawn(async move {
-            match ops::start_agent_process(&name, port, &dirs) {
-                Ok(pid) => {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    let _ = tx.send(Some(crate::tui::app::RunningAgent { name, port, pid }));
-                }
-                Err(_) => {
-                    let _ = tx.send(None);
-                }
-            }
-        });
+        app.saved_picker = Some(state.agents.clone());
     }
     app.agent = Some(config);
-    let chat_state = ChatState {
-        running_process: initial_running,
-        ..Default::default()
-    };
-    app.screen = Screen::Chat(Box::new(chat_state));
+    app.screen = Screen::Chat(Box::default());
     super::chat::start_banner_fetch(app);
     super::chat::start_env_check(app);
     Ok(())
