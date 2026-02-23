@@ -415,7 +415,10 @@ fn prompt_stop_agents(
     let base_msg = format!(
         "{} agent{} still running:\n{}\n\nStop all before exiting? (y/n): ",
         count,
-        if count == 1 { "" } else { "s" },
+        match count {
+            1 => "",
+            _ => "s",
+        },
         names.join("\n"),
     );
     let mut input: Option<char> = None;

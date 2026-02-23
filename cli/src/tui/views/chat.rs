@@ -597,7 +597,10 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
                 let all_set = env_vars
                     .iter()
                     .all(|v| env_status.get(*v).copied().unwrap_or(false));
-                if all_set { tool_green } else { tool_orange }
+                match all_set {
+                    true => tool_green,
+                    false => tool_orange,
+                }
             };
             tool_spans.push((short, style));
         }
@@ -617,7 +620,10 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
             };
             if line_len > 0 && line_len + needed > tool_max {
                 // Flush current line.
-                let prefix = if first_line { "TOOLS   " } else { "        " };
+                let prefix = match first_line {
+                    true => "TOOLS   ",
+                    false => "        ",
+                };
                 let mut spans = vec![Span::styled(prefix, label_style)];
                 spans.append(&mut line_spans);
                 right_lines.push(Line::from(spans));
@@ -633,7 +639,10 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
             line_len += name.len();
         }
         if !line_spans.is_empty() {
-            let prefix = if first_line { "TOOLS   " } else { "        " };
+            let prefix = match first_line {
+                true => "TOOLS   ",
+                false => "        ",
+            };
             let mut spans = vec![Span::styled(prefix, label_style)];
             spans.append(&mut line_spans);
             right_lines.push(Line::from(spans));
@@ -758,7 +767,10 @@ fn render_messages(f: &mut Frame, state: &ChatState, env_name: &str, area: Rect)
 fn render_input(f: &mut Frame, state: &ChatState, area: Rect) {
     // Blinking cursor: visible on even ticks, hidden on odd.
     let cursor_visible = state.spinner_tick.is_multiple_of(2);
-    let cursor_ch = if cursor_visible { "_" } else { " " };
+    let cursor_ch = match cursor_visible {
+        true => "_",
+        false => " ",
+    };
     let w = area.width as usize;
     if w == 0 {
         return;

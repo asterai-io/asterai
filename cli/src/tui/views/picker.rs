@@ -144,7 +144,10 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
     let mut items: Vec<ListItem> = Vec::with_capacity(total);
     for (i, agent) in state.agents.iter().enumerate() {
         let is_selected = i == state.selected;
-        let pointer = if is_selected { "▸ " } else { "  " };
+        let pointer = match is_selected {
+            true => "▸ ",
+            false => "  ",
+        };
         let name_str = format!("{:<name_w$}", display_names[i]);
         let model_str = format!("{:<model_w$}", model_strs[i]);
         let ver_str = format!("{:<version_w$}", version_texts[i]);
@@ -185,10 +188,9 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             Span::styled(format!("{}. ", i + 1), Style::default().fg(Color::DarkGray)),
             Span::styled(
                 name_str,
-                if is_selected {
-                    Style::default().fg(Color::Cyan).bold()
-                } else {
-                    Style::default()
+                match is_selected {
+                    true => Style::default().fg(Color::Cyan).bold(),
+                    false => Style::default(),
                 },
             ),
             Span::raw("  "),
@@ -205,7 +207,10 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
     for (i, ra) in state.running_agents.iter().enumerate() {
         let idx = state.agents.len() + i;
         let is_selected = idx == state.selected;
-        let pointer = if is_selected { "▸ " } else { "  " };
+        let pointer = match is_selected {
+            true => "▸ ",
+            false => "  ",
+        };
         let line = Line::from(vec![
             Span::raw(pointer),
             Span::styled(
@@ -214,10 +219,9 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             ),
             Span::styled(
                 ra.name.clone(),
-                if is_selected {
-                    Style::default().fg(Color::Yellow).bold()
-                } else {
-                    Style::default().fg(Color::Yellow)
+                match is_selected {
+                    true => Style::default().fg(Color::Yellow).bold(),
+                    false => Style::default().fg(Color::Yellow),
                 },
             ),
             Span::styled(
@@ -232,7 +236,10 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
     // "+ Create a new agent" row.
     let create_idx = state.agents.len() + orphan_count;
     let is_selected = state.selected == create_idx;
-    let pointer = if is_selected { "▸ " } else { "  " };
+    let pointer = match is_selected {
+        true => "▸ ",
+        false => "  ",
+    };
     let line = Line::from(vec![
         Span::raw(pointer),
         Span::styled(
@@ -241,10 +248,9 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
         ),
         Span::styled(
             "+ Create a new agent",
-            if is_selected {
-                Style::default().fg(Color::Green).bold()
-            } else {
-                Style::default().fg(Color::Green)
+            match is_selected {
+                true => Style::default().fg(Color::Green).bold(),
+                false => Style::default().fg(Color::Green),
             },
         ),
     ]);

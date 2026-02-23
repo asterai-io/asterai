@@ -8,7 +8,10 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 pub fn render(f: &mut Frame, state: &AuthState) {
     let has_error = matches!(state, AuthState::NeedLogin { error: Some(_), .. });
-    let height = if has_error { 14 } else { 12 };
+    let height = match has_error {
+        true => 14,
+        false => 12,
+    };
     let area = centered_rect(60, height, f.area());
     let block = Block::default()
         .title(" asterai agents ")
