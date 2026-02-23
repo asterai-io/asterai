@@ -127,7 +127,10 @@ pub const TOOL_ENV_VARS: &[(&str, &[&str])] = &[
     ("firecrawl", &["FIRECRAWL_API_KEY"]),
     ("brave-search", &["BRAVE_API_KEY"]),
     ("weather", &["OPENWEATHERMAP_API_KEY"]),
-    ("eight-sleep", &["EIGHT_SLEEP_EMAIL", "EIGHT_SLEEP_PASSWORD"]),
+    (
+        "eight-sleep",
+        &["EIGHT_SLEEP_EMAIL", "EIGHT_SLEEP_PASSWORD"],
+    ),
     ("hyperliquid", &["HYPERLIQUID_PRIVATE_KEY"]),
     ("rocketchat-listener", &["RC_URL", "RC_USER", "RC_PASSWORD"]),
 ];
@@ -152,9 +155,21 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "tools",
         description: "List, add, or remove tools",
         subs: &[
-            SubCommand { name: "list", description: "Show installed tools", needs_arg: false },
-            SubCommand { name: "add", description: "Add a tool component", needs_arg: true },
-            SubCommand { name: "remove", description: "Remove a tool", needs_arg: true },
+            SubCommand {
+                name: "list",
+                description: "Show installed tools",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "add",
+                description: "Add a tool component",
+                needs_arg: true,
+            },
+            SubCommand {
+                name: "remove",
+                description: "Remove a tool",
+                needs_arg: true,
+            },
         ],
     },
     SlashCommand {
@@ -181,9 +196,21 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "dir",
         description: "Manage directory access",
         subs: &[
-            SubCommand { name: "list", description: "Show allowed directories", needs_arg: false },
-            SubCommand { name: "add", description: "Grant directory access", needs_arg: true },
-            SubCommand { name: "remove", description: "Revoke directory access", needs_arg: true },
+            SubCommand {
+                name: "list",
+                description: "Show allowed directories",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "add",
+                description: "Grant directory access",
+                needs_arg: true,
+            },
+            SubCommand {
+                name: "remove",
+                description: "Revoke directory access",
+                needs_arg: true,
+            },
         ],
     },
     SlashCommand {
@@ -195,17 +222,37 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "config",
         description: "Manage env variables",
         subs: &[
-            SubCommand { name: "list", description: "Show all variables", needs_arg: false },
-            SubCommand { name: "set", description: "Set KEY=VALUE", needs_arg: true },
+            SubCommand {
+                name: "list",
+                description: "Show all variables",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "set",
+                description: "Set KEY=VALUE",
+                needs_arg: true,
+            },
         ],
     },
     SlashCommand {
         name: "banner",
         description: "Configure banner content",
         subs: &[
-            SubCommand { name: "auto", description: "Agent picks content from tools", needs_arg: false },
-            SubCommand { name: "quote", description: "Random quotes only", needs_arg: false },
-            SubCommand { name: "off", description: "No banner content", needs_arg: false },
+            SubCommand {
+                name: "auto",
+                description: "Agent picks content from tools",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "quote",
+                description: "Random quotes only",
+                needs_arg: false,
+            },
+            SubCommand {
+                name: "off",
+                description: "No banner content",
+                needs_arg: false,
+            },
         ],
     },
     SlashCommand {
@@ -328,9 +375,11 @@ pub struct App {
     pub pending_version_check: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
     pub pending_start: Option<tokio::sync::oneshot::Receiver<Result<(String, u16, u32), String>>>,
     pub pending_process_scan: Option<tokio::sync::oneshot::Receiver<Vec<RunningAgent>>>,
-    pub pending_sync: Option<tokio::sync::oneshot::Receiver<Vec<crate::command::env::list::EnvListEntry>>>,
+    pub pending_sync:
+        Option<tokio::sync::oneshot::Receiver<Vec<crate::command::env::list::EnvListEntry>>>,
     pub pending_auto_start: Option<tokio::sync::oneshot::Receiver<Option<RunningAgent>>>,
-    pub pending_env_check: Option<tokio::sync::oneshot::Receiver<std::collections::HashMap<String, bool>>>,
+    pub pending_env_check:
+        Option<tokio::sync::oneshot::Receiver<std::collections::HashMap<String, bool>>>,
     pub saved_picker: Option<(Vec<AgentEntry>, Vec<RunningAgent>)>,
 }
 

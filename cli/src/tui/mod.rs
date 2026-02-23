@@ -396,9 +396,7 @@ fn collect_running_agents(app: &App) -> Vec<app::RunningAgent> {
             running.extend(state.running_agents.iter().cloned());
             running
         }
-        Screen::Chat(state) => {
-            state.running_process.iter().cloned().collect()
-        }
+        Screen::Chat(state) => state.running_process.iter().cloned().collect(),
         _ => Vec::new(),
     }
 }
@@ -412,7 +410,10 @@ fn prompt_stop_agents(
     use ratatui::prelude::*;
     use ratatui::widgets::{Block, Borders, Clear, Paragraph};
     let count = running.len();
-    let names: Vec<String> = running.iter().map(|r| format!("{} :{}", r.name, r.port)).collect();
+    let names: Vec<String> = running
+        .iter()
+        .map(|r| format!("{} :{}", r.name, r.port))
+        .collect();
     let base_msg = format!(
         "{} agent{} still running:\n{}\n\nStop all before exiting? (y/n): ",
         count,

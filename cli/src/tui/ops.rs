@@ -45,8 +45,10 @@ pub fn list_local_environments() -> Vec<EnvListEntry> {
         let dominated = match local_map.get(&id) {
             None => true,
             Some(prev) => {
-                let cur = semver::Version::parse(env.version()).unwrap_or(semver::Version::new(0, 0, 0));
-                let old = semver::Version::parse(prev.version()).unwrap_or(semver::Version::new(0, 0, 0));
+                let cur =
+                    semver::Version::parse(env.version()).unwrap_or(semver::Version::new(0, 0, 0));
+                let old =
+                    semver::Version::parse(prev.version()).unwrap_or(semver::Version::new(0, 0, 0));
                 cur > old
             }
         };
@@ -107,9 +109,7 @@ pub async fn call_converse_via_process(
     env_name: &str,
     port: u16,
 ) -> eyre::Result<Option<String>> {
-    let url = format!(
-        "http://127.0.0.1:{port}/v1/environment/{namespace}/{env_name}/call"
-    );
+    let url = format!("http://127.0.0.1:{port}/v1/environment/{namespace}/{env_name}/call");
     let body = serde_json::json!({
         "component": "asterbot:agent",
         "function": "agent/converse",
@@ -184,8 +184,7 @@ pub async fn pull_env(env_name: &str) -> eyre::Result<()> {
 /// Fetch all components from the remote registry.
 /// Returns (namespace, name, latest_version) tuples.
 pub async fn list_remote_components() -> eyre::Result<Vec<(String, String, String)>> {
-    let api_key = Auth::read_stored_api_key()
-        .ok_or_else(|| eyre::eyre!("not authenticated"))?;
+    let api_key = Auth::read_stored_api_key().ok_or_else(|| eyre::eyre!("not authenticated"))?;
     let (api, _) = endpoints();
     let components =
         crate::command::component::list::fetch_remote_components(&api_key, &api).await?;

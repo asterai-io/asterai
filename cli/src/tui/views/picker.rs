@@ -36,9 +36,10 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
     ver_spans.push(Span::raw(" "));
 
     let block = Block::default()
-        .title(Line::from(vec![
-            Span::styled(" \u{1F916} asterai agents ", Style::default().fg(Color::Cyan)),
-        ]))
+        .title(Line::from(vec![Span::styled(
+            " \u{1F916} asterai agents ",
+            Style::default().fg(Color::Cyan),
+        )]))
         .title_bottom(Line::from(ver_spans).right_aligned())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
@@ -82,7 +83,11 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
         .agents
         .iter()
         .map(|agent| {
-            if name_counts.get(agent.bot_name.as_str()).copied().unwrap_or(0) > 1
+            if name_counts
+                .get(agent.bot_name.as_str())
+                .copied()
+                .unwrap_or(0)
+                > 1
                 && agent.bot_name != agent.name
             {
                 format!("{} ({})", agent.bot_name, agent.name)
@@ -91,7 +96,12 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             }
         })
         .collect();
-    let name_w = display_names.iter().map(|n| n.len()).max().unwrap_or(4).max(4);
+    let name_w = display_names
+        .iter()
+        .map(|n| n.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
     let model_strs: Vec<String> = state
         .agents
         .iter()
@@ -127,7 +137,10 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
     let sync_w = sync_texts.iter().map(|s| s.len()).max().unwrap_or(0);
 
     // Spinner frames for starting animation.
-    const SPINNER: &[char] = &['\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}', '\u{2827}', '\u{2807}', '\u{280F}'];
+    const SPINNER: &[char] = &[
+        '\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}',
+        '\u{2827}', '\u{2807}', '\u{280F}',
+    ];
 
     // Agent rows.
     let orphan_count = state.running_agents.len();
@@ -266,7 +279,9 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
                 } else {
                     ""
                 };
-                format!("↑↓ navigate · enter chat{sync_hint}{run_hint} · d delete · r refresh · esc quit")
+                format!(
+                    "↑↓ navigate · enter chat{sync_hint}{run_hint} · d delete · r refresh · esc quit"
+                )
             };
             Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray)))
         }
@@ -309,7 +324,10 @@ pub async fn handle_event(
             if selected == create_idx {
                 app.screen = Screen::Setup(SetupState::default());
             } else if selected >= state.agents.len() {
-                set_picker_error(app, "No local env. Press space to stop this process.".to_string());
+                set_picker_error(
+                    app,
+                    "No local env. Press space to stop this process.".to_string(),
+                );
             } else {
                 let agent = state.agents[selected].clone();
                 resolve_and_enter_chat(app, agent, terminal).await?;
@@ -327,7 +345,10 @@ pub async fn handle_event(
             let selected = state.selected;
             if selected < state.agents.len() {
                 let agent = &state.agents[selected];
-                if matches!(agent.sync_tag, ArtifactSyncTag::Remote | ArtifactSyncTag::Behind) {
+                if matches!(
+                    agent.sync_tag,
+                    ArtifactSyncTag::Remote | ArtifactSyncTag::Behind
+                ) {
                     let name = agent.name.clone();
                     state.error = Some(format!("Pulling {name}..."));
                     terminal.draw(|f| super::render(f, app))?;
@@ -433,7 +454,8 @@ pub async fn handle_event(
                         .filter_map(|a| a.running_info.clone())
                         .collect();
                     all_running.extend(state.running_agents.iter().cloned());
-                    let port = preferred_port.unwrap_or_else(|| ops::next_available_port(&all_running));
+                    let port =
+                        preferred_port.unwrap_or_else(|| ops::next_available_port(&all_running));
                     // Set starting state for spinner.
                     state.starting_agent = Some(name.clone());
                     state.spinner_tick = 0;
@@ -680,9 +702,7 @@ async fn resolve_and_enter_chat(
             match ops::start_agent_process(&name, port, &dirs) {
                 Ok(pid) => {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    let _ = tx.send(Some(crate::tui::app::RunningAgent {
-                        name, port, pid,
-                    }));
+                    let _ = tx.send(Some(crate::tui::app::RunningAgent { name, port, pid }));
                 }
                 Err(_) => {
                     let _ = tx.send(None);
@@ -709,12 +729,16 @@ fn set_picker_error(app: &mut App, msg: String) {
 fn format_version_text(agent: &AgentEntry) -> String {
     match agent.sync_tag {
         ArtifactSyncTag::Unpushed => "local".to_string(),
-        ArtifactSyncTag::Remote => {
-            agent.remote_version.as_deref().map(|v| format!("v{v}")).unwrap_or_default()
-        }
-        ArtifactSyncTag::Synced => {
-            agent.local_version.as_deref().map(|v| format!("v{v}")).unwrap_or_default()
-        }
+        ArtifactSyncTag::Remote => agent
+            .remote_version
+            .as_deref()
+            .map(|v| format!("v{v}"))
+            .unwrap_or_default(),
+        ArtifactSyncTag::Synced => agent
+            .local_version
+            .as_deref()
+            .map(|v| format!("v{v}"))
+            .unwrap_or_default(),
         ArtifactSyncTag::Behind => {
             let local = agent.local_version.as_deref().unwrap_or("?");
             let remote = agent.remote_version.as_deref().unwrap_or("?");

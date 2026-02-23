@@ -1,7 +1,6 @@
 use crate::tui::app::{
-    App, ChatMessage, ChatState, CORE_COMPONENTS, DynamicItem, MessageRole,
-    PROVIDERS, PickerState, SLASH_COMMANDS, SPINNER_FRAMES, Screen, required_env_vars,
-    resolve_state_dir,
+    App, CORE_COMPONENTS, ChatMessage, ChatState, DynamicItem, MessageRole, PROVIDERS, PickerState,
+    SLASH_COMMANDS, SPINNER_FRAMES, Screen, required_env_vars, resolve_state_dir,
 };
 use crate::tui::ops;
 use crossterm::event::{Event, KeyCode};
@@ -31,7 +30,9 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
         &state.input
     };
     let prefix_len = if state.has_env_prompt() {
-        state.env_prompt_vars.get(state.env_prompt_idx)
+        state
+            .env_prompt_vars
+            .get(state.env_prompt_idx)
             .map(|v| v.len() + 1) // "VAR="
             .unwrap_or(0)
     } else {
@@ -84,11 +85,17 @@ pub fn render(f: &mut Frame, state: &ChatState, app: &App) {
     // Slash menu renders above the input box, overlaying messages.
     let has_dynamic = state.dynamic_command.is_some();
     let has_sub_menu = state.active_command.is_some() && !state.sub_matches.is_empty();
-    let has_slash = (state.input.starts_with('/') && !state.input.contains(' ') && !state.slash_matches.is_empty())
+    let has_slash = (state.input.starts_with('/')
+        && !state.input.contains(' ')
+        && !state.slash_matches.is_empty())
         || has_sub_menu
         || has_dynamic;
     let menu_count = if has_dynamic {
-        if state.dynamic_loading { 1 } else { state.dynamic_matches.len() }
+        if state.dynamic_loading {
+            1
+        } else {
+            state.dynamic_matches.len()
+        }
     } else if has_sub_menu {
         state.sub_matches.len()
     } else {
@@ -141,7 +148,10 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
         return Ok(());
     }
     // Ignore Ctrl+key combos (e.g. Ctrl+V) to avoid stray characters.
-    if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+    if key_event
+        .modifiers
+        .contains(crossterm::event::KeyModifiers::CONTROL)
+    {
         return Ok(());
     }
     let code = key_event.code;
@@ -274,7 +284,9 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 state.dynamic_selected += 1;
             }
         }
-        KeyCode::Enter if has_dynamic && !state.dynamic_loading && !state.dynamic_matches.is_empty() => {
+        KeyCode::Enter
+            if has_dynamic && !state.dynamic_loading && !state.dynamic_matches.is_empty() =>
+        {
             let item_idx = state.dynamic_matches[state.dynamic_selected];
             let item = &state.dynamic_items[item_idx];
             if item.disabled {
@@ -343,8 +355,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                     } else if sub_name == "remove" {
                         state.dynamic_command = Some("tools remove".to_string());
                         state.dynamic_items = build_remove_items(&agent_tools);
-                        state.dynamic_matches =
-                            (0..state.dynamic_items.len()).collect();
+                        state.dynamic_matches = (0..state.dynamic_items.len()).collect();
                         state.dynamic_selected = 0;
                     }
                 } else if sub.needs_arg {
@@ -392,8 +403,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                 } else if sub_name == "remove" {
                     state.dynamic_command = Some("tools remove".to_string());
                     state.dynamic_items = build_remove_items(&agent_tools);
-                    state.dynamic_matches =
-                        (0..state.dynamic_items.len()).collect();
+                    state.dynamic_matches = (0..state.dynamic_items.len()).collect();
                     state.dynamic_selected = 0;
                 }
             } else if sub.needs_arg {
@@ -559,11 +569,10 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
                     let (tx, rx) = tokio::sync::oneshot::channel();
                     app.pending_process_scan = Some(rx);
                     tokio::spawn(async move {
-                        let result = tokio::task::spawn_blocking(
-                            crate::tui::ops::scan_running_agents,
-                        )
-                        .await
-                        .unwrap_or_default();
+                        let result =
+                            tokio::task::spawn_blocking(crate::tui::ops::scan_running_agents)
+                                .await
+                                .unwrap_or_default();
                         let _ = tx.send(result);
                     });
                 } else {
@@ -576,13 +585,7 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
     Ok(())
 }
 
-fn render_banner(
-    f: &mut Frame,
-    name: &str,
-    chat: &ChatState,
-    app: &App,
-    area: Rect,
-) {
+fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: Rect) {
     let agent = app.agent.as_ref();
     let process_starting = app.pending_auto_start.is_some();
     let banner_text = &chat.banner_text;
@@ -676,16 +679,20 @@ fn render_banner(
         // Build styled spans for each tool name.
         let mut tool_spans: Vec<(String, Style)> = Vec::new();
         for full_name in &tools {
-            let short = full_name.split(':').next_back().unwrap_or(full_name).to_string();
+            let short = full_name
+                .split(':')
+                .next_back()
+                .unwrap_or(full_name)
+                .to_string();
             let env_vars = required_env_vars(full_name);
             let style = if env_vars.is_empty() {
                 tool_plain
             } else if !env_loaded {
                 tool_plain
             } else {
-                let all_set = env_vars.iter().all(|v| {
-                    env_status.get(*v).copied().unwrap_or(false)
-                });
+                let all_set = env_vars
+                    .iter()
+                    .all(|v| env_status.get(*v).copied().unwrap_or(false));
                 if all_set { tool_green } else { tool_orange }
             };
             tool_spans.push((short, style));
@@ -699,7 +706,11 @@ fn render_banner(
         let mut line_spans: Vec<Span> = Vec::new();
         let mut line_len: usize = 0;
         for (i, (name, style)) in tool_spans.iter().enumerate() {
-            let needed = if i == 0 || line_len == 0 { name.len() } else { sep.len() + name.len() };
+            let needed = if i == 0 || line_len == 0 {
+                name.len()
+            } else {
+                sep.len() + name.len()
+            };
             if line_len > 0 && line_len + needed > tool_max {
                 // Flush current line.
                 let prefix = if first_line { "TOOLS   " } else { "        " };
@@ -744,7 +755,8 @@ fn render_banner(
             ),
         ]));
     } else if process_starting {
-        let frame = crate::tui::app::SPINNER_FRAMES[chat.spinner_tick % crate::tui::app::SPINNER_FRAMES.len()];
+        let frame = crate::tui::app::SPINNER_FRAMES
+            [chat.spinner_tick % crate::tui::app::SPINNER_FRAMES.len()];
         right_lines.push(Line::from(vec![
             Span::styled("PROCESS ", label_style),
             Span::styled(
@@ -757,7 +769,10 @@ fn render_banner(
     right_lines.push(Line::from(vec![
         Span::styled("Type ", Style::default().fg(Color::Rgb(90, 90, 110))),
         Span::styled("/", Style::default().fg(Color::Cyan)),
-        Span::styled(" for commands · ", Style::default().fg(Color::Rgb(90, 90, 110))),
+        Span::styled(
+            " for commands · ",
+            Style::default().fg(Color::Rgb(90, 90, 110)),
+        ),
         Span::styled("Esc", Style::default().fg(Color::Cyan)),
         Span::styled(" to go back", Style::default().fg(Color::Rgb(90, 90, 110))),
     ]));
@@ -921,7 +936,10 @@ fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
         if state.dynamic_loading {
             let line = Line::from(vec![
                 Span::raw("  "),
-                Span::styled("  Loading...", Style::default().fg(Color::DarkGray).italic()),
+                Span::styled(
+                    "  Loading...",
+                    Style::default().fg(Color::DarkGray).italic(),
+                ),
             ]);
             f.render_widget(Paragraph::new(vec![line]), area);
             return;
@@ -982,7 +1000,9 @@ fn render_slash_menu(f: &mut Frame, state: &ChatState, area: Rect) {
     // Sub-menu mode: show sub-options for the active command.
     if let Some(cmd_idx) = state.active_command {
         let cmd = &SLASH_COMMANDS[cmd_idx];
-        let skip = state.sub_selected.saturating_sub(max_rows.saturating_sub(1));
+        let skip = state
+            .sub_selected
+            .saturating_sub(max_rows.saturating_sub(1));
         let mut lines: Vec<Line> = Vec::new();
         for (i, &sub_idx) in state
             .sub_matches
@@ -1116,14 +1136,12 @@ pub fn start_banner_fetch(app: &mut App) {
         let prompt = "In one brief line (under 80 chars), give a useful status update \
             using your available tools. Examples: current weather, top task, latest price. \
             No pleasantries, just the data.";
-        let result = match tokio::task::spawn(async move {
-            ops::call_converse(prompt, &agent).await
-        })
-        .await
-        {
-            Ok(r) => r.ok().flatten(),
-            Err(_) => None,
-        };
+        let result =
+            match tokio::task::spawn(async move { ops::call_converse(prompt, &agent).await }).await
+            {
+                Ok(r) => r.ok().flatten(),
+                Err(_) => None,
+            };
         let _ = tx.send(result);
     });
 }
@@ -1180,10 +1198,8 @@ fn send_message(app: &mut App, input: &str) {
                 } else {
                     let a = a.clone();
                     let msg = message.clone();
-                    match tokio::task::spawn(async move {
-                        ops::call_converse(&msg, &a).await
-                    })
-                    .await
+                    match tokio::task::spawn(async move { ops::call_converse(&msg, &a).await })
+                        .await
                     {
                         Ok(r) => r,
                         Err(e) => {
@@ -1260,9 +1276,9 @@ fn update_menus(state: &mut ChatState) {
                     .filter(|(_, sub)| sub.name.starts_with(partial.as_str()))
                     .map(|(i, _)| i)
                     .collect();
-                state.sub_selected = state.sub_selected.min(
-                    state.sub_matches.len().saturating_sub(1),
-                );
+                state.sub_selected = state
+                    .sub_selected
+                    .min(state.sub_matches.len().saturating_sub(1));
             }
         } else {
             // Input no longer matches the command prefix — exit sub-menu.
@@ -1286,9 +1302,9 @@ fn update_top_level_menu(state: &mut ChatState) {
             .filter(|(_, cmd)| cmd.name.starts_with(partial.as_str()))
             .map(|(i, _)| i)
             .collect();
-        state.slash_selected = state.slash_selected.min(
-            state.slash_matches.len().saturating_sub(1),
-        );
+        state.slash_selected = state
+            .slash_selected
+            .min(state.slash_matches.len().saturating_sub(1));
     } else {
         state.slash_matches.clear();
         state.slash_selected = 0;
@@ -1326,13 +1342,25 @@ fn cmd_help(app: &mut App) -> eyre::Result<()> {
     )));
     for cmd in SLASH_COMMANDS {
         lines.push(Line::from(vec![
-            Span::styled(format!("  /{:<12}", cmd.name), Style::default().fg(Color::Cyan)),
-            Span::styled(cmd.description.to_string(), Style::default().fg(Color::White)),
+            Span::styled(
+                format!("  /{:<12}", cmd.name),
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(
+                cmd.description.to_string(),
+                Style::default().fg(Color::White),
+            ),
         ]));
         for sub in cmd.subs {
             lines.push(Line::from(vec![
-                Span::styled(format!("    {:<10}", sub.name), Style::default().fg(Color::DarkGray)),
-                Span::styled(sub.description.to_string(), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("    {:<10}", sub.name),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    sub.description.to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         }
     }
@@ -1453,10 +1481,7 @@ async fn cmd_tools(app: &mut App, args: &[&str]) -> eyre::Result<()> {
                         set_toast(app, &format!("+ {component}"));
                     } else {
                         let short = component.split(':').next_back().unwrap_or(&component);
-                        set_toast(
-                            app,
-                            &format!("+ {short} (configure env vars below)"),
-                        );
+                        set_toast(app, &format!("+ {short} (configure env vars below)"));
                         // Start the inline env-var prompt flow.
                         if let Screen::Chat(state) = &mut app.screen {
                             state.env_prompt_vars = missing;
@@ -1768,7 +1793,10 @@ async fn cmd_status(app: &mut App) -> eyre::Result<()> {
     lines.push(Line::from(vec![
         Span::styled("  Model:       ", label),
         Span::styled(
-            agent.model.clone().unwrap_or_else(|| "(not set)".to_string()),
+            agent
+                .model
+                .clone()
+                .unwrap_or_else(|| "(not set)".to_string()),
             value,
         ),
     ]));
@@ -1779,7 +1807,10 @@ async fn cmd_status(app: &mut App) -> eyre::Result<()> {
 
     if !agent.tools.is_empty() {
         // Fetch env var values for status display.
-        let data = ops::inspect_environment(&agent.env_name).await.ok().flatten();
+        let data = ops::inspect_environment(&agent.env_name)
+            .await
+            .ok()
+            .flatten();
         let var_values = data.map(|d| d.var_values).unwrap_or_default();
         lines.push(Line::from(Span::styled("  Tools:", label)));
         for tool in &agent.tools {
@@ -1799,15 +1830,9 @@ async fn cmd_status(app: &mut App) -> eyre::Result<()> {
                         spans.push(Span::styled(", ", tool_name_style));
                     }
                     if var_values.contains_key(*v) {
-                        spans.push(Span::styled(
-                            format!("{v} \u{2713}"),
-                            ok,
-                        ));
+                        spans.push(Span::styled(format!("{v} \u{2713}"), ok));
                     } else {
-                        spans.push(Span::styled(
-                            format!("{v} \u{2717}"),
-                            warn,
-                        ));
+                        spans.push(Span::styled(format!("{v} \u{2717}"), warn));
                     }
                 }
                 lines.push(Line::from(spans));
@@ -1817,10 +1842,7 @@ async fn cmd_status(app: &mut App) -> eyre::Result<()> {
     if !agent.allowed_dirs.is_empty() {
         lines.push(Line::from(vec![
             Span::styled("  Directories: ", label),
-            Span::styled(
-                format!("{} folder(s)", agent.allowed_dirs.len()),
-                value,
-            ),
+            Span::styled(format!("{} folder(s)", agent.allowed_dirs.len()), value),
         ]));
     }
     app.show_info_overlay(lines);
@@ -2060,4 +2082,3 @@ fn textwrap(text: &str, max_width: usize) -> Vec<String> {
     }
     lines
 }
-

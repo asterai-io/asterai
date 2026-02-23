@@ -90,7 +90,12 @@ impl EnvArgs {
         let remote_versions: HashMap<String, String> = match &remote_result {
             Ok(remote) => remote
                 .iter()
-                .map(|e| (format!("{}:{}", e.namespace, e.name), e.latest_version.clone()))
+                .map(|e| {
+                    (
+                        format!("{}:{}", e.namespace, e.name),
+                        e.latest_version.clone(),
+                    )
+                })
                 .collect(),
             Err(_) => HashMap::new(),
         };
