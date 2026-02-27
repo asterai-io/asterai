@@ -127,6 +127,10 @@ impl WsManager {
         }
     }
 
+    pub async fn has_connections(&self) -> bool {
+        !self.connections.read().await.is_empty()
+    }
+
     pub async fn close_all(&self) {
         let ids: Vec<ConnectionId> = self.connections.read().await.keys().copied().collect();
         for id in ids {
