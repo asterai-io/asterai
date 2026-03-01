@@ -524,14 +524,15 @@ async fn run_provisioning(
     }
     let provider = PROVIDERS.get(provider_idx);
     let env_var = provider.map(|p| p.1).unwrap_or("API_KEY");
-    let wasi_state_dir = state_dir.to_string_lossy().replace('\\', "/");
     let tool_names: String = DEFAULT_TOOLS.join(",");
     let dirs_value = allowed_dirs.join(",");
+    // Use WASI guest path — the state dir is always the first preopened dir.
+    let wasi_host_dir = "/preopened/0";
     let vars = vec![
         ("ASTERBOT_MODEL", model.as_str()),
         (env_var, api_key.as_str()),
         ("ASTERBOT_TOOLS", &tool_names),
-        ("ASTERBOT_HOST_DIR", &wasi_state_dir),
+        ("ASTERBOT_HOST_DIR", wasi_host_dir),
         ("ASTERBOT_BOT_NAME", bot_name.as_str()),
         ("ASTERBOT_USER_NAME", user_name.as_str()),
         ("ASTERBOT_ALLOWED_DIRS", dirs_value.as_str()),

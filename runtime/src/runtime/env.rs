@@ -74,31 +74,27 @@ pub fn create_store(
     for (key, value) in env_vars {
         wasi_ctx.env(key, value);
     }
-    if !preopened_dirs.is_empty() {
-        let separator = match cfg!(windows) {
-            true => ";",
-            false => ":",
-        };
-        let dirs_value = preopened_dirs
-            .iter()
-            .map(|d| d.to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join(separator);
-        wasi_ctx.env("ASTERAI_ALLOWED_DIRS", &dirs_value);
-    }
-    for dir in preopened_dirs {
+    let mut guest_paths: Vec<String> = Vec::new();
+    for (i, dir) in preopened_dirs.iter().enumerate() {
         if !dir.exists()
             && let Err(e) = std::fs::create_dir_all(dir)
         {
             eprintln!("warning: failed to create {}: {e}", dir.display());
             continue;
         }
-        // WASI uses forward slashes for paths.
-        let guest_path = dir.to_string_lossy().replace('\\', "/");
+        // Map host paths to clean WASI guest paths.
+        // Windows paths like C:\Users\... are not valid in WASI.
+        let guest_path = format!("/preopened/{i}");
         if let Err(e) = wasi_ctx.preopened_dir(dir, &guest_path, DirPerms::all(), FilePerms::all())
         {
             eprintln!("warning: failed to preopen {}: {e}", dir.display());
+            continue;
         }
+        guest_paths.push(guest_path);
+    }
+    if !guest_paths.is_empty() {
+        // Always use colon separator — guest paths are Unix-style.
+        wasi_ctx.env("ASTERAI_ALLOWED_DIRS", &guest_paths.join(":"));
     }
     let host_env = HostEnv {
         runtime_data: None,
