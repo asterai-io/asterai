@@ -482,10 +482,14 @@ async fn resolve_and_enter_chat(
     // Ensure state dir exists.
     let state_dir = resolve_state_dir(&agent.name);
     let _ = std::fs::create_dir_all(&state_dir);
-    // Set ASTERBOT_HOST_DIR if not already set.
-    if !data.var_values.contains_key("ASTERBOT_HOST_DIR") {
-        let wasi_dir = state_dir.to_string_lossy().replace('\\', "/");
-        let _ = ops::set_var(&agent.name, "ASTERBOT_HOST_DIR", &wasi_dir);
+    // Ensure ASTERBOT_HOST_DIR uses the WASI guest path.
+    // The state dir is always the first preopened dir.
+    let needs_host_dir_update = data
+        .var_values
+        .get("ASTERBOT_HOST_DIR")
+        .map_or(true, |v| v != "/preopened/0");
+    if needs_host_dir_update {
+        let _ = ops::set_var(&agent.name, "ASTERBOT_HOST_DIR", "/preopened/0");
     }
     let user_name = data
         .var_values
