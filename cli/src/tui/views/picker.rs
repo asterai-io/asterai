@@ -157,6 +157,13 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             ArtifactSyncTag::Unpushed => Style::default().fg(Color::DarkGray),
             ArtifactSyncTag::Remote => Style::default().fg(Color::Blue),
         };
+        let running_span = match app.processes.get(&agent.name) {
+            Some(p) => Span::styled(
+                format!("  \u{25B6} :{}", p.port),
+                Style::default().fg(Color::Green).bold(),
+            ),
+            None => Span::raw(""),
+        };
         let line = Line::from(vec![
             Span::raw(pointer),
             Span::styled(format!("{}. ", i + 1), Style::default().fg(Color::DarkGray)),
@@ -173,6 +180,7 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
             Span::styled(ver_str, ver_style),
             Span::raw("  "),
             Span::styled(sync_str, sync_style),
+            running_span,
         ]);
         items.push(ListItem::new(line));
     }
@@ -222,7 +230,15 @@ pub fn render(f: &mut Frame, state: &PickerState, app: &App) {
                     ArtifactSyncTag::Remote | ArtifactSyncTag::Behind => " · p pull",
                     _ => "",
                 };
-                format!("↑↓ navigate · enter chat{sync_hint} · d delete · r refresh · esc quit")
+                let run_hint = match app.processes.contains_key(&agent.name) {
+                    true => " · space stop",
+                    false if agent.sync_tag != ArtifactSyncTag::Remote => " · space run",
+                    false => "",
+                };
+                format!(
+                    "↑↓ navigate · enter chat{sync_hint}{run_hint} \
+                     · d delete · r refresh · esc quit"
+                )
             };
             Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray)))
         }
@@ -245,8 +261,8 @@ pub async fn handle_event(
     let Screen::Picker(state) = &mut app.screen else {
         return Ok(());
     };
-    // Ignore input while runtime is loading.
-    if app.pending_runtime.is_some() {
+    // Ignore input while a process is starting.
+    if app.pending_start.is_some() {
         return Ok(());
     }
     state.error = None;
@@ -319,6 +335,10 @@ pub async fn handle_event(
                 if agent.sync_tag != ArtifactSyncTag::Remote {
                     let name = agent.name.clone();
                     let ns = agent.namespace.clone();
+                    // Stop running process if any.
+                    if let Some(proc) = app.processes.remove(&name) {
+                        let _ = ops::kill_process(proc.pid);
+                    }
                     match ops::delete_local_env(&ns, &name) {
                         Ok(n) if n > 0 => {
                             let state_dir = resolve_state_dir(&name);
@@ -330,6 +350,48 @@ pub async fn handle_event(
                         Err(e) => set_picker_error(app, format!("Delete failed: {e}")),
                     }
                 }
+            }
+        }
+        KeyCode::Char(' ') => {
+            let selected = state.selected;
+            if selected >= state.agents.len() {
+                return Ok(());
+            }
+            let agent = &state.agents[selected];
+            if app.processes.contains_key(&agent.name) {
+                // Stop the running process.
+                let name = agent.name.clone();
+                if let Some(proc) = app.processes.remove(&name) {
+                    let _ = ops::kill_process(proc.pid);
+                }
+                set_picker_error(app, format!("Stopped {name}"));
+            } else if agent.sync_tag != ArtifactSyncTag::Remote {
+                // Start a detached process.
+                let name = agent.name.clone();
+                let port = ops::next_available_port(&app.processes);
+                if let Screen::Picker(state) = &mut app.screen {
+                    state.error = Some(format!("Starting {name} on :{port}..."));
+                }
+                terminal.draw(|f| super::render(f, app))?;
+                let config = build_agent_config(&name).await;
+                let Some(config) = config else {
+                    set_picker_error(app, format!("Failed to load {name}"));
+                    return Ok(());
+                };
+                let allowed_dirs = config.allowed_dirs.clone();
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                app.pending_start = Some(rx);
+                tokio::spawn(async move {
+                    let result =
+                        ops::start_agent_process(&config.env_name, port, &allowed_dirs)
+                            .map(|pid| crate::tui::app::RunningProcess {
+                                name: config.env_name.clone(),
+                                port,
+                                pid,
+                            })
+                            .map_err(|e| format!("{e:#}"));
+                    let _ = tx.send(result);
+                });
             }
         }
         KeyCode::Char(c) if c.is_ascii_digit() => {
@@ -395,6 +457,8 @@ pub fn discover_agents(app: &mut App) {
         });
     }
 
+    // Stable sort so the list doesn't jump around between reloads.
+    agents.sort_by(|a, b| a.name.cmp(&b.name));
     // Show local results immediately.
     app.screen = Screen::Picker(PickerState {
         agents,
@@ -410,6 +474,16 @@ pub fn discover_agents(app: &mut App) {
     tokio::spawn(async move {
         let entries = ops::list_environments().await.unwrap_or_default();
         let _ = sync_tx.send(entries);
+    });
+
+    // Background process scan (find already-running agents).
+    let (scan_tx, scan_rx) = tokio::sync::oneshot::channel();
+    app.pending_process_scan = Some(scan_rx);
+    tokio::spawn(async move {
+        let running = tokio::task::spawn_blocking(ops::scan_running_agents)
+            .await
+            .unwrap_or_default();
+        let _ = scan_tx.send(running);
     });
 }
 
@@ -482,21 +556,23 @@ async fn resolve_and_enter_chat(
     // Ensure state dir exists.
     let state_dir = resolve_state_dir(&agent.name);
     let _ = std::fs::create_dir_all(&state_dir);
-    // Set ASTERBOT_HOST_DIR if not already set.
-    if !data.var_values.contains_key("ASTERBOT_HOST_DIR") {
-        let wasi_dir = state_dir.to_string_lossy().replace('\\', "/");
-        let _ = ops::set_var(&agent.name, "ASTERBOT_HOST_DIR", &wasi_dir);
-    }
+    // Always set ASTERBOT_HOST_DIR to the correct local path.
+    let wasi_dir = state_dir.to_string_lossy().replace('\\', "/");
+    let _ = ops::set_var(&agent.name, "ASTERBOT_HOST_DIR", &wasi_dir);
     let user_name = data
         .var_values
         .get("ASTERBOT_USER_NAME")
         .cloned()
         .unwrap_or_else(default_user_name);
+    let default_banner = match tools.is_empty() {
+        true => "quote",
+        false => "auto",
+    };
     let banner_mode = data
         .var_values
         .get("ASTERBOT_BANNER")
         .cloned()
-        .unwrap_or_else(|| "auto".to_string());
+        .unwrap_or_else(|| default_banner.to_string());
     let config = AgentConfig {
         env_name: agent.name.clone(),
         namespace: agent.namespace.clone(),
@@ -518,14 +594,98 @@ async fn resolve_and_enter_chat(
         state.error = Some(format!("Loading {}...", agent.name));
     }
     app.agent = Some(config.clone());
-    // Spawn runtime build in background so the spinner can animate.
+    // If process already running, enter chat directly.
+    if app.processes.contains_key(&agent.name) {
+        app.screen = Screen::Chat(Box::default());
+        super::chat::start_banner_fetch(app);
+        super::chat::start_env_check(app);
+        return Ok(());
+    }
+    // Start a detached process in background, then enter chat when ready.
+    let port = ops::next_available_port(&app.processes);
+    let allowed_dirs = config.allowed_dirs.clone();
+    let env_name = config.env_name.clone();
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.pending_runtime = Some(rx);
+    app.pending_start = Some(rx);
     tokio::spawn(async move {
-        let result = ops::build_agent_runtime(&config).await;
+        let result = ops::start_agent_process(&env_name, port, &allowed_dirs)
+            .map(|pid| crate::tui::app::RunningProcess {
+                name: env_name,
+                port,
+                pid,
+            })
+            .map_err(|e| format!("{e:#}"));
         let _ = tx.send(result);
     });
     Ok(())
+}
+
+/// Build an AgentConfig from environment data. Returns None on failure.
+async fn build_agent_config(env_name: &str) -> Option<AgentConfig> {
+    let data = ops::inspect_environment(env_name).await.ok()??;
+    let provider = if data.vars.contains(&"ANTHROPIC_KEY".to_string()) {
+        "anthropic"
+    } else if data.vars.contains(&"OPENAI_KEY".to_string()) {
+        "openai"
+    } else if data.vars.contains(&"GOOGLE_KEY".to_string()) {
+        "google"
+    } else {
+        "unknown"
+    };
+    let tools: Vec<String> = data
+        .components
+        .iter()
+        .filter(|c| {
+            let base = c.split('@').next().unwrap_or(c);
+            !CORE_COMPONENTS.contains(&base)
+        })
+        .map(|c| c.split('@').next().unwrap_or(c).to_string())
+        .collect();
+    let allowed_dirs = data
+        .var_values
+        .get("ASTERBOT_ALLOWED_DIRS")
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let state_dir = resolve_state_dir(env_name);
+    let _ = std::fs::create_dir_all(&state_dir);
+    // Always set ASTERBOT_HOST_DIR to the correct local path.
+    let wasi_dir = state_dir.to_string_lossy().replace('\\', "/");
+    let _ = ops::set_var(env_name, "ASTERBOT_HOST_DIR", &wasi_dir);
+    let user_name = data
+        .var_values
+        .get("ASTERBOT_USER_NAME")
+        .cloned()
+        .unwrap_or_else(default_user_name);
+    let default_banner = match tools.is_empty() {
+        true => "quote",
+        false => "auto",
+    };
+    let banner_mode = data
+        .var_values
+        .get("ASTERBOT_BANNER")
+        .cloned()
+        .unwrap_or_else(|| default_banner.to_string());
+    let namespace = crate::auth::Auth::read_user_or_fallback_namespace();
+    Some(AgentConfig {
+        env_name: env_name.to_string(),
+        namespace,
+        bot_name: data
+            .var_values
+            .get("ASTERBOT_BOT_NAME")
+            .cloned()
+            .unwrap_or_else(|| env_name.to_string()),
+        user_name,
+        model: data.var_values.get("ASTERBOT_MODEL").cloned(),
+        provider: provider.to_string(),
+        tools,
+        allowed_dirs,
+        banner_mode,
+    })
 }
 
 /// Set loading state, redraw, and fire agent discovery.
