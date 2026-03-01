@@ -1,12 +1,10 @@
 use crate::artifact::ArtifactSyncTag;
 use crate::command::env::list::EnvListEntry;
-use asterai_runtime::runtime::ComponentRuntime;
 use ratatui::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::oneshot;
 
 pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -347,6 +345,13 @@ pub struct AgentEntry {
 
 pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[derive(Debug, Clone)]
+pub struct RunningProcess {
+    pub name: String,
+    pub port: u16,
+    pub pid: u32,
+}
+
 pub struct App {
     pub screen: Screen,
     pub should_quit: bool,
@@ -360,8 +365,10 @@ pub struct App {
     pub pending_sync: Option<oneshot::Receiver<Vec<EnvListEntry>>>,
     pub pending_env_check: Option<oneshot::Receiver<HashMap<String, bool>>>,
     pub saved_picker: Option<Vec<AgentEntry>>,
-    pub runtime: Option<Arc<Mutex<ComponentRuntime>>>,
-    pub pending_runtime: Option<oneshot::Receiver<eyre::Result<ComponentRuntime>>>,
+    /// Detached agent processes keyed by env_name.
+    pub processes: HashMap<String, RunningProcess>,
+    pub pending_start: Option<oneshot::Receiver<Result<RunningProcess, String>>>,
+    pub pending_process_scan: Option<oneshot::Receiver<Vec<RunningProcess>>>,
 }
 
 impl Default for App {
@@ -378,8 +385,9 @@ impl Default for App {
             pending_sync: None,
             pending_env_check: None,
             saved_picker: None,
-            runtime: None,
-            pending_runtime: None,
+            processes: HashMap::new(),
+            pending_start: None,
+            pending_process_scan: None,
         }
     }
 }
