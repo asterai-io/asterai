@@ -3,8 +3,8 @@ use crate::local_store::LocalStore;
 use crate::runtime::build_runtime;
 use asterai_runtime::component::function_name::ComponentFunctionName;
 use asterai_runtime::component::{ComponentId, PackageName, Version};
-use asterai_runtime::runtime::Val;
 use asterai_runtime::runtime::parsing::{ValExt, json_value_to_val, parse_primitive};
+use asterai_runtime::runtime::{ComponentRuntime, Val};
 use eyre::{OptionExt, bail};
 use std::str::FromStr;
 use wit_parser::{Resolve, TypeDef, TypeDefKind};
@@ -38,27 +38,36 @@ impl EnvArgs {
         let environment = LocalStore::fetch_environment(&resource_id)
             .map_err(|_| eyre::eyre!("environment '{}' not found locally", resource_id))?;
         let mut runtime = build_runtime(environment, &self.allow_dirs).await?;
-        let (function_name, package_name_opt) = parse_function_string_into_parts(function_string)?;
-        let function = runtime
-            .find_function(&comp_id, &function_name, package_name_opt)?
-            .ok_or_eyre("function not found")?;
-        let resolve = runtime
-            .resolve_for(&comp_id)
-            .ok_or_eyre("component not found")?;
-        let inputs =
-            parse_inputs_from_string_args(&self.function_args, &function.inputs, &resolve)?;
-        let output_opt = runtime.call_function(function, &inputs).await?;
-        if let Some(output) = output_opt
-            && let Some(function_output) = output.function_output_opt
-        {
-            let json = function_output.value.val.try_into_json_value();
-            return Ok(json.map(|j| match j {
-                serde_json::Value::String(s) => s,
-                other => other.to_string(),
-            }));
-        }
-        Ok(None)
+        call_on_runtime(&mut runtime, &comp_id, function_string, &self.function_args).await
     }
+}
+
+/// Find a function on a runtime, parse inputs, call it, and return formatted output.
+pub(crate) async fn call_on_runtime(
+    runtime: &mut ComponentRuntime,
+    comp_id: &ComponentId,
+    function_string: String,
+    function_args: &[String],
+) -> eyre::Result<Option<String>> {
+    let (function_name, package_name_opt) = parse_function_string_into_parts(function_string)?;
+    let function = runtime
+        .find_function(comp_id, &function_name, package_name_opt)?
+        .ok_or_eyre("function not found")?;
+    let resolve = runtime
+        .resolve_for(comp_id)
+        .ok_or_eyre("component not found")?;
+    let inputs = parse_inputs_from_string_args(function_args, &function.inputs, &resolve)?;
+    let output_opt = runtime.call_function(function, &inputs).await?;
+    if let Some(output) = output_opt
+        && let Some(function_output) = output.function_output_opt
+    {
+        let json = function_output.value.val.try_into_json_value();
+        return Ok(json.map(|j| match j {
+            serde_json::Value::String(s) => s,
+            other => other.to_string(),
+        }));
+    }
+    Ok(None)
 }
 
 fn parse_function_string_into_parts(
