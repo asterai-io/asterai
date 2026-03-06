@@ -50,8 +50,15 @@ impl ValExt for Val {
                     serde_json::json!({ "error": err })
                 }
             },
-            Val::Variant(_, _) => return None,
-            Val::Enum(_) => return None,
+            Val::Variant(discriminant, payload) => {
+                let mut map = serde_json::Map::new();
+                map.insert("tag".into(), Value::String(discriminant));
+                if let Some(val) = payload.and_then(|v| v.try_into_json_value()) {
+                    map.insert("value".into(), val);
+                }
+                Value::Object(map)
+            }
+            Val::Enum(s) => Value::String(s),
             Val::Record(fields) => {
                 let map = fields
                     .into_iter()
@@ -61,7 +68,9 @@ impl ValExt for Val {
                     .collect::<serde_json::Map<String, Value>>();
                 Value::Object(map)
             }
-            Val::Flags(_) => return None,
+            Val::Flags(names) => Value::Array(
+                names.into_iter().map(Value::String).collect(),
+            ),
             Val::Resource(_) => return None,
             Val::Future(_) => return None,
             Val::Stream(_) => return None,
@@ -250,6 +259,46 @@ pub fn json_value_to_val_typedef(
                 })
                 .collect::<eyre::Result<Vec<_>>>()?;
             Ok(Val::Flags(names))
+        }
+        TypeDefKind::Result(result_) => {
+            if let Value::Object(map) = value {
+                if let Some(err_val) = map.get("error") {
+                    let inner = match &result_.err {
+                        Some(ty) => Some(Box::new(json_value_to_val(err_val, ty, resolve)?)),
+                        None => None,
+                    };
+                    return Ok(Val::Result(Err(inner)));
+                }
+            }
+            let inner = match &result_.ok {
+                Some(ty) => Some(Box::new(json_value_to_val(value, ty, resolve)?)),
+                None => None,
+            };
+            Ok(Val::Result(Ok(inner)))
+        }
+        TypeDefKind::Variant(variant) => {
+            let Value::Object(map) = value else {
+                bail!("expected JSON object for variant");
+            };
+            let tag = map
+                .get("tag")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| eyre::eyre!("expected 'tag' string field for variant"))?;
+            let case = variant
+                .cases
+                .iter()
+                .find(|c| c.name == tag)
+                .ok_or_else(|| eyre::eyre!("unknown variant case '{tag}'"))?;
+            let payload = match &case.ty {
+                Some(ty) => {
+                    let v = map
+                        .get("value")
+                        .ok_or_else(|| eyre::eyre!("missing 'value' for variant case '{tag}'"))?;
+                    Some(Box::new(json_value_to_val(v, ty, resolve)?))
+                }
+                None => None,
+            };
+            Ok(Val::Variant(tag.to_string(), payload))
         }
         _ => bail!("unsupported type: {:#?}", type_def.kind),
     }
