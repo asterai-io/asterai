@@ -37,13 +37,30 @@ impl ValExt for Val {
                 .as_deref()
                 .and_then(|v| v.clone().try_into_json_value())
                 .unwrap_or(Value::Null),
-            Val::Result(v) => v
-                .ok()
-                .and_then(|v| v.clone()?.try_into_json_value())
-                .unwrap_or(Value::Null),
+            Val::Result(v) => match v {
+                Ok(val) => val
+                    .as_deref()
+                    .and_then(|v| v.clone().try_into_json_value())
+                    .unwrap_or(Value::Null),
+                Err(val) => {
+                    let err = val
+                        .as_deref()
+                        .and_then(|v| v.clone().try_into_json_value())
+                        .unwrap_or(Value::String("unknown error".into()));
+                    serde_json::json!({ "error": err })
+                }
+            },
             Val::Variant(_, _) => return None,
             Val::Enum(_) => return None,
-            Val::Record(_) => todo!(),
+            Val::Record(fields) => {
+                let map = fields
+                    .into_iter()
+                    .filter_map(|(name, val)| {
+                        val.try_into_json_value().map(|v| (name, v))
+                    })
+                    .collect::<serde_json::Map<String, Value>>();
+                Value::Object(map)
+            }
             Val::Flags(_) => return None,
             Val::Resource(_) => return None,
             Val::Future(_) => return None,
