@@ -1,15 +1,18 @@
 use crate::command::common_flags::extract_common_flags;
 use crate::command::component::build::BuildArgs;
+use crate::command::component::call::CallArgs;
 use crate::command::component::delete::DeleteArgs;
 use crate::command::component::init::InitArgs;
 use crate::command::component::pkg::PkgArgs;
 use crate::command::component::pull::PullArgs;
 use crate::command::component::push::PushArgs;
 use eyre::{bail, eyre};
+use std::path::PathBuf;
 use std::str::FromStr;
 use strum_macros::EnumString;
 
 pub mod build;
+pub(crate) mod call;
 pub mod delete;
 pub mod init;
 pub mod list;
@@ -27,15 +30,17 @@ pub struct ComponentArgs {
     push_args: Option<PushArgs>,
     init_args: Option<InitArgs>,
     delete_args: Option<DeleteArgs>,
+    call_args: Option<CallArgs>,
     pub api_endpoint: String,
-    #[allow(dead_code)]
     pub registry_endpoint: String,
+    pub allow_dirs: Vec<PathBuf>,
 }
 
 #[derive(Debug, Copy, Clone, EnumString)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ComponentAction {
     Build,
+    Call,
     Init,
     Ls,
     Pkg,
@@ -56,6 +61,7 @@ impl ComponentArgs {
         let common = extract_common_flags(remaining_args)?;
         let api_endpoint = common.api_endpoint;
         let registry_endpoint = common.registry_endpoint;
+        let allow_dirs = common.allow_dirs;
         let args = common.remaining_args.into_iter();
         let none_args = Self {
             action,
@@ -65,12 +71,18 @@ impl ComponentArgs {
             push_args: None,
             init_args: None,
             delete_args: None,
+            call_args: None,
             api_endpoint,
             registry_endpoint,
+            allow_dirs,
         };
         let command_args = match action {
             ComponentAction::Build => Self {
                 build_args: Some(BuildArgs::parse(args)?),
+                ..none_args
+            },
+            ComponentAction::Call => Self {
+                call_args: Some(CallArgs::parse(args)?),
                 ..none_args
             },
             ComponentAction::Init => Self {
@@ -102,6 +114,9 @@ impl ComponentArgs {
         match self.action {
             ComponentAction::Build => {
                 self.build().await?;
+            }
+            ComponentAction::Call => {
+                self.call().await?;
             }
             ComponentAction::Init => {
                 self.init()?;
