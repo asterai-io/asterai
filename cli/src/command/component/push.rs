@@ -276,7 +276,7 @@ fn bump_patch_version(version: &str) -> eyre::Result<String> {
     ))
 }
 
-fn parse_package_name(pkg_bytes: &[u8]) -> eyre::Result<PackageName> {
+pub(crate) fn parse_package_name(pkg_bytes: &[u8]) -> eyre::Result<PackageName> {
     let decoded = wit_parser::decoding::decode(pkg_bytes)
         .map_err(|e| eyre::eyre!(e))
         .wrap_err("failed to decode package.wasm")?;

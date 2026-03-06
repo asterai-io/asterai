@@ -19,7 +19,18 @@ pub async fn build_runtime(
     environment: Environment,
     allow_dirs: &[PathBuf],
 ) -> eyre::Result<ComponentRuntime> {
+    build_runtime_with(environment, allow_dirs, vec![]).await
+}
+
+/// Build a ComponentRuntime from an Environment, with extra pre-loaded
+/// components that take priority over local store and registry.
+pub async fn build_runtime_with(
+    environment: Environment,
+    allow_dirs: &[PathBuf],
+    extra_components: Vec<ComponentBinary>,
+) -> eyre::Result<ComponentRuntime> {
     let mut local_components = LocalStore::list_components();
+    local_components.extend(extra_components);
     let mut components = Vec::with_capacity(environment.components.len());
     // environment.components is HashMap<String, String>
     // where key is "namespace:name" and value is version.
