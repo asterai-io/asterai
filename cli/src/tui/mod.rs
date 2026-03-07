@@ -71,8 +71,15 @@ async fn run_app(
     loop {
         terminal.draw(|f| views::render(f, app))?;
         if app.should_quit {
-            // Suppress panics from background wasmtime tasks during
-            // tokio shutdown — they're harmless but look scary.
+            // Prompt to stop running processes before exiting.
+            if !app.processes.is_empty() {
+                if prompt_stop_processes(terminal, &app.processes)? {
+                    for (_, proc) in app.processes.drain() {
+                        let _ = ops::kill_process(proc.pid);
+                    }
+                }
+                // Either way, exit the TUI. Detached processes survive.
+            }
             std::panic::set_hook(Box::new(|_| {}));
             return Ok(());
         }
@@ -92,7 +99,8 @@ async fn run_app(
             || app.pending_version_check.is_some()
             || app.pending_sync.is_some()
             || app.pending_env_check.is_some()
-            || app.pending_runtime.is_some();
+            || app.pending_start.is_some()
+            || app.pending_process_scan.is_some();
         // Always poll with timeout so the cursor blink can advance.
         let is_chat = matches!(&app.screen, Screen::Chat(_));
         let needs_poll = has_pending || is_chat;
@@ -152,30 +160,45 @@ async fn run_app(
                 Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
             }
         }
-        if let Some(rx) = &mut app.pending_runtime {
+        if let Some(rx) = &mut app.pending_start {
             match rx.try_recv() {
-                Ok(Ok(rt)) => {
-                    app.pending_runtime = None;
-                    app.runtime = Some(std::sync::Arc::new(tokio::sync::Mutex::new(rt)));
-                    app.screen = Screen::Chat(Box::default());
-                    views::chat::start_banner_fetch(app);
-                    views::chat::start_env_check(app);
+                Ok(Ok(proc)) => {
+                    app.pending_start = None;
+                    let name = proc.name.clone();
+                    let port = proc.port;
+                    app.processes.insert(name.clone(), proc);
+                    // If we were waiting to enter chat, do it now.
+                    if app.agent.is_some() {
+                        app.screen = Screen::Chat(Box::default());
+                        views::chat::start_banner_fetch(app);
+                        views::chat::start_env_check(app);
+                    } else if let Screen::Picker(state) = &mut app.screen {
+                        state.error = Some(format!("Started {name} on :{port}"));
+                    }
                 }
-                Ok(Err(e)) => {
-                    app.pending_runtime = None;
+                Ok(Err(msg)) => {
+                    app.pending_start = None;
                     app.agent = None;
                     if let Screen::Picker(state) = &mut app.screen {
-                        state.error = Some(format!("Failed to load: {e}"));
+                        state.error = Some(msg);
                     }
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    app.pending_runtime = None;
+                    app.pending_start = None;
                     app.agent = None;
                     if let Screen::Picker(state) = &mut app.screen {
-                        state.error = Some("Runtime build cancelled.".to_string());
+                        state.error = Some("Start failed unexpectedly.".to_string());
                     }
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(rx) = &mut app.pending_process_scan
+            && let Ok(running) = rx.try_recv()
+        {
+            app.pending_process_scan = None;
+            for proc in running {
+                app.processes.entry(proc.name.clone()).or_insert(proc);
             }
         }
         let Some(ev) = ev else {
@@ -207,6 +230,86 @@ async fn run_app(
         {
             terminal.draw(|f| views::render(f, app))?;
             views::picker::discover_agents(app);
+        }
+    }
+}
+
+/// Show a prompt asking whether to stop running processes before exiting.
+fn prompt_stop_processes(
+    terminal: &mut Terminal<CrosstermBackend<Tty>>,
+    processes: &std::collections::HashMap<String, app::RunningProcess>,
+) -> eyre::Result<bool> {
+    use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+    let count = processes.len();
+    let names: Vec<String> = processes
+        .iter()
+        .map(|(name, p)| format!("{name} :{}", p.port))
+        .collect();
+    let base_msg = format!(
+        "{count} agent{} still running:\n{}\n\nStop all before exiting? (y/n): ",
+        match count {
+            1 => "",
+            _ => "s",
+        },
+        names.join("\n"),
+    );
+    let mut input: Option<char> = None;
+    let mut tick: usize = 0;
+    loop {
+        let cursor_visible = tick % 5 < 3;
+        let cursor = match cursor_visible {
+            true => "\u{2588}",
+            false => " ",
+        };
+        let display = match input {
+            Some(c) => {
+                let hint = match c {
+                    'y' => " \u{21B5} stop all",
+                    'n' => " \u{21B5} keep running",
+                    _ => "",
+                };
+                format!("{base_msg}{c}{hint}{cursor}")
+            }
+            None => format!("{base_msg}{cursor}"),
+        };
+        terminal.draw(|f| {
+            let area = f.area();
+            let height = (count as u16 + 6).min(area.height.saturating_sub(4));
+            let width = 50.min(area.width.saturating_sub(4));
+            let x = (area.width.saturating_sub(width)) / 2;
+            let y = (area.height.saturating_sub(height)) / 2;
+            let popup = Rect::new(x, y, width, height);
+            f.render_widget(Clear, popup);
+            let block = Block::default()
+                .title(" Exit ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            f.render_widget(
+                Paragraph::new(display.as_str()).wrap(Wrap { trim: false }),
+                inner,
+            );
+        })?;
+        tick += 1;
+        if let Ok(true) = event::poll(Duration::from_millis(200))
+            && let Ok(Event::Key(key)) = event::read()
+        {
+            if key.kind != crossterm::event::KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => input = Some('y'),
+                KeyCode::Char('n') | KeyCode::Char('N') => input = Some('n'),
+                KeyCode::Backspace => input = None,
+                KeyCode::Enter => match input {
+                    Some('y') => return Ok(true),
+                    Some('n') => return Ok(false),
+                    _ => {}
+                },
+                KeyCode::Esc => return Ok(false),
+                _ => {}
+            }
         }
     }
 }
@@ -305,8 +408,17 @@ fn check_pending_banner(app: &mut App) {
         Ok(Some(text)) => {
             app.pending_banner = None;
             if let Screen::Chat(state) = &mut app.screen {
-                // Clean up LLM response: trim, take first line only.
-                let clean = text.trim().lines().next().unwrap_or("").trim().to_string();
+                // Clean up LLM response: trim, take first line only,
+                // strip surrounding quotes the model sometimes adds.
+                let clean = text
+                    .trim()
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .trim_matches('"')
+                    .trim()
+                    .to_string();
                 if !clean.is_empty() {
                     state.banner_text = clean;
                 }

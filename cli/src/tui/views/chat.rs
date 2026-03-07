@@ -450,7 +450,6 @@ pub async fn handle_event(app: &mut App, event: Event) -> eyre::Result<()> {
             } else {
                 // Empty input — return to agent picker.
                 app.agent = None;
-                app.runtime = None;
                 app.pending_response = None;
                 app.pending_banner = None;
                 app.pending_components = None;
@@ -637,6 +636,15 @@ fn render_banner(f: &mut Frame, name: &str, chat: &ChatState, app: &App, area: R
         right_lines.push(Line::from(vec![
             Span::styled("DIRS    ", label_style),
             Span::styled(dirs_label, value_style),
+        ]));
+    }
+    // Show HTTP process status.
+    if let Some(agent) = &app.agent
+        && let Some(proc) = app.processes.get(&agent.env_name)
+    {
+        right_lines.push(Line::from(vec![
+            Span::styled("HTTP    ", label_style),
+            Span::styled(format!(":{}", proc.port), tool_green),
         ]));
     }
     right_lines.push(Line::from(""));
@@ -1000,27 +1008,25 @@ pub fn start_banner_fetch(app: &mut App) {
     if agent.banner_mode != "auto" {
         return;
     }
+    let Some(proc) = app.processes.get(&agent.env_name) else {
+        return;
+    };
     if let Screen::Chat(state) = &mut app.screen {
         state.banner_loading = true;
     }
-    let runtime = app.runtime.clone();
+    let namespace = agent.namespace.clone();
+    let env_name = agent.env_name.clone();
+    let port = proc.port;
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.pending_banner = Some(rx);
     tokio::spawn(async move {
         let prompt = "In one brief line (under 80 chars), infer a relevant status \
             update from your conversation history and available tools. If there is \
             nothing relevant, reply with an empty string.";
-        let result = match runtime {
-            Some(rt) => {
-                match tokio::task::spawn(async move { ops::call_with_runtime(rt, prompt).await })
-                    .await
-                {
-                    Ok(r) => r.ok().flatten(),
-                    Err(_) => None,
-                }
-            }
-            None => None,
-        };
+        let result = ops::call_converse_via_process(prompt, &namespace, &env_name, port)
+            .await
+            .ok()
+            .flatten();
         let _ = tx.send(result);
     });
 }
@@ -1059,32 +1065,24 @@ fn send_message(app: &mut App, input: &str) {
         styled_lines: None,
     });
     state.waiting = true;
-    let runtime = app.runtime.clone();
+    let Some(agent) = &app.agent else { return };
+    let Some(proc) = app.processes.get(&agent.env_name) else {
+        state.waiting = false;
+        state.messages.push(ChatMessage {
+            role: MessageRole::System,
+            content: "No running process for this agent.".to_string(),
+            styled_lines: None,
+        });
+        return;
+    };
+    let namespace = agent.namespace.clone();
+    let env_name = agent.env_name.clone();
+    let port = proc.port;
     let message = input.to_string();
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.pending_response = Some(rx);
     tokio::spawn(async move {
-        let result = match runtime {
-            Some(rt) => {
-                match tokio::task::spawn(async move { ops::call_with_runtime(rt, &message).await })
-                    .await
-                {
-                    Ok(r) => r,
-                    Err(e) => {
-                        let panic_msg = if let Ok(s) = e.try_into_panic() {
-                            s.downcast_ref::<String>()
-                                .cloned()
-                                .or_else(|| s.downcast_ref::<&str>().map(|s| s.to_string()))
-                                .unwrap_or_else(|| "internal error".to_string())
-                        } else {
-                            "request was cancelled".to_string()
-                        };
-                        Err(eyre::eyre!("{panic_msg}"))
-                    }
-                }
-            }
-            None => Err(eyre::eyre!("no active runtime")),
-        };
+        let result = ops::call_converse_via_process(&message, &namespace, &env_name, port).await;
         let _ = tx.send(result);
     });
 }
